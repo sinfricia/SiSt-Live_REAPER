@@ -230,7 +230,7 @@ function PostLoopCleanup(playingProj)
    end
 
    if playingProj.loopMarkerIdx then
-      r.DeleteProjectMarker(proj, playingProj.loopMarkerIdx, 0)
+      r.DeleteProjectMarker(proj, playingProj.loopMarkerIdx, false)
    end
 
    -- clear rec items list
