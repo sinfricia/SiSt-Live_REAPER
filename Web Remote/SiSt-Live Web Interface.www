@@ -1,0 +1,9 @@
+@description SiSt-Live Web Interface
+@author sinfricia
+@version 0.2
+@about 
+   A web remote interface to control project tab selection, playback and playback position.
+@provides
+  SiSt-Live Web Interface.html
+  [nomain] SiSt-Live_Remote - Select project.lua
+  [nomain] SiSt-Live_Save open project info to ext_state.lua

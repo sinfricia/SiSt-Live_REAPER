@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <link rel="icon" href="https://schoenetoene.ch/wp-content/uploads/2024/08/240505_Schone_Favicon.png" sizes="192x192" type="image/png" />
+    <title>SiSt-Live</title>
+
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        text-align: center;
+        padding: 20px;
+        background-color: #f4f4f4;
+      }
+
+      .container {
+        display: flex; /* Flexbox for horizontal layout */
+        justify-content: space-between; /* Space out the items */
+        align-items: flex-start; /* Align items to the top */
+        width: 100%; /* Full width */
+        height: 100vh; /* Full height */
+        margin-top: 20px;
+      }
+
+      button {
+        margin: 10px;
+        padding: 10px 20px;
+        font-size: 16px;
+      }
+
+      #lists-container {
+        width: 400%;
+        display: flex;
+        justify-content: center;
+        flex-direction: row; /* Stack lists vertically */
+        gap: 20px;
+      }
+
+      .list {
+        width: 100%;
+        border: 1px solid #ccc;
+        background-color: #fff;
+        border-radius: 5px;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+      }
+
+      .list-header {
+        background-color: #ddd;
+        padding: 10px;
+        font-weight: bold;
+      }
+
+      .list-item {
+        padding: 10px;
+        border-bottom: 1px solid #eee;
+        cursor: pointer;
+        text-align: left;
+      }
+
+      .list-item:last-child {
+        border-bottom: none;
+      }
+
+      .list-item:hover {
+        background-color: #f0f0f0;
+      }
+
+      #project-name {
+        font-weight: bold;
+        margin-bottom: 20px;
+      }
+
+      #meter {
+        width: 100%;
+        height: 300px;
+      }
+      #peak-indicator {
+        width: 40px;
+        height: 20px;
+        margin: 10px;
+        background-color: #444;
+        border: 1px solid #222;
+        text-align: center;
+        line-height: 20px;
+        color: white;
+        font-size: 14px;
+      }
+      #peak-display {
+        margin-bottom: 10px;
+        font-size: 16px;
+      }
+
+      .play-icon {
+        width: 0;
+        height: 0;
+        border-top: 10px solid transparent;
+        border-bottom: 10px solid transparent;
+        border-left: 20px solid #44c498;
+      }
+    </style>
+
+    <script src="main.js"></script>
+
+    <script type="text/javascript">
+      var ext_state_section = "SiSt-Live_WebRemote";
+      var proj_count = 0;
+      var last_transport_state = -1;
+      var last_meter_value = -1;
+      var last_active_proj_idx = -1;
+      var last_proj_state = "";
+      var last_play_state = "";
+      var projectItems;
+
+      function updateTransportButton(status) {
+        if (last_transport_state == status) {
+          return;
+        }
+
+        transport_status = status;
+
+        const button = document.getElementById("transport-button");
+
+        // Clear any existing styles or intervals
+        button.style.backgroundColor = ""; // Reset color
+        button.classList.remove("blinking"); // Stop blinking
+        if (button.blinkInterval) {
+          clearInterval(button.blinkInterval);
+          button.blinkInterval = null;
+        }
+
+        // Set styles based on status
+        switch (status) {
+          case 0: // Default
+            button.style.backgroundColor = "";
+            break;
+          case 1: // Static green (#44c498)
+            button.style.backgroundColor = "#44c498";
+            break;
+          case 2: // Blinking green (#44c498)
+            button.blinkInterval = setBlinking(button, "#44c498");
+            break;
+          case 5: // Static red (#cb3960)
+            button.style.backgroundColor = "#cb3960";
+            break;
+          case 6: // Blinking red (#cb3960)
+            button.blinkInterval = setBlinking(button, "#cb3960");
+            break;
+          default:
+            console.warn("Unknown status:", status);
+        }
+      }
+
+      function setBlinking(item, color) {
+        let isVisible = true;
+        return setInterval(() => {
+          item.style.backgroundColor = isVisible ? color : "";
+          isVisible = !isVisible;
+        }, 500); // Blink every 500ms
+      }
+
+      function getMeterColor(level) {
+        if (level < -180) return "#46b484"; // Below -18 dB
+        if (level < -60) return "#d3c92d"; // Between -18 dB and -6 dB
+        return "#d67a40"; // Above -6 dB
+      }
+
+      function updateMeter(canvas, value) {
+        if (value == last_meter_value) {
+          return;
+        }
+
+        const ctx = canvas.getContext("2d");
+
+        const width = canvas.width;
+        const height = canvas.height;
+        const barWidth = width * 0.6;
+        const barHeight = height;
+
+        // Map the level (-1500 to 0) to a height (0 to canvas height)
+        const normalizedLevel = Math.max(-1500, Math.min(0, value)); // Clamp between -1000 and 0
+        const levelHeight = ((normalizedLevel + 1500) / 1500) * barHeight;
+
+        // Clear the canvas
+        ctx.clearRect(0, 0, width, height);
+
+        // Draw the background bar
+        ctx.fillStyle = "#444";
+        ctx.fillRect((width - barWidth) / 2, 0, barWidth, height);
+
+        // Draw the active level bar
+        const color = getMeterColor(value);
+        ctx.fillStyle = color;
+        ctx.fillRect((width - barWidth) / 2, barHeight - levelHeight, barWidth, levelHeight);
+
+        // Add a label
+        ctx.fillStyle = "white";
+        ctx.font = "16px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(value <= -1500 ? "-inf" : `${(value / 10).toFixed(1)} dB`, width / 2, 20);
+      }
+
+      function wwr_onreply(results) {
+        var ar = results.split("\n");
+        for (var x = 0; x < ar.length; x++) {
+          var tok = ar[x].split("\t");
+          if (tok.length > 0);
+          switch (tok[0]) {
+            case "CMDSTATE":
+              break;
+            case "EXTSTATE":
+              switch (tok[1]) {
+                case "ProjectList":
+                  switch (tok[2]) {
+                    case "ActiveProj":
+                      document.getElementById("project-name").innerHTML = tok[3];
+                      break;
+                    case "ActiveProjIdx":
+                      if (tok[3] == last_active_proj_idx) {
+                        return;
+                      }
+                      projectItems = document.querySelectorAll("#project-list div.list-item");
+
+                      projectItems.forEach((project) => {
+                        project.style.backgroundColor = "";
+                      });
+
+                      if (projectItems[tok[3] - 1]) {
+                        projectItems[tok[3] - 1].style.backgroundColor = "#9cf8e6"; // Set background to #9cf8e6 for the active project
+                        last_active_proj_idx = tok[3];
+                      }
+
+                      /*wwr_req("GET/EXTSTATE/ProjectList/Playstates");*/
+
+                      break;
+                    case "OpenProjects":
+                      // Populate the project list
+
+                      if (tok[3] == last_proj_state) {
+                        return;
+                      }
+
+                      last_proj_state = tok[3];
+
+                      projects = tok[3].split(",");
+
+                      const projectList = document.getElementById("project-list");
+
+                      projectList.innerHTML = "";
+                      projectList.innerHTML += '<div class="list-header">Projects</div>';
+
+                      projects.forEach((project, index) => {
+                        const projectItem = document.createElement("div");
+                        projectItem.className = "list-item";
+                        projectItem.textContent = project;
+                        projectItem.onclick = () => {
+                          wwr_req("SET/EXTSTATE/" + ext_state_section + "/SelectedProj/" + index);
+                          wwr_req("_RS19e1b60a37480efacd5a442658f934f78cbf67e2"); /*Script: SiSt-Live_Remote - Select project.lua*/
+                          wwr_req("_RS0a8c2345b74d6ae23df518e089b6c552701a4022"); /*Script: SiSt-Live_Save open project info to ext_state.lua*/
+                          wwr_req("GET/EXTSTATE/ProjectList/ActiveProj");
+                          wwr_req("GET/EXTSTATE/ProjectList/ActiveProjIdx");
+                          wwr_req("MARKER");
+                        };
+                        projectList.appendChild(projectItem);
+                      });
+                      last_active_proj_idx = -1;
+                      wwr_req("GET/EXTSTATE/ProjectList/ActiveProj");
+                      break;
+                    /*case "Playstates":
+                      const playstates = tok[3].split(",");
+                      projectItems = document.querySelectorAll("#project-list div.list-item");
+                      console.log(tok[3]);
+                      playstates.forEach((state, idx) => {
+                        switch (state) {
+                          case "0":
+                            existing_play_icon = projectItems[idx].querySelectorAll("div.play-icon");
+                            if (existing_play_icon[0]) {
+                              console.log(state);
+                              existing_play_icon.forEach((child) => child.remove());
+                            }
+                            break;
+                          case "1":
+                            console.log(state);
+                            const play_icon = document.createElement("div");
+                            play_icon.className = "play-icon";
+                            projectItems[idx].appendChild(play_icon);
+                            break;
+                          case "5":
+                            projectItems[idx].style.backgroundColor = "#cb3960";
+                            break;
+                        }
+                      });
+                      break;*/
+                  }
+              }
+              break;
+            case "MARKER_LIST":
+              g_markers = [];
+              break;
+            case "MARKER":
+              g_markers.push(tok);
+              break;
+            case "MARKER_LIST_END":
+              const markerList = document.getElementById("marker-list");
+              markerList.innerHTML = "";
+              markerList.innerHTML += '<div class="list-header">Markers</div>';
+
+              g_markers.forEach((marker, index) => {
+                if (marker[1].startsWith("!")) {
+                  return; // Skip the rest of the loop for this iteration
+                }
+
+                const markerItem = document.createElement("div");
+                markerItem.className = "list-item";
+                markerItem.textContent = marker[1];
+                markerItem.setAttribute("onClick", "wwr_req('SET/POS/" + marker[3] + "')");
+                markerList.appendChild(markerItem);
+              });
+              break;
+            case "TRANSPORT":
+              updateTransportButton(parseInt(tok[1]));
+              break;
+            case "TRACK":
+              const meter_value = tok[7];
+              const canvas = document.getElementById("meter");
+              updateMeter(canvas, meter_value);
+              break;
+          }
+        }
+      }
+
+      wwr_start();
+      wwr_req_recur("TRANSPORT", 1030);
+      wwr_req_recur("MARKER", 1040);
+      wwr_req_recur("_RS0a8c2345b74d6ae23df518e089b6c552701a4022", 1000); /*Script: SiSt-Live_Save open project info to ext_state.lua*/
+      wwr_req_recur("GET/EXTSTATE/ProjectList/OpenProjects", 1005);
+      wwr_req_recur("GET/EXTSTATE/ProjectList/ActiveProj", 1010);
+      wwr_req_recur("GET/EXTSTATE/ProjectList/ActiveProjIdx", 1015);
+      wwr_req_recur("GET/EXTSTATE/ProjectList/Playstates", 1020);
+      /*wwr_req_recur("TRACK/0", 200);*/
+    </script>
+  </head>
+
+  <body>
+    <div>
+      <h1 id="project-name">No project selected</h1>
+    </div>
+
+    <div>
+      <button onclick="wwr_req(40042)">&lt&lt</button>
+      <button onclick="wwr_req('_291b55dc18151245818ee04c5116635e')">&lt&lt 2 bars</button>
+      <button id="transport-button" onclick="wwr_req('_RSecfa62b88023d6a72d329c520d124209a3403a7f'); wwr_req('TRANSPORT');wwr_req('GET/EXTSTATE/ProjectList/Playstates');">Play/Stop</button>
+      <button onclick="wwr_req('_b52b9b02ad49db4e8e2899b0b6e99655'); wwr_req('TRANSPORT');wwr_req('GET/EXTSTATE/ProjectList/Playstates');">Start Song</button>
+      <button onclick="wwr_req('_RS20585414ca9539682ea7bd9eee725871f9355893'); wwr_req('TRANSPORT');wwr_req('GET/EXTSTATE/ProjectList/Playstates');">Stop All Projects</button>
+    </div>
+    <div class="container">
+      <div id="lists-container">
+        <!-- Marker List -->
+        <div class="list" id="marker-list">
+          <div class="list-header">Markers</div>
+          <!-- Markers will be dynamically added here -->
+        </div>
+
+        <!-- Project List -->
+        <div class="list" id="project-list">
+          <div class="list-header">Projects</div>
+          <!-- Projects will be dynamically added here -->
+        </div>
+      </div>
+      <!-- <canvas id="meter"></canvas>-->
+    </div>
+  </body>
+</html>
