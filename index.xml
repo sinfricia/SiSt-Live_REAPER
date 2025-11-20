@@ -1,2 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="SiSt-Live" commit="c7895ae3d6b75dd7a18bae7ff423bdef4606fdaa"/>
+<index version="1" name="SiSt-Live" commit="9fd88591baa8bc3e55d493e651e77f8ec02bdcd8">
+  <category name="ReaPack Testing">
+    <reapack name="SiSt-Live_Apply action to all open projects ImGui Rewrite.lua" type="script" desc="Apply actions to all open projects (ImGui Version)">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Prompts user to select an action that then gets applied to a selection of open REAPER projects.\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.0.0" author="sinfricia" time="2025-11-20T15:51:31Z">
+        <changelog><![CDATA[Initial release]]></changelog>
+        <source main="main">https://github.com/sinfricia/SiSt-Live_REAPER/raw/9fd88591baa8bc3e55d493e651e77f8ec02bdcd8/ReaPack%20Testing/SiSt-Live_Apply%20action%20to%20all%20open%20projects%20ImGui%20Rewrite.lua</source>
+      </version>
+    </reapack>
+  </category>
+</index>
