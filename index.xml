@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="SiSt-Live" commit="e7b2299d0b303cf3033bea5680376df2caab1193">
+<index version="1" name="SiSt-Live" commit="83835e6e84135990ea5e53b2df891ca074e0a01b">
   <category name="Project List">
     <reapack name="SiSt-Live_Project List.lua" type="script" desc="Project List">
       <metadata>
@@ -64,9 +64,9 @@
 ]]></description>
       </metadata>
       <version name="0.2" author="sinfricia" time="2025-11-20T17:01:23Z">
-        <source file="SiSt-Live Web Interface.html">https://github.com/sinfricia/SiSt-Live_REAPER/raw/e7b2299d0b303cf3033bea5680376df2caab1193/Web%20Remote/SiSt-Live%20Web%20Interface.html</source>
-        <source file="SiSt-Live_Remote - Select project.lua">https://github.com/sinfricia/SiSt-Live_REAPER/raw/e7b2299d0b303cf3033bea5680376df2caab1193/Web%20Remote/SiSt-Live_Remote%20-%20Select%20project.lua</source>
-        <source file="SiSt-Live_Save open project info to ext_state.lua">https://github.com/sinfricia/SiSt-Live_REAPER/raw/e7b2299d0b303cf3033bea5680376df2caab1193/Web%20Remote/SiSt-Live_Save%20open%20project%20info%20to%20ext_state.lua</source>
+        <source file="SiSt-Live Web Interface.html">https://github.com/sinfricia/SiSt-Live_REAPER/raw/83835e6e84135990ea5e53b2df891ca074e0a01b/Web%20Remote/SiSt-Live%20Web%20Interface.html</source>
+        <source file="SiSt-Live_Remote - Select project.lua">https://github.com/sinfricia/SiSt-Live_REAPER/raw/83835e6e84135990ea5e53b2df891ca074e0a01b/Web%20Remote/SiSt-Live_Remote%20-%20Select%20project.lua</source>
+        <source file="SiSt-Live_Save open project info to ext_state.lua">https://github.com/sinfricia/SiSt-Live_REAPER/raw/83835e6e84135990ea5e53b2df891ca074e0a01b/Web%20Remote/SiSt-Live_Save%20open%20project%20info%20to%20ext_state.lua</source>
       </version>
     </reapack>
   </category>
