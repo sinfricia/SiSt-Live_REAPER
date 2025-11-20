@@ -1,3 +1,11 @@
+-- @description Apply actions to all open projects (ImGui Version)
+-- @version 1.0.0
+-- @author sinfricia
+-- @changelog
+--   Initial release
+-- @about
+--   Prompts user to select an action that then gets applied to a selection of open REAPER projects.
+
 local VSDEBUG = dofile("c:/Users/sinas/.vscode/extensions/antoinebalaine.reascript-docs-0.1.15/debugger/LoadDebug.lua")
 
 local r = reaper

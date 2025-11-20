@@ -1,20 +1,2 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="SiSt-Live">
-  <category name="Git Test">
-    <reapack name="SiSt-Live_Region Looping (defered).lua" type="script" desc="Automated region looping">
-      <metadata>
-        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
-{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
-\widowctrl\hyphauto
-
-{\pard \ql \f0 \sa180 \li0 \fi0 Automatically loop regions named "LOOP <num_loops>" while playing. If <num_loops> is -1 or omitted, loop infinitely until disabled. See script code for user options like muting specific tracks while looping or adding a final pass after disabling looping.\par}
-}
-]]></description>
-      </metadata>
-      <version name="1.0.0" author="sinfricia" time="2025-11-20T15:42:08Z">
-        <changelog><![CDATA[Initial release]]></changelog>
-        <source main="main">https://github.com/sinfricia/SiSt-Live_REAPER/raw/6ad9d8af62a6ffbbe125ebb7e71f7ae4adee23bd/Git%20Test/SiSt-Live_Region%20Looping%20(defered).lua</source>
-      </version>
-    </reapack>
-  </category>
-</index>
+<index version="1" name="SiSt-Live" commit="c7895ae3d6b75dd7a18bae7ff423bdef4606fdaa"/>
