@@ -1,7 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="SiSt-Live" commit="9fd88591baa8bc3e55d493e651e77f8ec02bdcd8">
-  <category name="ReaPack Testing">
-    <reapack name="SiSt-Live_Apply action to all open projects ImGui Rewrite.lua" type="script" desc="Apply actions to all open projects (ImGui Version)">
+<index version="1" name="SiSt-Live" commit="9420e6c9c0ab74086709c7e5e3d18559fdb1ba46">
+  <category name="Project List">
+    <reapack name="SiSt-Live_Project List.lua" type="script" desc="Project List">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 REAPER Project List Manager\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 A Tool to manage REAPER project tabs. Designed to be used as a setlist manager in a live environment.\par}
+}
+]]></description>
+      </metadata>
+      <version name="0.5.0" author="sinfricia" time="2025-11-20T16:44:02Z">
+        <changelog><![CDATA[Initial release]]></changelog>
+        <source main="main">https://github.com/sinfricia/SiSt-Live_REAPER/raw/9420e6c9c0ab74086709c7e5e3d18559fdb1ba46/Project%20List/SiSt-Live_Project%20List.lua</source>
+      </version>
+    </reapack>
+  </category>
+  <category name="Project Management">
+    <reapack name="SiSt-Live_Apply action to all open projects.lua" type="script" desc="Apply actions to all open projects">
       <metadata>
         <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
@@ -11,9 +29,26 @@
 }
 ]]></description>
       </metadata>
-      <version name="1.0.0" author="sinfricia" time="2025-11-20T15:51:31Z">
+      <version name="1.0.0" author="sinfricia" time="2025-11-20T16:44:02Z">
         <changelog><![CDATA[Initial release]]></changelog>
-        <source main="main">https://github.com/sinfricia/SiSt-Live_REAPER/raw/9fd88591baa8bc3e55d493e651e77f8ec02bdcd8/ReaPack%20Testing/SiSt-Live_Apply%20action%20to%20all%20open%20projects%20ImGui%20Rewrite.lua</source>
+        <source main="main">https://github.com/sinfricia/SiSt-Live_REAPER/raw/9420e6c9c0ab74086709c7e5e3d18559fdb1ba46/Project%20Management/SiSt-Live_Apply%20action%20to%20all%20open%20projects.lua</source>
+      </version>
+    </reapack>
+  </category>
+  <category name="Region Looper">
+    <reapack name="SiSt-Live_Region Looping (defered).lua" type="script" desc="Automated region looping">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Automatically loop regions named "LOOP <num_loops>" while playing. If <num_loops> is -1 or omitted, loop infinitely until disabled. See script code for user options like muting specific tracks while looping or adding a final pass after disabling looping.\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.0.0" author="sinfricia" time="2025-11-20T16:44:02Z">
+        <changelog><![CDATA[Initial release]]></changelog>
+        <source main="main">https://github.com/sinfricia/SiSt-Live_REAPER/raw/9420e6c9c0ab74086709c7e5e3d18559fdb1ba46/Region%20Looper/SiSt-Live_Region%20Looping%20(defered).lua</source>
       </version>
     </reapack>
   </category>
