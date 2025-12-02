@@ -1,8 +1,10 @@
 -- @description Project List
--- @version 0.5.0
+-- @version 0.5.1
 -- @author sinfricia
 -- @changelog
---   Initial release
+--   - Double click on text entries to edit them
+--   - Imporvements to zooming, scrolling and drag & drop behaviors, restoring window state on --     load and click handling
+--   - Minor UI changes and fixes
 -- @about
 --   # REAPER Project List Manager
 --   A Tool to manage REAPER project tabs. Designed to be used as a setlist manager in a live environment.
@@ -52,9 +54,7 @@ local displayTabIdx = true
 
 --- EXT STATE ---
 local ExtStateSection = scriptName
-local ExtKeyDockState = "DockingState"
-local ExtKeyDockIdx = "DockingIndex"
-local ExtKeyWndPos = "WindowPosition"
+local ExtKeyWndState = "WindowState"
 local ExtKeySetlist = "Setlist"
 
 --- DATA ---
@@ -64,7 +64,9 @@ local setlistTotalTime = 0
 local listIdxToTabIdxLookup = {} --stores for every index in setlist (1-based) the coresponding project tab index (0-based). Corresponding means the next project entry in the list is at this tabIdx.
 local tabIdxToListIdxLookup = {}
 local openProjCount = 0
-local currentProject = reaper.EnumProjects(-1)
+local currentProj = reaper.EnumProjects(-1)
+local lastProject = currentProj
+local projectSwitchHandled = nil
 local conflictResolverRunCount = 0
 
 
@@ -73,20 +75,27 @@ local conflictResolverRunCount = 0
 --- GUI ---
 local gui = {
 
-   wndWidth = 400,
-   wndHeight = 300,
+   --Window position and size: These value are not updated during script runtime but loaded/saved to ext state
+   ww = 400,
+   wh = 300,
+   wx = 200,
+   wy = 200,
+   dockState = 0,
+   --------------------------
+
    ctrlPanelSize = 90,
    backgroundColor = 0x2e2e2e,
    font = "Arial",
-   entryTextSize = 20,
+   titleTextSize = 27,
+   entryTextSize = 24,
    buttonFontSize = 18,
    projLenTextSize = 16,
-   titleHeight = 46,
+   titleHeight = 56,
    leftBorder = 5,
-   lineHeight = 0, -- calculated in Init,
-   linePadding = 12,
-   minHeight = 0,
-   minWidth = 0,
+   lineHeight = 0, -- calculated in InitWnd from entryTextSize and linePadding,
+   linePadding = 18,
+   minHeight = 0,  --currently unused (but calculated in wndInit)
+   minWidth = 0,   --currently unused (but calculated in wndInit)
 
    activeProjHighlight = { 0.57, 0.97, 0.9, 0.7 },
    nextProjHighlight = { 0.25, 0.67, 0.6, 0.3 },
@@ -111,6 +120,7 @@ local gui = {
    },
    playPosColor = { 0.95, 0.82, 0.45, 0.6 },
 
+   dragForbidden = false,
    dragThreshold = 6, -- Small threshold for drag detection,
    dropIndicatorColor = { 1, 1, 1, 0.6 },
    dropIndicatorThickness = 4,
@@ -118,6 +128,8 @@ local gui = {
    rightClick = 0,
    leftClickHandled = false,
    rightClickHandled = false,
+   lastClickDownPos = { x = 0, y = 0 },
+   lastClickDownPos = { x = 0, y = 0 },
 
    -- scrolling stuff
    scrollTrackColor = { 0.3, 0.3, 0.3, 1 },
@@ -128,10 +140,18 @@ local gui = {
    scrollY = 0,
    scrollOffset = 0,
    maxScroll = 0,
+   scrollBarGrabStart = 0,
+   scrollBarGrabOffset = 0,
    draggingScroll = false,
-   dragScrollMargin = 20,      -- Margin in which list scrolls while dragging entry
-   dragScrollSpeed = 0.1,
+   dragScrollMargin = 1,       -- Margin in which list scrolls while dragging entry
+   dragScrollSpeed = 0.3,
    fractionalScrollOffset = 0, --used for scrolling while dragging an entry to allow fractional scrolling speeds
+
+   -- double-click tracking
+   doubleClickThreshold = 0.30, -- seconds between two clicks to qualify
+   lastClickTime = 0,           -- timestamp of last click (reaper.time_precise)
+   lastClickIdx = nil,          -- list index of last clicked entry
+   doubleClick = false,         -- true only on frame where second click detected
 
 
    -- dynamic variables for drag & drop functionality
@@ -142,6 +162,12 @@ local gui = {
    dragStartY = 0,
    dragThreshReached = nil,
 
+   maxZoomLevel = 16,
+   minZoomLevel = -8,
+   zoomLevel = 0,
+   zoomFactor = 1,
+   zoomDelay = 0.10, -- seconds between zoom steps when holding button
+   lastZoomTime = 0,
 
    --buttons
    buttonColor = { 0.5, 0.5, 0.5, 0.6 },
@@ -237,8 +263,8 @@ end
 function CloseProject(proj)
    reaper.SelectProjectInstance(proj)
    reaper.Main_OnCommand(40860, 0) --Close current project tab
-   if not proj == currentProject then
-      reaper.SelectProjectInstance(currentProject)
+   if not proj == proj then
+      reaper.SelectProjectInstance(proj)
    end
 end
 
@@ -314,6 +340,10 @@ end
 
 function IsMouseInRect(x, y, w, h)
    return gfx.mouse_x >= x and gfx.mouse_x <= x + w and gfx.mouse_y >= y and gfx.mouse_y <= y + h
+end
+
+function IsPointInRect(x, y, w, h, px, py)
+   return px >= x and px <= x + w and py >= y and py <= y + h
 end
 
 function CheckDependencies()
@@ -418,47 +448,122 @@ function CheckIfFileInRelativeDir(loadPath, projPath)
    end
 end
 
+function SerializeTable(tbl, indent)
+   indent = indent or 0
+   local indentStr = string.rep("  ", indent)
+   local nextIndentStr = string.rep("  ", indent + 1)
+
+   if type(tbl) ~= "table" then
+      if type(tbl) == "string" then
+         return string.format("%q", tbl) -- properly escape strings
+      elseif type(tbl) == "number" or type(tbl) == "boolean" then
+         return tostring(tbl)
+      elseif tbl == nil then
+         return "nil"
+      else
+         return string.format("%q", tostring(tbl)) -- fallback for userdata, functions, etc.
+      end
+   end
+
+   local parts = {}
+   table.insert(parts, "{")
+
+   local arrayPart = {}
+   local hashPart = {}
+
+   -- Separate array part from hash part
+   local maxIndex = 0
+   for k, _ in pairs(tbl) do
+      if type(k) == "number" and k > 0 and k == math.floor(k) then
+         maxIndex = math.max(maxIndex, k)
+      end
+   end
+
+   -- Check if array part is contiguous
+   local isArray = true
+   for i = 1, maxIndex do
+      if tbl[i] == nil then
+         isArray = false
+         break
+      end
+   end
+
+   -- Serialize array elements
+   if isArray and maxIndex > 0 then
+      for i = 1, maxIndex do
+         table.insert(arrayPart, nextIndentStr .. SerializeTable(tbl[i], indent + 1))
+      end
+   end
+
+   -- Serialize hash elements
+   for k, v in pairs(tbl) do
+      local skipKey = false
+      if isArray and type(k) == "number" and k >= 1 and k <= maxIndex then
+         skipKey = true
+      end
+
+      if not skipKey then
+         local keyStr
+         if type(k) == "string" and k:match("^[%a_][%w_]*$") then
+            keyStr = k -- valid identifier, no quotes needed
+         elseif type(k) == "string" then
+            keyStr = "[" .. string.format("%q", k) .. "]"
+         elseif type(k) == "number" then
+            keyStr = "[" .. tostring(k) .. "]"
+         else
+            keyStr = "[" .. string.format("%q", tostring(k)) .. "]"
+         end
+
+         table.insert(hashPart, nextIndentStr .. keyStr .. " = " .. SerializeTable(v, indent + 1))
+      end
+   end
+
+   -- Combine array and hash parts
+   for _, v in ipairs(arrayPart) do
+      table.insert(parts, v .. ",")
+   end
+   for _, v in ipairs(hashPart) do
+      table.insert(parts, v .. ",")
+   end
+
+   if #parts > 1 then
+      table.insert(parts, indentStr .. "}")
+      return table.concat(parts, "\n")
+   else
+      return "{}"
+   end
+end
+
 --------------------------
 ----- DATA FUNCTIONS -----
 --------------------------
 
 --- DATA EXPORT/IMPORT ---
+
 function SaveWndStateToExt()
    Msg("Saved WndState to EXT.")
-
-   local dock_state, dock_index, wx, wy, ww, wh = gfx.dock(-1)
    local persist = true
 
-   reaper.SetExtState(ExtStateSection, ExtKeyDockState, tostring(dock_state), persist)
-   reaper.SetExtState(ExtStateSection, ExtKeyDockIdx, tostring(dock_index), persist)
+   local wndState = {}
+   wndState.dockState, wndState.wx, wndState.wy, wndState.ww, wndState.wh = gfx.dock(-1, 1, 1, 1, 1)
+   wndState.zoomLevel = gui.zoomLevel
+   wndState.scrollOffset = gui.scrollOffset
 
-   -- Save window position and size only if undocked
-   if dock_state == 0 and (wx and wy and ww and wh) then
-      local positionStr = wx .. "," .. wy .. "," .. ww .. "," .. wh
-      reaper.SetExtState(ExtStateSection, ExtKeyWndPos, positionStr, persist)
-   end
+   local wndStateStr = SerializeTable(wndState)
+
+   reaper.SetExtState(ExtStateSection, ExtKeyWndState, wndStateStr, persist)
 end
 
 function LoadWndStateFromExt()
-   local DockStateStr = reaper.GetExtState(ExtStateSection, ExtKeyDockState)
-   local DockIdxStr = reaper.GetExtState(ExtStateSection, ExtKeyDockIdx)
-   local WndPosStr = reaper.GetExtState(ExtStateSection, ExtKeyWndPos)
+   local wndStateStr = reaper.GetExtState(ExtStateSection, ExtKeyWndState)
 
-   if DockStateStr == "" then
+   if not wndStateStr or wndStateStr == "{" then
       return
    end
 
-   local dock_state = tonumber(DockStateStr)
-   local dock_index = tonumber(DockIdxStr)
-
-   if dock_state == 0 and WndPosStr ~= "" then -- Restore undocked position and size
-      local wx, wy, ww, wh = WndPosStr:match("([^,]+),([^,]+),([^,]+),([^,]+)")
-      wx, wy, ww, wh = tonumber(wx), tonumber(wy), tonumber(ww), tonumber(wh)
-      gfx.dock(dock_state, wx, wy, ww, wh)
-      gui.wndWidth = ww
-      gui.wndHeight = wh
-   else -- Restore docked state and index
-      gfx.dock(dock_state, dock_index)
+   local wndState = load("return " .. wndStateStr)()
+   for k, v in pairs(wndState) do
+      gui[k] = v or gui[k]
    end
 
    Msg("Restored WndState from EXT.")
@@ -466,6 +571,7 @@ end
 
 function CreateSetlistString(setlist, separator)
    local entryStrings = {}
+   Msg("Creating setlist string:")
    for _, entry in ipairs(setlist) do -- Save name for text entries (name = path for those) and full path for projects
       if entry.path ~= "Unsaved Project" then
          local entryStr = ""
@@ -483,7 +589,7 @@ function CreateSetlistString(setlist, separator)
          end
 
          table.insert(entryStrings, entryStr)
-         Msg("  " .. entryStr)
+         -- Msg("  " .. entryStr)
       end
    end
 
@@ -681,7 +787,9 @@ function HandleIInvalidSetlistStringEntries(validEntries, invalidEntries, contex
    reaper.MB(msg, title, 0)
 end
 
---- DATA MANIULATION
+----------------------------
+--- DATA MANIPULATION
+----------------------------
 
 function CountEntryOccurrences(table, entry)
    local count = 0
@@ -711,7 +819,7 @@ function BuildTabIdxToListIdxLookup(list)
 end
 
 function BuildListIdxToTabIdxLookup(list)
-   Msg("Building List Index to Tab Index Lookup...")
+   --Msg("Building List Index to Tab Index Lookup...")
 
    if not list then list = setlist end
 
@@ -748,19 +856,19 @@ function TabIdxToListIdx(tabIdx, list)
    end
 end
 
-function ListIdxtoTabIdx(listIdx, list)
+function ListIdxToTabIdx(listIdx, list)
    BuildListIdxToTabIdxLookup(list)
 
    if not list then list = setlist end
-   Msg("Getting Tab Index for List Index [" .. listIdx .. "]")
+   --Msg("Getting Tab Index for List Index [" .. listIdx .. "]")
    if listIdx < 0 then
-      Msg("  opt1 = 0")
+      --Msg("  opt1 = 0")
       return 0
    elseif listIdx > #list or not listIdxToTabIdxLookup[listIdx] then
-      Msg("  opt2 = " .. openProjCount)
+      --Msg("  opt2 = " .. openProjCount)
       return openProjCount
    else
-      Msg("  opt3 = " .. listIdxToTabIdxLookup[listIdx])
+      --Msg("  opt3 = " .. listIdxToTabIdxLookup[listIdx])
 
       return listIdxToTabIdxLookup[listIdx]
    end
@@ -839,7 +947,7 @@ function ReplaceProjEntry(list, entry)
 
    local tabIdx = entry.tabIdx
    if not tabIdx then
-      tabIdx = ListIdxtoTabIdx(entry.listIdx)
+      tabIdx = ListIdxToTabIdx(entry.listIdx)
    end
 
    MoveProjTabToIdx(reaper.EnumProjects(-1), tabIdx)
@@ -854,7 +962,7 @@ function ReplaceProjEntry(list, entry)
    list[entry.listIdx].proj = reaper.EnumProjects(-1)
    list[entry.listIdx].path = loadPath
    list[entry.listIdx].name = ExtractProjNameFromPath(loadPath)
-   list[entry.listIdx].tabIdx = ListIdxtoTabIdx(entry.listIdx)
+   list[entry.listIdx].tabIdx = ListIdxToTabIdx(entry.listIdx)
 
    PrintEntry(list[entry.listIdx])
 end
@@ -982,7 +1090,7 @@ function ResolveConflictsWithOpenProj(list, silent, isLoadFile) -- checks a setl
                Msg("  Duplicate " .. i .. " (tabIdx [" .. entry.tabIdx .. "]) = at listIdx [" .. newEntryIdx .. "]")
                entry.listIdx = newEntryIdx
                table.insert(list, newEntryIdx, entry)
-               list[newEntryIdx].tabIdx = ListIdxtoTabIdx(newEntryIdx, list)
+               list[newEntryIdx].tabIdx = ListIdxToTabIdx(newEntryIdx, list)
             end
          end
       elseif ret == 7 then
@@ -1066,13 +1174,13 @@ function ResolveConflictsWithOpenProj(list, silent, isLoadFile) -- checks a setl
                reaper.Main_openProject(entry.path)
                openProjCount = openProjCount + 1
 
-               entry.tabIdx = ListIdxtoTabIdx(entry.listIdx, list)
-               currentProject = reaper.EnumProjects(-1)
+               entry.tabIdx = ListIdxToTabIdx(entry.listIdx, list)
+               currentProj = reaper.EnumProjects(-1)
 
-               list[entry.listIdx].proj = currentProject
+               list[entry.listIdx].proj = currentProj
                list[entry.listIdx].tabIdx = entry.tabIdx
 
-               MoveProjTabToIdx(currentProject, entry.tabIdx)
+               MoveProjTabToIdx(currentProj, entry.tabIdx)
                table.insert(openProjList, #openProjList + 1, entry)
             else
                local msg = "The following file was not found. Entry will be added but action needs to be taken:\n\n" ..
@@ -1133,9 +1241,25 @@ function ResolveConflictsWithOpenProj(list, silent, isLoadFile) -- checks a setl
 
 
             reaper.SelectProjectInstance(entry.proj)
+            local playState = reaper.GetPlayState()
+            Msg(playState & 4)
+            if playState & 4 == 4 then
+               reaper.MB("Can't close project while it is recording. Adding it to list.", "Warning", 0)
+               table.insert(list, entry)
+               goto continue_close_loop
+            elseif playState > 0 then
+               ret = reaper.MB(
+                  "Are you sure you want to close this project while it's playing?\n\nPressing 'No' will add it to the list",
+                  "Warning", 4)
+               if ret == 7 then
+                  table.insert(list, entry)
+                  goto continue_close_loop
+               end
+            end
             reaper.Main_OnCommand(40860, 0) --Close current project tab
             openProjCount = openProjCount - 1
          end
+         ::continue_close_loop::
       else
          terminate = true
          return list
@@ -1168,7 +1292,7 @@ function ResolveConflictsWithOpenProj(list, silent, isLoadFile) -- checks a setl
       local str = #openProjList > #projEntriesInList and "openProj > list" or "openProj < projEntriesInList"
       local ret = reaper.MB(
          "Something went wrong with conflict resolutions. Unequal lengths of openProjList and projEntriesInList: " ..
-         str .. ": " .. #openProjList .. " vs " .. #projEntriesInList .. "\nRunning ConclictResolver again.",
+         str .. ": " .. #openProjList .. " vs " .. #projEntriesInList .. "\nDo you want to run ConclictResolver again?",
          "Error in conlict resolution", 2)
 
       if ret == 3 then
@@ -1276,11 +1400,11 @@ function UpdateTabAndListIdx(list)
    Msg("Updating tab and list index fields from respective orders")
    if not list then list = setlist end
 
-   for i, entry in ipairs(list) do
+   for i, _ in ipairs(list) do
       list[i].listIdx = i
 
       if list[i].type == "project" then
-         list[i].tabIdx = ListIdxtoTabIdx(i, list)
+         list[i].tabIdx = ListIdxToTabIdx(i, list)
       end
    end
 end
@@ -1323,6 +1447,115 @@ end
 ----- GUI FUNCTIONS ------
 --------------------------
 
+function UpdateZoom(direction, newZoomLevel) -- direction: 1 = zoom in, -1 = zoom out, anything else = auto calculate based on newZoomLevel
+   if gui.leftClick and reaper.time_precise() - gui.lastZoomTime < gui.zoomDelay or not direction then
+      return
+   end
+
+   if (direction == 1 and gui.zoomLevel == gui.maxZoomLevel) or (direction == -1 and gui.zoomLevel == gui.minZoomLevel) then
+      return
+   end
+
+   local zoomStep = 0
+   if (direction ~= -1 or direction ~= 1) and newZoomLevel then
+      direction = newZoomLevel - gui.zoomLevel
+      if direction > 0 then
+         direction = 1
+      elseif direction < 0 then
+         direction = -1
+      else
+         return
+      end
+      zoomStep = newZoomLevel - gui.zoomLevel
+   else
+      newZoomLevel = 1
+      zoomStep = direction * gui.zoomFactor
+   end
+
+   gui.lastZoomTime = reaper.time_precise()
+
+   gui.entryTextSize = gui.entryTextSize + zoomStep
+   gui.projLenTextSize = gui.projLenTextSize + zoomStep / 2
+   gui.linePadding = gui.linePadding + zoomStep * 2
+
+   gfx.setfont(1, gui.font, gui.entryTextSize) -- Set the font for the list (index 1, size 16)
+   gui.lineHeight = gfx.texth + gui.linePadding
+
+   gui.zoomLevel = gui.zoomLevel + zoomStep
+   Msg("Zoom level changed to " .. gui.zoomLevel)
+end
+
+function FindEntryUnderMouseCursor(findAtLastClickPos)
+   if not findAtLastClickPos then
+      findAtLastClickPos = false
+   end
+
+   local mouseIsOverList = gfx.mouse_y < gui.listH + gui.titleHeight - gui.dragThreshold and
+       gfx.mouse_y > gui.titleHeight and gfx.mouse_x < gfx.w - gui.scrollW and gfx.mouse_x > gui.leftBorder
+
+   if not mouseIsOverList then
+      return nil, nil
+   end
+
+   local entryUnderMouse = nil
+   local idxUnderMouse = nil
+   for i, _ in ipairs(setlist) do
+      local yStart = gui.titleHeight + (i - 1) * gui.lineHeight
+      local yEnd = yStart + gui.lineHeight
+
+      if yEnd > gui.listH + gui.titleHeight then return nil, nil end -- only return entry if fully visible.
+
+      local mouseIsOverEntry
+
+      if findAtLastClickPos then
+         mouseIsOverEntry = IsPointInRect(0, yStart, gfx.w - gui.scrollW, gui.lineHeight,
+            gui.lastClickDownPos.x, gui.lastClickDownPos.y)
+      else
+         mouseIsOverEntry = IsMouseInRect(0, yStart, gfx.w - gui.scrollW, gui.lineHeight)
+      end
+
+      if mouseIsOverEntry then
+         idxUnderMouse = i + gui.scrollOffset
+         entryUnderMouse = setlist[idxUnderMouse]
+         break
+      end
+   end
+
+   if not entryUnderMouse or idxUnderMouse > #setlist then
+      return nil, nil
+   end
+
+   return entryUnderMouse, idxUnderMouse
+end
+
+function IsProjVisibleInList(proj) --proj can be either a ReaProject* or a number representing the project tab index
+   local tabIdx = 0
+   if type(proj) == "number" and proj > 0 then
+      if proj > openProjCount - 1 then
+         proj = openProjCount - 1
+      end
+      tabIdx = proj
+   elseif reaper.ValidatePtr(proj, "ReaProject*") then
+      tabIdx = GetProjTabIdx(proj)
+   else
+      return false
+   end
+
+   --Msg("Checking visibility for project tabIdx [" .. tostring(proj) .. "]")
+
+
+   local listIdx = TabIdxToListIdx(tabIdx)
+
+   local visibleStartIdx = gui.scrollOffset + 1
+   local visibleEndIdx = gui.scrollOffset + math.floor(gui.listH / gui.lineHeight)
+
+   if listIdx >= visibleStartIdx and listIdx <= visibleEndIdx then
+      return true
+   else
+      return false
+   end
+end
+
 function HandleSaveListButton()
    local bX = gui.entryIndent
    local bH = gui.buttonH
@@ -1339,7 +1572,7 @@ function HandleSaveListButton()
    gfx.drawstr("Save Setlist", 5, bX + bW, bY + bH)
 
 
-   if gui.leftClick and IsMouseInRect(bX, bY, bW, bH) and not gui.leftClickHandled then
+   if gui.leftClick and IsPointInRect(bX, bY, bW, bH, gui.lastClickDownPos.x, gui.lastClickDownPos.y) and not gui.leftClickHandled then
       SaveSetlistToFile()
       gui.leftClickHandled = true
    end
@@ -1361,7 +1594,7 @@ function HandleLoadListButton()
    gfx.drawstr("Load Setlist", 5, bX + bW, bY + bH)
 
 
-   if gui.leftClick and IsMouseInRect(bX, bY, bW, bH) and not gui.leftClickHandled then
+   if gui.leftClick and IsPointInRect(bX, bY, bW, bH, gui.lastClickDownPos.x, gui.lastClickDownPos.y) and not gui.leftClickHandled then
       setlist = LoadSetlistFromFile()
       gui.leftClickHandled = true
    end
@@ -1382,7 +1615,7 @@ function HandleInsertTextButton()
    gfx.y = bY
    gfx.drawstr("Insert Text", 5, bX + bW, bY + bH)
 
-   if gui.leftClick and IsMouseInRect(bX, bY, bW, bH) and not gui.leftClickHandled then
+   if gui.leftClick and IsPointInRect(bX, bY, bW, bH, gui.lastClickDownPos.x, gui.lastClickDownPos.y) and not gui.leftClickHandled then
       local ret, input = reaper.GetUserInputs("Insert Text Note", 1, "Enter label:", "")
       if ret and input ~= "" then
          table.insert(setlist,
@@ -1393,13 +1626,34 @@ function HandleInsertTextButton()
 end
 
 function HandleZoomButtons()
-   gfx.setfont(1, gui.font, gui.buttonFontSize)
+   gfx.setfont(1, gui.font, gui.buttonFontSize * 1.2)
+
+
+   -- Zoom Out
+   local bW = gui.buttownW / 5
+   local bX = gfx.w - gui.entryIndent - bW
+   local bH = gui.buttonH * 0.8
+   local bY = gfx.h - bH - gui.titleHeight / 2
+
+   gfx.set(table.unpack(gui.buttonColor))
+   gfx.rect(bX, bY, bW, bH, true)
+   gfx.set(1, 1, 1)
+   local strW, strH = gfx.measurestr("-")
+   gfx.x = bX + (bW - strW) / 2
+   gfx.y = bY + (bH - strH) / 2 - 1
+   gfx.drawstr("-")
+
+
+   if gui.leftClick and IsPointInRect(bX, bY, bW, bH, gui.lastClickDownPos.x, gui.lastClickDownPos.y) and not gui.leftClickHandled then
+      if reaper.JS_Mouse_GetState(16) == 16 then --alt is held
+         UpdateZoom(0, 0)
+      else
+         UpdateZoom(-1)
+      end
+   end
 
    -- Zoom In
-   local bX = gui.entryIndent * 4 + gui.buttownW * 3
-   local bH = gui.buttonH / 2 - 1
-   local bY = gfx.h - bH - gui.titleHeight / 2 - bH - 2
-   local bW = gui.buttownW / 5
+   local bX = gfx.w - gui.entryIndent - (gui.entryIndent / 2) - bW * 2
 
    gfx.set(table.unpack(gui.buttonColor))
    gfx.rect(bX, bY, bW, bH, true)
@@ -1410,83 +1664,44 @@ function HandleZoomButtons()
    gfx.drawstr("+")
 
 
-   if gui.leftClick and IsMouseInRect(bX, bY, bW, bH) and not gui.leftClickHandled then
-      UpdateZoom(1)
-      gui.leftClickHandled = true
+   if gui.leftClick and IsPointInRect(bX, bY, bW, bH, gui.lastClickDownPos.x, gui.lastClickDownPos.y) and not gui.leftClickHandled then
+      if reaper.JS_Mouse_GetState(16) == 16 then --alt is held
+         UpdateZoom(0, 0)
+      else
+         UpdateZoom(1)
+      end
    end
 
-   -- Zoom Out
-
-   local bY = gfx.h - bH - gui.titleHeight / 2
-
-   gfx.set(table.unpack(gui.buttonColor))
-   gfx.rect(bX, bY, bW, bH, true)
-   gfx.set(1, 1, 1)
-   local strW, strH = gfx.measurestr("-")
-   gfx.x = bX + (bW - strW) / 2
-   gfx.y = bY + (bH - strH) / 2 - 3
-   gfx.drawstr("-")
-
-
-   if gui.leftClick and IsMouseInRect(bX, bY, bW, bH) and not gui.leftClickHandled then
-      UpdateZoom(-1)
-      gui.leftClickHandled = true
+   if not gui.leftClick then
+      gui.leftClickHandled = false
+      gui.lastZoomTime = 0
    end
 end
 
 function HandleDraggingEntry()
    if #setlist < 2 then return end
 
-   if not gui.draggingEntry and gui.leftClick and not gui.draggingScroll then
-      for i, _ in ipairs(setlist) do
-         local yStart = gui.titleHeight + (i - 1) * gui.lineHeight
-         if IsMouseInRect(0, yStart, gfx.w - gui.scrollW - -5, gui.lineHeight) and gfx.mouse_y < gfx.h - gui.ctrlPanelSize then
-            if i + gui.scrollOffset > #setlist then return end
-            Msg("Draging initialized for project: " .. setlist[i].name)
-            gui.dragEntryListIdx = i + gui.scrollOffset
-            gui.dragStartY = gfx.mouse_y
-            gui.draggingEntry = true
-            break
-         end
-      end
-   elseif gui.draggingEntry then
-      if not (math.abs(gfx.mouse_y - gui.dragStartY) > gui.dragThreshold) then
-         if not gui.leftClick then
-            gui.draggingEntry = false
-            gui.dragStartY = nil
-            gui.dropIdx = nil
-            gui.dragDirection = nil
-            gui.dragThreshReached = nil
-         end
-         return
-      end
+   if gui.leftClick then
+      gui.dragThreshReached = math.abs(gfx.mouse_y - gui.lastClickDownPos.y) > gui.dragThreshold
+   end
 
-      gui.dragThreshReached = true
+   if not gui.draggingEntry and gui.leftClick and not gui.draggingScroll and gui.dragThreshReached then
+      local entryUnderMouse, idxUnderMouse = FindEntryUnderMouseCursor(true)
 
+      if not entryUnderMouse then return end
+
+      gui.dragEntryListIdx = idxUnderMouse
+      gui.dragStartY = gfx.mouse_y
+      gui.draggingEntry = true
+      Msg("Draging initialized for project: " .. setlist[gui.dragEntryListIdx].name)
+   elseif gui.draggingEntry and gui.dragThreshReached then
       gui.dragDirection = 1
       if gfx.mouse_y < gui.dragStartY then
          gui.dragDirection = -1
       end
 
-      local mouseOverList = IsMouseInRect(0, gui.titleHeight / 2, gfx.w - gui.scrollW - gui.dragThreshold,
-         gui.listH + gui.titleHeight / 2)
-      local mouseOverStartEntry = IsMouseInRect(0, gui.dragEntryListIdx * gui.lineHeight,
-         gfx.w - gui.scrollW - gui.dragThreshold, gui.lineHeight)
-
-      if math.abs(gfx.mouse_y - gui.dragStartY) > gui.dragThreshold and not mouseOverStartEntry and mouseOverList then
-         -- Calculate drop index based on mouse position
-         local newDropIdx = math.floor((gfx.mouse_y + (gui.lineHeight / 3 * gui.dragDirection) - gui.titleHeight) /
-                gui.lineHeight) +
-             1 -- leave dropzone of 1/3 of the line height. It's not working perfectly but dragging feels quite nice :)
-
-         newDropIdx = Clamp(newDropIdx + gui.scrollOffset - gui.dragDirection, 1, #setlist)
-
-         gui.dropIdx = newDropIdx
-      end
-
-
       -- Auto-scroll if mouse is near top or bottom
-      if gfx.mouse_y < gui.titleHeight + gui.dragScrollMargin or gfx.mouse_y > gui.listH - gui.dragScrollMargin then
+      if gfx.mouse_y < gui.titleHeight - gui.dragScrollMargin or gfx.mouse_y > gui.listH + gui.titleHeight + gui.dragScrollMargin then
          gui.autoscrolling = true
          gui.fractionalScrollOffset = gui.fractionalScrollOffset + gui.dragScrollSpeed
 
@@ -1502,12 +1717,33 @@ function HandleDraggingEntry()
          gui.fractionalScrollOffset = 0
       end
 
+      local entryUnderMouse, idxUnderMouse = FindEntryUnderMouseCursor()
+
+      if not entryUnderMouse or idxUnderMouse == gui.dragEntryListIdx then
+         gui.dropIdx = nil
+         return
+      end
+
+      if math.abs(gfx.mouse_y - gui.dragStartY) > gui.dragThreshold then
+         -- Calculate drop index based on mouse position
+         local newDropIdx = math.floor((gfx.mouse_y + (gui.lineHeight / 3 * gui.dragDirection) - gui.titleHeight) /
+                gui.lineHeight) +
+             1 -- leave dropzone of 1/3 of the line height. It's not working perfectly but dragging feels quite nice :)
+
+         newDropIdx = Clamp(newDropIdx + gui.scrollOffset - gui.dragDirection, 1, #setlist)
+
+         gui.dropIdx = newDropIdx
+      end
+
       HandleDroppingEntry()
    end
 end
 
 function HandleDroppingEntry()
-   if not gui.draggingEntry or gui.leftClick then return end
+   if not gui.draggingEntry or gui.leftClick then
+      PostDragCleanup()
+      return
+   end
 
    gui.draggingEntry = false
 
@@ -1520,152 +1756,187 @@ function HandleDroppingEntry()
 
    local dragEntry = setlist[gui.dragEntryListIdx]
 
-   if dragEntry.type == "text" and reaper.JS_Mouse_GetState(4) == 4 then --ctrl is clicked
+   if gui.dragDirection == 1 then
+      gui.dropIdx = gui.dropIdx + 1
+   end
+
+   if dragEntry.type == "text" and reaper.JS_Mouse_GetState(4) == 4 then --ctrl is held
       Msg("Duplicating Text Item: " .. dragEntry.name)
       local duplicateText = CopyTable(dragEntry)
       duplicateText.listIdx = gui.dropIdx
       table.insert(setlist, gui.dropIdx, duplicateText)
-   elseif gui.dragDirection == 1 then
-      table.insert(setlist, gui.dropIdx + 1, dragEntry)
+      Msg("Inserted duplicate at idx " .. duplicateText.listIdx)
+      goto finalizeDrop
+   elseif dragEntry.type == "project" then
+      local newTabIdx = ListIdxToTabIdx(gui.dropIdx)
+      MoveProjTabToIdx(dragEntry.proj, newTabIdx)
+   end
+
+   if gui.dragDirection == 1 then
+      table.insert(setlist, gui.dropIdx, dragEntry)
       table.remove(setlist, gui.dragEntryListIdx)
    else
       table.remove(setlist, gui.dragEntryListIdx)
       table.insert(setlist, gui.dropIdx, dragEntry)
    end
 
-   if dragEntry.type == "project" then
-      local newTabIdx = ListIdxtoTabIdx(gui.dropIdx)
-      MoveProjTabToIdx(dragEntry.proj, newTabIdx)
-   end
-
+   ::finalizeDrop::
    UpdateTabAndListIdx()
-
-   gui.dragStartY = nil
-   gui.dropIdx = nil
-   gui.dragDirection = nil
-   gui.dragThreshReached = nil
-
    SaveSetlistToExtState()
+
+   PostDragCleanup()
+end
+
+function PostDragCleanup()
+   if not gui.leftClick then
+      gui.draggingEntry = false
+      gui.dragStartY = nil
+      gui.dropIdx = nil
+      gui.dragDirection = nil
+      gui.dragThreshReached = nil
+   end
 end
 
 function HandleEntryClick()
-   if not gui.draggingEntry and gui.leftClick and not gui.leftClickHandled and not gui.draggingScroll and gfx.mouse_y < gui.listH + gui.titleHeight and gfx.mouse_y > gui.titleHeight then
-      for i, entry in ipairs(setlist) do
-         local yStart = gui.titleHeight + (i - 1) * gui.lineHeight
-         if IsMouseInRect(0, yStart, gfx.w - gui.scrollW, gui.lineHeight) then
-            local idx = i + gui.scrollOffset
-            local entry = setlist[idx]
-            Msg("Handling left click on project entry...")
-
-            if entry.type == "text" then
-               Msg(reaper.JS_Mouse_GetState(16))
-               if reaper.JS_Mouse_GetState(16) == 16 then --alt is held
-                  table.remove(setlist, i)
-                  UpdateTabAndListIdx()
-               end
-            elseif entry.type == "project" then
-               Msg("  Clicked on project entry at listIdx [" .. idx .. "]")
-               reaper.SelectProjectInstance(entry.proj)
-            end
-
-            gui.leftClickHandled = true
-            break
-         end
-      end
+   if (gui.leftClickHandled and gui.rightClickHandled) or gui.draggingEntry or gui.draggingScroll then
+      return
    end
 
-   if gfx.mouse_cap == 2 and not gui.rightClickHandled and not gui.draggingScroll and gfx.mouse_y < gui.listH then -- Right-click
-      Msg("Right click registered")
-      for i, entry in ipairs(setlist) do
-         local yStart = gui.titleHeight + (i - 1) * gui.lineHeight
-         if IsMouseInRect(0, yStart, gfx.w - gui.scrollW, gui.lineHeight) then
-            if entry.type == "text" then
-               -- Show right-click menu
-               gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
-               local choice = gfx.showmenu("#-- " .. entry.name .. "||Rename|Color Entry|Duplicate|Delete Text Entry")
-               if choice == 2 then
-                  local ret, newName = reaper.GetUserInputs("Rename Text Note", 1, "Enter new label:",
-                     entry.name or "")
-                  if ret and newName and newName ~= "" then
-                     entry.name = newName
-                  end
-               elseif choice == 3 then
-                  local retval, color = reaper.GR_SelectColor(reaper.GetMainHwnd())
-                  if retval then
-                     local r, g, b = reaper.ColorFromNative(color)
-                     r, g, b = RgbaIntToFloat(r, g, b)
-                     Msg("Text Highlight set to color: " .. r .. "," .. g .. "," .. b)
-                     entry.highlight = { r, g, b, 0.4 }
-                  end
-               elseif choice == 4 then
-                  Msg("Duplicating Text Item: " .. entry.name)
-                  local duplicateText = CopyTable(entry)
-                  duplicateText.listIdx = entry.listIdx + 1
-                  table.insert(setlist, entry.listIdx + 1, duplicateText)
-               elseif choice == 5 then
-                  table.remove(setlist, i)
-                  UpdateTabAndListIdx()
-               end
-               gui.rightClickHandled = true
-            elseif entry.type == "project" then
-               -- Show right-click menu
-               gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
-               local choice = gfx.showmenu("#" ..
-                  entry.tabIdx .. ". " .. entry.name .. "||Queue Project||Replace Project|Close Project")
+   local entryUnderMouse, idxUnderMouse = FindEntryUnderMouseCursor(true)
 
-               if choice == 2 then -- move project to the tab that is gonna play next
-                  local nextProjTabIdx = GetProjTabIdx(currentProject) + 1
-                  MoveProjTabToIdx(entry.proj, nextProjTabIdx)
-                  UpdateListOrderFromOpenProjects(setlist)
-               elseif choice == 3 then
-                  ReplaceProjEntry(setlist, entry)
-               elseif choice == 4 then
-                  CloseProject(entry.proj)
-               end
-               gui.rightClickHandled = true
-               break
-            elseif entry.type == "missing" then
-               -- Show right-click menu
-               gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
-               local choice = gfx.showmenu("#MISSING||Find Project|Remove Project")
+   if not entryUnderMouse then return end
 
-               if choice == 2 then -- move project to the tab that is gonna play next
-                  ReplaceProjEntry(setlist, entry)
-               elseif choice == 3 then
-                  Msg("Removing [" .. entry.listIdx .. "]: " .. entry.path)
+   if gui.leftClick and not gui.leftClickHandled then -- Left-click
+      local now = reaper.time_precise()
+      local isDouble = gui.lastClickIdx == idxUnderMouse and (now - gui.lastClickTime) <= gui.doubleClickThreshold
+      gui.doubleClick = isDouble
+      gui.lastClickTime = now
+      gui.lastClickIdx = idxUnderMouse
 
-                  table.remove(setlist, entry.listIdx)
-                  UpdateTabAndListIdx(setlist)
-               end
-               gui.rightClickHandled = true
-               break
+
+      Msg("Handling single left click on entry at listIdx [" .. idxUnderMouse .. "]")
+
+      if entryUnderMouse.type == "text" then
+         if isDouble then
+            Msg("Handling double left click on entry at listIdx [" .. idxUnderMouse .. "]")
+
+            local ret, newName = reaper.GetUserInputs("Rename Text Note", 1, "Enter new label:",
+               entryUnderMouse.name or "")
+
+            if ret and newName and newName ~= "" then
+               entryUnderMouse.name = newName
+               gui.dragForbidden = false
             end
+         elseif reaper.JS_Mouse_GetState(16) == 16 then --alt is held
+            Msg("Deleting Text Entry: " .. entryUnderMouse.name)
+            table.remove(setlist, idxUnderMouse)
+            UpdateTabAndListIdx()
          end
+      elseif entryUnderMouse.type == "project" then
+         reaper.SelectProjectInstance(entryUnderMouse.proj)
+      end
+
+      --[[
+      local modifierPressed = reaper.JS_Mouse_GetState(4) == 4 or reaper.JS_Mouse_GetState(8) == 8 or
+          reaper.JS_Mouse_GetState(16) == 16 --ctrl, alt or shift is held ]]
+
+      gui.leftClickHandled = true
+   end
+
+
+   if gui.rightClick and not gui.rightClickHandled then -- Right-click
+      Msg("Handling right click on entry " .. entryUnderMouse.name .. " at index " .. idxUnderMouse)
+      if entryUnderMouse.type == "text" then
+         -- Show right-click menu
+         gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
+         local choice = gfx.showmenu("#-- " .. entryUnderMouse.name .. "||Rename|Color Entry|Duplicate|Delete Text Entry")
+         if choice == 2 then
+            local ret, newName = reaper.GetUserInputs("Rename Text Note", 1, "Enter new label:",
+               entryUnderMouse.name or "")
+            if ret and newName and newName ~= "" then
+               entryUnderMouse.name = newName
+            end
+         elseif choice == 3 then
+            local retval, color = reaper.GR_SelectColor(reaper.GetMainHwnd())
+            if retval then
+               local r, g, b = reaper.ColorFromNative(color)
+               r, g, b = RgbaIntToFloat(r, g, b)
+               Msg("Text Highlight set to color: " .. r .. "," .. g .. "," .. b)
+               entryUnderMouse.highlight = { r, g, b, 0.4 }
+            end
+         elseif choice == 4 then
+            Msg("Duplicating Text Item: " .. entryUnderMouse.name)
+            local duplicateText = CopyTable(entryUnderMouse)
+            duplicateText.listIdx = entryUnderMouse.listIdx + 1
+            table.insert(setlist, entryUnderMouse.listIdx + 1, duplicateText)
+         elseif choice == 5 then
+            table.remove(setlist, idxUnderMouse)
+            UpdateTabAndListIdx()
+         end
+         gui.rightClickHandled = true
+      elseif entryUnderMouse.type == "project" then
+         -- Show right-click menu
+         gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
+         local choice = gfx.showmenu("#" ..
+            entryUnderMouse.tabIdx .. ". " .. entryUnderMouse.name .. "||Queue Project||Replace Project|Close Project")
+
+         if choice == 2 then -- move project to the tab that is gonna play next
+            local nextProjTabIdx = GetProjTabIdx(currentProj) + 1
+            MoveProjTabToIdx(entryUnderMouse.proj, nextProjTabIdx)
+            UpdateListOrderFromOpenProjects(setlist)
+         elseif choice == 3 then
+            ReplaceProjEntry(setlist, entryUnderMouse)
+         elseif choice == 4 then
+            CloseProject(entryUnderMouse.proj)
+         end
+         gui.rightClickHandled = true
+      elseif entryUnderMouse.type == "missing" then
+         -- Show right-click menu
+         gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
+         local choice = gfx.showmenu("#MISSING||Find Project|Remove Project")
+
+         if choice == 2 then -- move project to the tab that is gonna play next
+            ReplaceProjEntry(setlist, entryUnderMouse)
+         elseif choice == 3 then
+            Msg("Removing [" .. entryUnderMouse.listIdx .. "]: " .. entryUnderMouse.path)
+
+            table.remove(setlist, entryUnderMouse.listIdx)
+            UpdateTabAndListIdx(setlist)
+         end
+         gui.rightClickHandled = true
       end
    end
 end
 
 function HandleMouseScroll()
    if gfx.mouse_wheel ~= 0 then
-      gui.scrollOffset = math.floor(gui.scrollOffset - gfx.mouse_wheel / 10) -- 1 notch
+      gui.scrollOffset = math.floor(gui.scrollOffset - gfx.mouse_wheel / 100)
       gfx.mouse_wheel = 0
    end
-   gui.scrollOffset = Clamp(gui.scrollOffset, 0, gui.maxScroll) --
+   gui.scrollOffset = Clamp(gui.scrollOffset, 0, gui.maxScroll)
 end
 
 function HandleScrollbarClick()
    local mouseOnScrollbar = IsMouseInRect(gfx.w - gui.scrollW, gui.scrollY, gui.scrollW, gui.scrollH)
 
-   if gui.leftClick and mouseOnScrollbar and not gui.draggingEntry then
+   if gui.leftClick and mouseOnScrollbar and not gui.draggingEntry and not gui.draggingScroll then
       gui.draggingScroll = true
+      gui.scrollBarGrabStart = gfx.mouse_y
+      gui.scrollBarGrabOffset = gfx.mouse_y - gui.scrollY
+   elseif not gui.leftClick then
+      gui.draggingScroll = false
+      gui.scrollBarGrabStart = 0
+      gui.scrollBarGrabOffset = 0
    end
 
-   if gui.draggingScroll then
+   if gui.draggingScroll and gui.scrollBarGrabStart ~= gfx.mouse_y then
       local scrollTrackHeight = gui.listH + gui.titleHeight
       local emptyScrollH = scrollTrackHeight - gui.scrollH
-      local newScrollY = Clamp(gfx.mouse_y - gui.scrollH / 2, 0, emptyScrollH)
+      local newScrollY = Clamp(gfx.mouse_y - gui.scrollBarGrabOffset, 0, emptyScrollH)
+
       gui.scrollOffset = math.floor((newScrollY / emptyScrollH) * gui.maxScroll)
-      gui.scrollOffset = Clamp(gui.scrollOffset, 0, gui.maxScroll) --
+      gui.scrollOffset = Clamp(gui.scrollOffset, 0, gui.maxScroll)
+      Msg("Scrolling to scrollOffset: " .. gui.scrollOffset)
    end
 end
 
@@ -1694,7 +1965,7 @@ function DrawListEntry(y, entry)
 
    if gui.draggingEntry and entry.listIdx == gui.dragEntryListIdx and gui.dragThreshReached then
       highlight = gui.dragHighlight
-   elseif entry.proj == currentProject and not gui.currProjDrawn then
+   elseif entry.proj == currentProj and not gui.currProjDrawn then
       highlight = gui.activeProjHighlight
       gui.currProjDrawn = true
       gui.isNextProj = true
@@ -1712,7 +1983,7 @@ function DrawListEntry(y, entry)
       gfx.rect(gui.leftBorder, y + 2, gfx.w - gui.scrollW, gui.lineHeight - 4)
    end
 
-   gfx.set(1, 1, 1, 0.1)
+   gfx.set(1, 1, 1, 0.3)
    gfx.line(gui.leftBorder, y + gui.lineHeight, gfx.w - gui.scrollW, y + gui.lineHeight - 1)
 
    -------------------
@@ -1726,8 +1997,8 @@ function DrawListEntry(y, entry)
       local displayIdx = tostring(displayTabIdx and entry.tabIdx or entry.listIdx)
       displayIdx = PadNumberStringWithZeroes(displayIdx, math.floor(math.log(openProjCount, 10) + 1)) .. ". "
 
-      --draw active project indicator
-      if entry.proj == currentProject then
+      --draw selected project indicator
+      if entry.proj == currentProj then
          gfx.set(1, 1, 1, 1)
          local radius = gui.leftBorder / 2
          gfx.circle(gui.leftBorder, y + (gui.lineHeight - radius * 2) / 2 + 1, radius, true, true)
@@ -1760,22 +2031,23 @@ function DrawListEntry(y, entry)
             displayIdx = ""
             gfx.set(table.unpack(gui.transportColors[playState]))
 
-            local triangleW = displayIdxWidth * 0.6 - 2
             local triangleH = gui.lineHeight * 0.5
-            local iconLRBorder = (displayIdxWidth - triangleW) / 2 - 5
-            local iconTopBorder = (gui.lineHeight - triangleH) / 2
+            local triangleW = Clamp(triangleH * 0.8, 0, displayIdxWidth * 0.8)
+
+            local iconLRPadding = (displayIdxWidth - triangleW) / 2 - 5
+            local iconTopPadding = (gui.lineHeight - triangleH) / 2
             gfx.triangle(
                gui.leftBorder + gui.entryIndent + triangleW, y + gui.lineHeight / 2,
-               gui.leftBorder + gui.entryIndent + iconLRBorder, y + iconTopBorder,
-               gui.leftBorder + gui.entryIndent + iconLRBorder, y + iconTopBorder + triangleH)
+               gui.leftBorder + gui.entryIndent + iconLRPadding, y + iconTopPadding,
+               gui.leftBorder + gui.entryIndent + iconLRPadding, y + iconTopPadding + triangleH)
          elseif playState == 5 then
             gfx.x = gfx.x + displayIdxWidth
             displayIdx = ""
 
-            local iconRadius = displayIdxWidth * 0.6 / 2
-            local iconBorder = (displayIdxWidth - iconRadius * 2) / 2
+            local iconRadius = Clamp(gui.lineHeight * 0.5 / 2 - 2, 0, displayIdxWidth / 2 * 0.8)
+
             gfx.set(table.unpack(gui.transportColors[playState]))
-            gfx.circle(gui.leftBorder + gui.entryIndent + iconRadius, y + iconBorder + iconRadius, iconRadius, true,
+            gfx.circle(gui.leftBorder + gui.entryIndent + iconRadius, y + gui.lineHeight / 2, iconRadius, true,
                true)
          end
       end
@@ -1822,7 +2094,7 @@ function DisplaySetlist()
    -- Draw Title
    gfx.x = 0
    gfx.y = 0
-   gfx.setfont(1, gui.font, gui.entryTextSize + 2)
+   gfx.setfont(1, gui.font, gui.titleTextSize)
    gfx.set(table.unpack(gui.nextProjHighlight))
    gfx.rect(3, 3, gfx.w - 6, gui.titleHeight - 12)
    gfx.set(table.unpack(gui.projectEntryColor))
@@ -1848,12 +2120,12 @@ function DisplaySetlist()
    local time = FormatTimeMMSS(setlistTotalTime)
    local str = "Total Setlist Time: " .. time
 
-   gfx.setfont(1, gui.font, gui.projLenTextSize)
+   gfx.setfont(1, gui.font, gui.projLenTextSize - gui.zoomLevel / 2)
 
    local strW, strH = gfx.measurestr(str)
 
-   gfx.x = gfx.w - gui.scrollW - strW - gui.entryIndent * 1.5
-   gfx.y = gfx.h - gui.ctrlPanelSize - strH - gui.entryIndent / 2
+   gfx.x = gfx.w - gui.entryIndent - strW
+   gfx.y = gfx.h - gui.ctrlPanelSize + gui.entryIndent * 0.7
    gfx.drawstr(str)
 
    -- draw ctrlPanel divider
@@ -1884,24 +2156,7 @@ function DisplaySetlist()
    end
 end
 
-function UpdateZoom(direction)
-   gui.entryTextSize = gui.entryTextSize + direction
-   gui.linePadding = gui.linePadding + direction * 2
-   gui.projLenTextSize = gui.projLenTextSize + direction * 0.5
-
-
-   gfx.setfont(1, gui.font, gui.entryTextSize) -- Set the font for the list (index 1, size 16)
-   gui.lineHeight = gfx.texth + gui.linePadding
-end
-
 function InitWnd()
-   gfx.init(scriptName, gui.wndWidth, gui.wndHeight, 0, 200, 200) -- title, width, height, dockstate, x, y
-   gfx.setfont(1, gui.font, gui.entryTextSize)                    -- Set the font for the list (index 1, size 16)
-   gui.lineHeight = gfx.texth + gui.linePadding                   -- Get text height for spacing (with some padding)
-   gui.minHeight = gui.ctrlPanelSize + gui.titleHeight + gui.lineHeight * 3
-   gui.minWidth = gui.buttownW * 3 + gui.entryIndent + 5
-
-
    local state = reaper.JS_Mouse_GetState(4) -- check if ctrl key is pressed
    if state == 4 then
       Msg("Script started with ctrl pressed")
@@ -1911,6 +2166,13 @@ function InitWnd()
    if state ~= 4 then
       LoadWndStateFromExt()
    end
+
+   gfx.init(scriptName, gui.ww, gui.wh, gui.dockState, gui.wx, gui.wy) -- title, width, height, dockstate, x, y
+   UpdateZoom(0, gui.zoomLevel)
+   gfx.setfont(1, gui.font, gui.entryTextSize)                         -- Set the font for the list (index 1, size 16)
+   gui.lineHeight = gfx.texth + gui.linePadding
+   gui.minHeight = gui.ctrlPanelSize + gui.titleHeight + gui.lineHeight * 3
+   gui.minWidth = gui.buttownW * 3 + gui.entryIndent + 5
 end
 
 --------------------------
@@ -1919,11 +2181,11 @@ end
 
 function Main()
    if gfx.getchar() < 0 or terminate then
-      SaveWndStateToExt()
       gfx.quit()
       Msg("Terminating " .. scriptName)
    else
-      currentProject = reaper.EnumProjects(-1)
+      lastProject = currentProj
+      currentProj = reaper.EnumProjects(-1)
 
       CountOpenProjects()
 
@@ -1942,28 +2204,63 @@ function Main()
          end
       end
 
-
-      gui.listH = gfx.h - gui.ctrlPanelSize - gui.titleHeight
-      gui.numVisibleEntries = math.floor(gui.listH / gui.lineHeight)
-      if #setlist <= gui.numVisibleEntries then
-         gui.scrollOffset = 0
+      gui.prevRightClick = gui.rightClick
+      gui.rightClick = gfx.mouse_cap & 2 > 0 or false
+      if gui.rightClick and not gui.prevRightClick then
+         gui.lastClickDownPos = { ["x"] = gfx.mouse_x, ["y"] = gfx.mouse_y }
       end
 
-      gui.maxScroll = math.max(0, #setlist - gui.numVisibleEntries)
+      gui.prevLeftClick = gui.leftClick
       gui.leftClick = gfx.mouse_cap & 1 > 0 or false
-      gui.rightClick = gfx.mouse_cap & 2 > 0 or false
+      if gui.leftClick and not gui.prevLeftClick then
+         Msg("Left click detected at position: " .. gfx.mouse_x .. "," .. gfx.mouse_y)
+         gui.lastClickDownPos = { ["x"] = gfx.mouse_x, ["y"] = gfx.mouse_y }
+      end
+
+
+
       if gfx.mouse_cap == 0 then
          gui.draggingScroll = false
          gui.leftClickHandled = false
          gui.rightClickHandled = false
       end
 
+
+      gui.listH = gfx.h - gui.ctrlPanelSize - gui.titleHeight
+      gui.numVisibleEntries = math.floor(gui.listH / gui.lineHeight)
+      gui.maxScroll = math.max(0, #setlist - gui.numVisibleEntries)
+
+      if #setlist <= gui.numVisibleEntries and gui.scrollOffset ~= 0 then
+         gui.scrollOffset = 0
+         Msg("Scroll set to 0 because all entries are visible.")
+      elseif lastProject ~= currentProj or not projectSwitchHandled then
+         Msg("Project switch detected.")
+         projectSwitchHandled = false
+         if gui.leftClick or gui.draggingEntry then goto delayProjSwitchHandling end
+
+         if (not IsProjVisibleInList(currentProj) or not IsProjVisibleInList(GetProjTabIdx(currentProj) + 1)) and not projectSwitchHandled then
+            gui.scrollOffset = TabIdxToListIdx(GetProjTabIdx(currentProj) + 1) - math.floor(gui.numVisibleEntries)
+
+            -- Make sure we prioritize showing the current project if both current and next are not visible
+            local currProjListIdx = TabIdxToListIdx(GetProjTabIdx(currentProj))
+            if currProjListIdx < gui.scrollOffset + 1 then
+               gui.scrollOffset = currProjListIdx - 1
+            end
+
+            gui.scrollOffset = Clamp(gui.scrollOffset, 0, gui.maxScroll)
+
+            Msg("Scrolling to make active entry visible at scrollOffset: " .. gui.scrollOffset)
+         end
+         projectSwitchHandled = true
+      end
+      ::delayProjSwitchHandling::
+
       HandleScrollbarClick()
       HandleMouseScroll()
       DisplaySetlist()
       DrawScrollbar()
 
-      gfx.setfont(1, gui.font, gui.buttonTextSize) -- Set the font for the list (index 1, size 16)
+      gfx.setfont(1, gui.font, gui.buttonTextSize) -- Set the font for the buttons
       HandleSaveListButton()
       HandleLoadListButton()
       HandleInsertTextButton()
@@ -2027,6 +2324,7 @@ Init()
 reaper.atexit(
    function()
       if not terminate then
+         SaveWndStateToExt()
          SaveSetlistToExtState()
       end
    end
