@@ -22,7 +22,7 @@ local function GetRegionInfoByName(keyword, exact)
       local rv, isRgn, pos, rgnEnd, name, idxNumber, idx = reaper.EnumProjectMarkers(i)
 
       if isRgn then
-         local isMatch = name == keyword and exact or name:find(keyword)
+         local isMatch = name == keyword and exact or name:lower():find(keyword:lower())
 
          if isMatch then
             return pos, rgnEnd, name, idxNumber, idx
@@ -34,6 +34,8 @@ end
 
 local function IsPlayheadInRegion(rgnName)
    local pos, rgnEnd = GetRegionInfoByName(rgnName, true)
+
+   if not pos then return false end
 
    local playPos = reaper.GetPlayPosition()
 

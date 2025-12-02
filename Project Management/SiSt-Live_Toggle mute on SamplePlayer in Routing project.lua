@@ -54,6 +54,7 @@ end
 function Main()
    local _, _, _, _, _, _, val, _ = reaper.get_action_context()
 
+
    local toggleState
    if val == 127 then
       toggleState = SetToggleState(1)

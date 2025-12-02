@@ -17,6 +17,7 @@ local trackTemplates = {
    dcaAndMonitoring = { path = templatePath .. "/IVS_DCA and Monitoring.RTrackTemplate", trCount = 29, firstTr = "AUTO DCAs", lastTr = "__tizi" },
    oldFXauto = { path = templatePath .. "/IVS_oldFXAuto.RTrackTemplate", trCount = 3, firstTr = "auto tap delay", lastTr = "auto doubler" },
    newFXauto = { path = templatePath .. "/IVS_newFXAuto.RTrackTemplate", trCount = 6, firstTr = "auto delay sends BV (via Custom Control)", lastTr = "auto slap" },
+   newAutoMonitoringSelf = { path = templatePath .. "/IVS_newAutoMonitoringSelf.RTrackTemplate", trCount = 5, firstTr = "_claudio", lastTr = "_tizi" },
    FXAuto = { path = templatePath .. "/IVS_FXAuto.RTrackTemplate", trCount = 10, firstTr = "AUTO FX", lastTr = "auto doubler" },
 }
 local undoString = "SiSt-Live_Workflows"
@@ -226,10 +227,15 @@ function UpdateTracksFromTemplateKeepingEnvelopes(template)
    local addNextTrToSel = reaper.NamedCommandLookup("_XENAKIOS_SELNEXTTRACKKEEP")
 
    local ogTracks = {}
+   local lastOgTrackFolderDepth = 0
    ogTracks[0] = reaper.GetSelectedTrack(0, 0)
    for i = 1, template.trCount - 1 do
       reaper.Main_OnCommand(addNextTrToSel, 0)
       ogTracks[i] = reaper.GetSelectedTrack(0, i)
+
+      if i == template.trCount - 1 then
+         lastOgTrackFolderDepth = reaper.GetMediaTrackInfo_Value(ogTracks[i], "I_FOLDERDEPTH")
+      end
    end
 
    reaper.Main_OnCommand(42406, 0) --Razor edit: Clear all areas
@@ -272,8 +278,14 @@ function UpdateTracksFromTemplateKeepingEnvelopes(template)
          end
       end
 
+      if i == template.trCount - 1 then
+         reaper.SetMediaTrackInfo_Value(currTrack, "I_FOLDERDEPTH", lastOgTrackFolderDepth)
+      end
+
       reaper.Main_OnCommand(40285, 0) --Track: Go to next track
    end
+
+
 
    reaper.Main_OnCommand(40697, 0) -- Remove items/tracks/envelope points (depending on focus)
 
@@ -454,7 +466,7 @@ reaper.PreventUIRefresh(1)
 --PasteTrackWithRoutingFromProj("Song Template", "16ch guide", 1)
 --ReplaceInTrackName("dFX", "DCA 16")
 --AddNewFXToProj()
---UpdateTracksFromTemplateKeepingEnvelopes(trackTemplates.oldFXauto)
+--UpdateTracksFromTemplateKeepingEnvelopes(trackTemplates.newAutoMonitoringSelf)
 --UpdateTracksFromTemplateKeepingItems(trackTemplates.FXmute) -- before using, store template in slot 2
 --UpdateTracksFromTemplate(trackTemplates.newFXauto)
 --ReinsertAllTimecodeGenerators()

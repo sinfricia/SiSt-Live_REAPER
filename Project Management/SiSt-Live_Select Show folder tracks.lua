@@ -16,11 +16,11 @@ for i = 0, trackCount - 1 do
       -- Check if the track is named "Show" and is a folder track
       local _, trackName = reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "", false)
       local isFolder = reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") == 1
-      
+
       local isShowFolder = trackName:find("SHOW") or trackName:find("Show")
 
       if isFolder and isShowFolder then
-         reaper.SetTrackSelected(track, 1)
+         reaper.SetTrackSelected(track, true)
       end
    end
 end

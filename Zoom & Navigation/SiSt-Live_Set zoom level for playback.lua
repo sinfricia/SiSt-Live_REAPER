@@ -12,7 +12,7 @@ for i = 0, tr_count - 1 do
    r.SetMediaTrackInfo_Value(tr, "I_HEIGHTOVERRIDE", v_zoom_value)
 end
 
-r.TrackList_AdjustWindows(0)
+r.TrackList_AdjustWindows(false)
 r.UpdateArrange()
 
 
