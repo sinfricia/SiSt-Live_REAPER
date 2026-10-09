@@ -448,30 +448,24 @@ function CheckIfFileInRelativeDir(loadPath, projPath)
    end
 end
 
-function SerializeTable(tbl, indent)
-   indent = indent or 0
-   local indentStr = string.rep("  ", indent)
-   local nextIndentStr = string.rep("  ", indent + 1)
-
+function SerializeTable(tbl)
    if type(tbl) ~= "table" then
       if type(tbl) == "string" then
-         return string.format("%q", tbl) -- properly escape strings
+         return string.format("%q", tbl)
       elseif type(tbl) == "number" or type(tbl) == "boolean" then
          return tostring(tbl)
       elseif tbl == nil then
          return "nil"
       else
-         return string.format("%q", tostring(tbl)) -- fallback for userdata, functions, etc.
+         return string.format("%q", tostring(tbl))
       end
    end
 
    local parts = {}
-   table.insert(parts, "{")
-
    local arrayPart = {}
    local hashPart = {}
 
-   -- Separate array part from hash part
+   -- Detect array portion
    local maxIndex = 0
    for k, _ in pairs(tbl) do
       if type(k) == "number" and k > 0 and k == math.floor(k) then
@@ -479,7 +473,6 @@ function SerializeTable(tbl, indent)
       end
    end
 
-   -- Check if array part is contiguous
    local isArray = true
    for i = 1, maxIndex do
       if tbl[i] == nil then
@@ -491,7 +484,7 @@ function SerializeTable(tbl, indent)
    -- Serialize array elements
    if isArray and maxIndex > 0 then
       for i = 1, maxIndex do
-         table.insert(arrayPart, nextIndentStr .. SerializeTable(tbl[i], indent + 1))
+         table.insert(arrayPart, SerializeTable(tbl[i]))
       end
    end
 
@@ -505,7 +498,7 @@ function SerializeTable(tbl, indent)
       if not skipKey then
          local keyStr
          if type(k) == "string" and k:match("^[%a_][%w_]*$") then
-            keyStr = k -- valid identifier, no quotes needed
+            keyStr = k
          elseif type(k) == "string" then
             keyStr = "[" .. string.format("%q", k) .. "]"
          elseif type(k) == "number" then
@@ -514,24 +507,21 @@ function SerializeTable(tbl, indent)
             keyStr = "[" .. string.format("%q", tostring(k)) .. "]"
          end
 
-         table.insert(hashPart, nextIndentStr .. keyStr .. " = " .. SerializeTable(v, indent + 1))
+         table.insert(hashPart, keyStr .. "=" .. SerializeTable(v))
       end
    end
 
-   -- Combine array and hash parts
-   for _, v in ipairs(arrayPart) do
-      table.insert(parts, v .. ",")
+   -- Combine
+   local result = "{"
+   for i, v in ipairs(arrayPart) do
+      result = result .. v .. ","
    end
-   for _, v in ipairs(hashPart) do
-      table.insert(parts, v .. ",")
+   for i, v in ipairs(hashPart) do
+      result = result .. v .. ","
    end
+   result = result .. "}"
 
-   if #parts > 1 then
-      table.insert(parts, indentStr .. "}")
-      return table.concat(parts, "\n")
-   else
-      return "{}"
-   end
+   return result
 end
 
 --------------------------
@@ -558,6 +548,7 @@ function LoadWndStateFromExt()
    local wndStateStr = reaper.GetExtState(ExtStateSection, ExtKeyWndState)
 
    if not wndStateStr or wndStateStr == "{" then
+      Msg("No WndState in ExtState. Loading defaults.")
       return
    end
 
@@ -1554,6 +1545,10 @@ function IsProjVisibleInList(proj) --proj can be either a ReaProject* or a numbe
    else
       return false
    end
+end
+
+function IsActiveProjAtTopOfList()
+
 end
 
 function HandleSaveListButton()
