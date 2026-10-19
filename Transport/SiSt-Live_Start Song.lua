@@ -6,7 +6,7 @@ function Msg(input)
 end
 
 local COMMANDS = {
-   40020,                                                                    --Time selection: Remove (unselect) time selection and loop points
+   reaper.NamedCommandLookup("_RScd58ac14d07d74d2993f091b8c550af123b03319"), --Script: SiSt-Live_Clear time selection and loop points.lua
    reaper.NamedCommandLookup("_RS033cb8751211a98df38410989a57f220990c758d"), --Script: SiSt_Move edit cursor to project start respecting time 0 and start marker.lua
    reaper.NamedCommandLookup("_RSe9dc92b9cc47367a8dec0df4b41110e3e0c60ca2"), --Script: SiSt-Live_Set zoom level for playback.lua
    40340,                                                                    -- Unsolo all tracks

@@ -65,6 +65,16 @@ function FindTrackByName(project, name)
    return nil -- Not found
 end
 
+
+--From Mespotine_Render_Play_Sound_When_Rendering_Finishes.lua
+function IsReaperRendering()
+  local A,B=reaper.EnumProjects(0x40000000,"")  
+  if A~=nil then 
+    return true, reaper.GetPlayPositionEx(A), reaper.GetProjectLength(A), A
+  else return false 
+  end
+end
+
 function InitializePlayingProjTable(proj)
    local playingProj = {}
    playingProj.proj = proj
@@ -429,6 +439,7 @@ end
 function Main()
    UpdatePlayingProjects()
 
+   if IsReaperRendering() then goto skip end
    for i = 1, #playingProjects do
       ProcessLoop(playingProjects[i])
    end
@@ -443,7 +454,7 @@ function Main()
          Msg("isLastPass: " .. tostring(playingProj.loopCount == playingProj.numLoops))
       end
    end ]]
-
+    ::skip::
    r.defer(Main)
 end
 

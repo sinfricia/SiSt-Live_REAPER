@@ -82,8 +82,8 @@ function ApplyActionToAllProjects(input)
                     reaper.ShowMessageBox("Invalid command name entered.", "Error", 0)
                     return
                 end
-                table.insert(actions, actionID)
             end
+            table.insert(actions, actionID) -- numeric IDs AND resolved command names
         end
     else
         local actionID = tonumber(input) -- Try to interpret input as a numeric ID
@@ -94,8 +94,8 @@ function ApplyActionToAllProjects(input)
                 reaper.ShowMessageBox("Invalid command name entered.", "Error", 0)
                 return
             end
-            table.insert(actions, actionID)
         end
+        table.insert(actions, actionID) -- numeric ID OR resolved command name
     end
 
 
@@ -112,6 +112,7 @@ end
 GetAllOpenProjects()
 
 local ACTIONS_TO_PERFORM = {
+    "_RScd58ac14d07d74d2993f091b8c550af123b03319", -- Script: SiSt-Live_Clear time selection and loop points.lua
     1016,                                          -- stop
     40339,                                         -- unmute all tracks
     40340,                                         -- unsolo all tracks
@@ -119,11 +120,10 @@ local ACTIONS_TO_PERFORM = {
     "_RS89c077bb64df764fc3d0c549de8588223d04cf01", -- Script: SiSt-Live_Select all tracks in REC folder.lua
     "_XENAKIOS_SELTRAX_RECARMED",
     40297,                                         -- unselect all tracks
-    40020,                                         -- Time selection: Remove (unselect) time selection and loop points
     "_SWS_UNSETREPEAT",
     "_RSe9dc92b9cc47367a8dec0df4b41110e3e0c60ca2", -- Script: SiSt-Live_Set zoom level for playback.lua
     "_RSb432af972108e3f8f68688c31f67262bfc187262", -- Script: SiSt-Live_Remove export tracks from project.lua
-
+    "_RS75226e524896b76bd82d7776d696a5a6165bcb0c", -- Script: SiSt-Live_Mute hardware out 1&2 for all tracks in project.lua
 
 }
 
@@ -131,7 +131,7 @@ ApplyActionToAllProjects(ACTIONS_TO_PERFORM)
 
 
 
--- HANDLE ROUTING PROKECT
+-- HANDLE ROUTING PROJECT
 local rout_proj = FindProjectByName("ROUTING")
 if not rout_proj then
     reaper.ShowMessageBox("There seems to be no open Routing Project!", "WARNING!", 0)

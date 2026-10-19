@@ -61,7 +61,9 @@ function Main()
    for _, tr in ipairs(recTracks) do
       local currNumLanes = reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES")
       if currNumLanes ~= numLanes then
-         reaper.MB("Not all tracks have the same number of lanes. Please check before running the script again.", "Error",
+         local _, trName = reaper.GetTrackName(tr)
+         local laneStr = trName .. ": " .. tostring(currNumLanes) .. " vs. " .. tostring(numLanes)
+         reaper.MB("Not all tracks have the same number of lanes. Please check before running the script again.\n" .. laneStr, "Error",
             0)
          return
       end

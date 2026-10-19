@@ -36,15 +36,17 @@ function SetToggleState(set)
    local toggleState
    if set then
       toggleState = set
+   else
+      toggleState = 0
    end
    local _, _, secID, cmdID = reaper.get_action_context()
-   local prevToggleState = reaper.GetToggleCommandState(cmdID)
+   --local prevToggleState = reaper.GetToggleCommandState(cmdID)
 
-   if prevToggleState ~= 1 and prevToggleState ~= 0 then
-      toggleState = 0
-   else
-      toggleState = prevToggleState ~ 1
-   end
+   --if prevToggleState ~= 1 and prevToggleState ~= 0 then
+   --   toggleState = 0
+   --else
+   --   toggleState = prevToggleState ~ 1
+   --end
 
    reaper.SetToggleCommandState(secID, cmdID, toggleState)
    reaper.RefreshToolbar2(secID, cmdID)
@@ -54,14 +56,14 @@ end
 function Main()
    local _, _, _, _, _, _, val, _ = reaper.get_action_context()
 
-
    local toggleState
    if val == 127 then
       toggleState = SetToggleState(1)
    elseif val == 0 then
       toggleState = SetToggleState(0)
    else --not triggered by Midi
-      toggleState = SetToggleState()
+      --toggleState = SetToggleState()
+      reaper.ShowMessageBox("Script not triggered by MIDI CC message or no value provided.", "Error", 0)
    end
 
    local project_keyword = "ROUTING"    -- Keyword to find the project
@@ -70,7 +72,6 @@ function Main()
 
    if project then
       reaper.Undo_BeginBlock()
-
       SetMuteTracksWithName(project, track_keyword, toggleState)
 
       reaper.Undo_EndBlock("Toggle mute on SamplePlayer in Routing project", -1)

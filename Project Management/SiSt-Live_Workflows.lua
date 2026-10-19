@@ -19,6 +19,7 @@ local trackTemplates = {
    newFXauto = { path = templatePath .. "/IVS_newFXAuto.RTrackTemplate", trCount = 6, firstTr = "auto delay sends BV (via Custom Control)", lastTr = "auto slap" },
    newAutoMonitoringSelf = { path = templatePath .. "/IVS_newAutoMonitoringSelf.RTrackTemplate", trCount = 5, firstTr = "_claudio", lastTr = "_tizi" },
    FXAuto = { path = templatePath .. "/IVS_FXAuto.RTrackTemplate", trCount = 10, firstTr = "AUTO FX", lastTr = "auto doubler" },
+   autoSpecialSends = { path = templatePath .. "/IVS_autoSpecialSends.RTrackTemplate", trCount = 1, firstTr = "auto special sends", lastTr = "auto special sends" },
 }
 local undoString = "SiSt-Live_Workflows"
 
