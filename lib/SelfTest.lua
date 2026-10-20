@@ -25,6 +25,7 @@ THE PIECES
               entry "name=path|name=path", paths relative to the REAPER resource folder. Self-healing: a test
               list that no longer exists is reported and removed; the package registers itself again on its
               next run.
+  Scenarios   SelfTest.run_scenario(scenario): live tests of real workflows (act, wait, check), see below.
 
 WRITING TESTS
   local SelfTest = require("SelfTest")
@@ -312,10 +313,10 @@ local function row_line(r)
   return ("  %s  %s%s"):format(tag, r.kind == "live" and "live: " or "", r.name)
 end
 
-local function write_report(lines)
+local function write_report(lines, file_name)
   local dir = reaper.GetResourcePath() .. sep() .. "Data" .. sep() .. SelfTest.REPORT_DIR
   reaper.RecursiveCreateDirectory(dir, 0)
-  local path = dir .. sep() .. SelfTest.REPORT_FILE
+  local path = dir .. sep() .. (file_name or SelfTest.REPORT_FILE)
   local f = io.open(path, "wb")
   if not f then return nil end
   f:write(table.concat(lines, "\n"), "\n")
@@ -324,13 +325,13 @@ local function write_report(lines)
 end
 
 --- Runs suites. Console: one line per component, every FAIL / WARN line and the diagnostics. Report file:
---- everything, incl. every PASS line. Returns passed, failed, warnings.
-function SelfTest.run_suites(suites, title)
+--- everything, incl. every PASS line. opts.report_file: other report file name (same folder).
+--- Returns passed, failed, warnings.
+function SelfTest.run_suites(suites, title, opts)
   local console, full = {}, {}
   local function both(line) console[#console + 1] = line; full[#full + 1] = line end
-  local machine = os.getenv("COMPUTERNAME") or os.getenv("HOSTNAME") or "?"
   both(("=== %s ==="):format(title or "Self-test"))
-  both(("%s | REAPER %s | %s | %s"):format(os.date("%Y-%m-%d %H:%M:%S"), reaper.GetAppVersion(), _VERSION, machine))
+  both(("%s | REAPER %s | %s"):format(os.date("%Y-%m-%d %H:%M:%S"), reaper.GetAppVersion(), _VERSION))
 
   local total_p, total_f, total_w = 0, 0, 0
   for _, suite in ipairs(suites) do
@@ -361,7 +362,7 @@ function SelfTest.run_suites(suites, title)
 
   both("")
   both(("Result: %d passed, %d failed, %d warning%s"):format(total_p, total_f, total_w, total_w == 1 and "" or "s"))
-  local path = write_report(full)
+  local path = write_report(full, opts and opts.report_file)
   console[#console + 1] = path and ("Full report: " .. path) or "Full report could not be written."
   reaper.ShowConsoleMsg(table.concat(console, "\n") .. "\n")
   return total_p, total_f, total_w
@@ -392,6 +393,103 @@ function SelfTest.run_registered()
     diagnostics = function() return overview end,
   } } })
   return SelfTest.run_suites(suites, "All registered self-tests")
+end
+
+-- Scenarios (live tests) ---------------------------------------------------------------------
+
+--[[
+A scenario tests a real workflow in the running REAPER: each step DOES something (runs an action), waits until
+REAPER has reacted (playback, project switches take a moment) and then checks the result. Waiting is deferred, so
+REAPER keeps running. Scenarios change REAPER's state: only run them on test projects, never in a show.
+
+  scenario = {
+    name        = "SiSt-Live live test",
+    check_ready = function() return ok, reason end,      -- optional: refuse to start (reason goes to the console)
+    steps = {
+      { name = "Switch to show mode",
+        run   = function() ... end,                         -- acts; an error here stops the scenario
+        wait  = 2,                                          -- seconds before check
+        check = function() return { { name, ok }, ... } end,
+        required = true },                                  -- optional: a failed check stops the scenario
+      ...
+    },
+    cleanup     = function() ... end,                       -- optional: always runs at the end; may return
+                                                            -- { { name, ok } } rows for the report
+  }
+
+A step whose run fails stops the scenario (later steps build on it); the remaining steps are reported as
+skipped. A failed check only stops it if the step is `required` (e.g. preparing the test projects). The result is a normal report (one component per step).
+]]
+
+--- Runs a scenario (see above). opts: passed on to run_suites (e.g. report_file). Returns false if check_ready
+--- refused, true once started (the report comes when the last step is done).
+function SelfTest.run_scenario(scenario, title, opts)
+  title = title or scenario.name
+  if scenario.check_ready then
+    local ok, ready, reason = xpcall(scenario.check_ready, debug.traceback)
+    if not ok or not ready then
+      reaper.ShowConsoleMsg(("=== %s ===\nNot started: %s\n"):format(title, tostring(ok and reason or ready)))
+      return false
+    end
+  end
+
+  local results, index, current, wake = {}, 0, nil, 0
+  local function add(name, rows) results[#results + 1] = { name = name, rows = rows } end
+
+  local function finish()
+    if scenario.cleanup then
+      local ok, rows = xpcall(scenario.cleanup, debug.traceback)
+      if not ok then
+        add("Cleanup", { { name = "cleanup crashed: " .. tostring(rows), ok = false } })
+      elseif type(rows) == "table" and #rows > 0 then
+        add("Cleanup", rows)
+      end
+    end
+    local components = {}
+    for _, r in ipairs(results) do
+      local rows = r.rows
+      components[#components + 1] = { name = r.name, live_check = function() return rows end }
+    end
+    SelfTest.run_suites({ { name = scenario.name, components = components } }, title, opts)
+  end
+
+  -- Reports the steps after `last` as skipped and finishes.
+  local function stop_after(last)
+    for j = last + 1, #scenario.steps do
+      add(scenario.steps[j].name, { SelfTest.warning("skipped: an earlier step failed") })
+    end
+    finish()
+  end
+
+  local next_step
+  local function wait_and_check()
+    if reaper.time_precise() < wake then return reaper.defer(wait_and_check) end
+    local ok, rows = xpcall(current.check or function() return {} end, debug.traceback)
+    if not ok or type(rows) ~= "table" then rows = { { name = "check crashed: " .. tostring(rows), ok = false } } end
+    add(current.name, rows)
+    if current.required then
+      for _, r in ipairs(rows) do
+        if not r.ok and not r.warn then return stop_after(index) end
+      end
+    end
+    next_step()
+  end
+
+  next_step = function()
+    index = index + 1
+    current = scenario.steps[index]
+    if not current then return finish() end
+    local ok, err = xpcall(current.run, debug.traceback)
+    if not ok then
+      add(current.name, { { name = "could not run: " .. tostring(err), ok = false } })
+      return stop_after(index)
+    end
+    wake = reaper.time_precise() + (current.wait or 0)
+    reaper.defer(wait_and_check)
+  end
+
+  next_step()
+  return true
 end
 
 -- Self test ---------------------------------------------------------------------------------------
