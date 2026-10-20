@@ -223,15 +223,18 @@ function Checks.check(scripts, refs, known, file_exists)
   return problems, unused_missing
 end
 
---- Turns a report into { name, ok } rows: one failed row per problem, then one summary row.
+--- Turns a report into { name, ok } rows: one failed row per problem (so the FAIL count is the number of
+--- problems), or a single passed row when there are none. The number of checked references is not a result:
+--- show report.checked as information (diagnostics) where needed.
 function Checks.results(report, title)
   local rows = {}
   for _, f in ipairs(report.unreadable or {}) do rows[#rows + 1] = { name = "could not read " .. f, ok = false } end
   for _, p in ipairs(report.problems) do
     rows[#rows + 1] = { name = ("%s: %s %s"):format(p.where, p.id, p.problem), ok = false }
   end
-  rows[#rows + 1] = { name = ("%s: %d references checked, %d broken"):format(title, report.checked, #report.problems),
-    ok = #report.problems == 0 and #(report.unreadable or {}) == 0 }
+  if #rows == 0 then
+    rows[1] = { name = ("%s: %d references checked, none broken"):format(title, report.checked), ok = true }
+  end
   return rows
 end
 
@@ -370,7 +373,13 @@ function Checks.self_test()
   check("check: unused script with missing file listed separately", #unused == 1 and unused[1].path == "SiSt-Live/Unused.lua")
 
   local rows = Checks.results({ problems = problems, checked = #refs, unreadable = {} }, "Config")
-  check("results: one row per problem plus a failed summary", #rows == #problems + 1 and not rows[#rows].ok)
+  local all_failed = true
+  for _, r in ipairs(rows) do all_failed = all_failed and not r.ok end
+  check("results: exactly one failed row per problem", #rows == #problems and all_failed)
+  local clean = Checks.results({ problems = {}, checked = 7, unreadable = {} }, "Config")
+  check("results: no problems gives one passed row", #clean == 1 and clean[1].ok)
+  local unread = Checks.results({ problems = {}, checked = 0, unreadable = { "x.ini" } }, "Config")
+  check("results: an unreadable file is a failure", #unread == 1 and not unread[1].ok)
   check("is_absolute", Checks.is_absolute("C:\\x.lua") and Checks.is_absolute("/x.lua") and not Checks.is_absolute("a/x.lua"))
   check("empty files give nothing", #select(2, Checks.parse_kb(nil)) == 0 and #Checks.parse_menu(nil) == 0)
   return results

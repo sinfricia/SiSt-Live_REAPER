@@ -83,9 +83,9 @@ local components = {
     self_test = ActionReferenceChecks.self_test,
     live_check = function() return ActionReferenceChecks.results(config_references(), "Config") end,
     diagnostics = function()
-      local rows = {}
+      local rows = { { "references checked", config_references().checked } }
       for _, s in ipairs(config_references().unused_missing) do rows[#rows + 1] = { "unused, file missing", s.path } end
-      if #rows == 0 then rows[1] = { "unused, file missing", "(none)" } end
+      if #rows == 1 then rows[2] = { "unused, file missing", "(none)" } end
       return rows
     end },
 }
