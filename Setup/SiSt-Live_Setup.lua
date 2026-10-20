@@ -66,6 +66,8 @@
 --   [nomain] ../lib/SiSt-Live_SettingsDialog.lua
 --   [nomain] ../lib/SiSt-Live_ToolbarSource.lua
 --   [nomain] ../lib/ActionReferenceChecks.lua
+--   [nomain] ../lib/SelfTest.lua
+--   [nomain] ../lib/SiSt-Live_Tests.lua
 --   [nomain] ../lib/ModeEffects/SiSt-Live_ModeEffect_Theme.lua
 --   [nomain] ../lib/ModeEffects/SiSt-Live_ModeEffect_Screenset.lua
 --   [nomain] ../lib/ModeEffects/SiSt-Live_ModeEffect_Fullscreen.lua
@@ -243,11 +245,20 @@ local function main()
     reaper.ShowConsoleMsg(table.concat(out, "\n") .. "\n")
   end
 
+  -- Register SiSt-Live's test list for "Run all self-tests" (optional: a missing SelfTest library is reported above)
+  local has_test, SelfTest = pcall(require, "SelfTest")
+  if has_test then
+    SelfTest.register("SiSt-Live", script_dir .. sep .. ".." .. sep .. "lib" .. sep .. "SiSt-Live_Tests.lua")
+  end
+
   reaper.MB(Setup.report(version, files, missing), "SiSt-Live Setup", 0)
 end
 
-if rawget(_G, "SISTLIVE_SETUP_TEST_ONLY") then
-  SISTLIVE_SETUP = Setup -- headless tests: no REAPER calls
+-- Test-only switch (see lib/SelfTest.lua): hand over the tests instead of running the setup
+if rawget(_G, "SELFTEST_COLLECT") then
+  local own_path = debug.getinfo(1, "S").source:match("^@(.*)$")
+  Setup.own_header = own_path and read_file(own_path) or nil -- lets the self test check the real header
+  table.insert(SELFTEST_COLLECT, { name = "Setup", self_test = Setup.self_test })
 else
   main()
   reaper.defer(function() end) -- no undo point

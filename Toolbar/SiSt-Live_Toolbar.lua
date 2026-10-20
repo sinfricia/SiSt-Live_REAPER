@@ -299,9 +299,9 @@ local function main()
   if not load_required() then return end
   load_optional()
 
-  -- Headless test runners set this global to run the self tests without opening a window
-  if rawget(_G, "SISTLIVE_TOOLBAR_SELFTEST_ONLY") then
-    SISTLIVE_TOOLBAR_SELFTEST_FAILED = run_self_tests(print)
+  -- Test-only switch (see lib/SelfTest.lua): hand over the tests instead of opening the window
+  if rawget(_G, "SELFTEST_COLLECT") then
+    table.insert(SELFTEST_COLLECT, { name = "Toolbar window", self_test = ToolbarWindow.self_test })
     return
   end
 

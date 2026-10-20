@@ -398,9 +398,9 @@ local function main()
   if not load_gui() then return end
   load_optional_libs()
 
-  -- Headless test runners set this global to run the self tests without opening a window
-  if rawget(_G, "SISTLIVE_STATUS_SELFTEST_ONLY") then
-    SISTLIVE_STATUS_SELFTEST_FAILED = run_self_tests(print)
+  -- Test-only switch (see lib/SelfTest.lua): hand over the tests instead of opening the window
+  if rawget(_G, "SELFTEST_COLLECT") then
+    table.insert(SELFTEST_COLLECT, { name = "Status Display", self_test = Status.self_test })
     return
   end
 

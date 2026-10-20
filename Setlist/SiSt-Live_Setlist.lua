@@ -2598,38 +2598,48 @@ local function Describe(v)
    return "{" .. table.concat(parts, ", ") .. "}"
 end
 
--- Runs all tests, prints a report to the console and returns the number of failures.
-function RunSelfTests()
-   local passed, failed = 0, 0
-   -- keep the console readable: only test results are printed (the tests call functions that log)
+-- Runs all tests and returns their results as { name, ok } rows (the format of lib/SelfTest.lua). A failed check
+-- carries the expected and the actual value in its name.
+function SelfTestResults()
+   local rows = {}
+   -- keep the console readable: the tests call functions that log
    if Log then Log.set_sink(function() end) end
-
-   local function out(s) reaper.ShowConsoleMsg(s .. "\n") end
-   out("=== " .. WINDOW_TITLE .. " self tests ===")
 
    for _, test in ipairs(selfTests) do
       local t = {}
       function t.eq(actual, expected, label)
-         if DeepEqual(actual, expected) then
-            passed = passed + 1
-         else
-            failed = failed + 1
-            out(string.format("  FAIL [%s] %s\n      expected: %s\n      actual:   %s",
-               test.name, label or "", Describe(expected), Describe(actual)))
+         local ok = DeepEqual(actual, expected)
+         local name = "[" .. test.name .. "] " .. (label or "")
+         if not ok then
+            name = name .. string.format("  (expected: %s, actual: %s)", Describe(expected), Describe(actual))
          end
+         rows[#rows + 1] = { name = name, ok = ok }
       end
 
       function t.ok(cond, label) t.eq(cond and true or false, true, label) end
 
       local ok, err = pcall(test.fn, t)
-      if not ok then
-         failed = failed + 1
-         out("  ERROR [" .. test.name .. "] " .. tostring(err))
-      end
+      if not ok then rows[#rows + 1] = { name = "[" .. test.name .. "] ERROR " .. tostring(err), ok = false } end
    end
 
-   out(string.format("=== %d passed, %d failed ===", passed, failed))
    if Log then Log.set_sink(nil) end
+   return rows
+end
+
+-- Alt start: runs all tests, prints the failures and a summary to the console, returns the number of failures.
+function RunSelfTests()
+   local function out(s) reaper.ShowConsoleMsg(s .. "\n") end
+   out("=== " .. WINDOW_TITLE .. " self tests ===")
+   local passed, failed = 0, 0
+   for _, r in ipairs(SelfTestResults()) do
+      if r.ok then
+         passed = passed + 1
+      else
+         failed = failed + 1
+         out("  FAIL " .. r.name)
+      end
+   end
+   out(string.format("=== %d passed, %d failed ===", passed, failed))
    return failed
 end
 
@@ -3223,10 +3233,10 @@ function Init()
    return true
 end
 
--- Headless test runners set SISTLIST_SELFTEST_ONLY to run the tests without opening a window
-if rawget(_G, "SISTLIST_SELFTEST_ONLY") then
+-- Test-only switch (see lib/SelfTest.lua): hand over the tests instead of opening the window
+if rawget(_G, "SELFTEST_COLLECT") then
    LoadSharedLibs() -- so the Gui library's own self tests run too
-   SISTLIST_SELFTEST_FAILED = RunSelfTests()
+   table.insert(SELFTEST_COLLECT, { name = "Setlist", self_test = SelfTestResults })
 else
    Init()
 end
