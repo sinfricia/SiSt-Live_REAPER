@@ -65,6 +65,7 @@
 --   [nomain] ../lib/SiSt-Live_ModeEffects.lua
 --   [nomain] ../lib/SiSt-Live_SettingsDialog.lua
 --   [nomain] ../lib/SiSt-Live_ToolbarSource.lua
+--   [nomain] ../lib/ActionReferenceChecks.lua
 --   [nomain] ../lib/ModeEffects/SiSt-Live_ModeEffect_Theme.lua
 --   [nomain] ../lib/ModeEffects/SiSt-Live_ModeEffect_Screenset.lua
 --   [nomain] ../lib/ModeEffects/SiSt-Live_ModeEffect_Fullscreen.lua

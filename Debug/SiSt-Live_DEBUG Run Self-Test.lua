@@ -22,6 +22,14 @@ local SettingsDialog = require("SiSt-Live_SettingsDialog")
 local ToolbarSource = require("SiSt-Live_ToolbarSource")
 local Actions     = require("SiSt-Live_Actions")
 local Button      = require("SiSt-Live_Button")
+local ActionReferenceChecks = require("ActionReferenceChecks")
+
+-- The config reference check reads several files: run it once, use the report twice (live check + diagnostics)
+local config_report = nil
+local function config_references()
+  config_report = config_report or ActionReferenceChecks.check_config()
+  return config_report
+end
 
 -- Add a component here once it offers .self_test(), .diagnostics() and/or .live_check().
 -- live_check: checks against the REAL REAPER: every native command ID still exists, listed with its
@@ -47,6 +55,16 @@ local components = {
     live_check = function() return Locking.check_actions() end },
   { name = "Effect windows", self_test = Windows.self_test, diagnostics = function() return Windows.diagnostics() end,
     live_check = function() return Windows.check_actions() end },
+  -- Every named action ID used by custom actions, shortcuts, toolbars/menus, mouse modifiers and SWS cycle/startup
+  -- actions must exist. Diagnostics: scripts in the action list whose file is missing but that nothing uses.
+  { name = "Action references (config)", self_test = ActionReferenceChecks.self_test,
+    live_check = function() return ActionReferenceChecks.results(config_references(), "Config") end,
+    diagnostics = function()
+      local rows = {}
+      for _, s in ipairs(config_references().unused_missing) do rows[#rows + 1] = { "unused, file missing", s.path } end
+      if #rows == 0 then rows[1] = { "unused, file missing", "(none)" } end
+      return rows
+    end },
 }
 
 local out = { "=== SiSt-Live self-test & diagnostics ===",
