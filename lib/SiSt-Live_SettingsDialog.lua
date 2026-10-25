@@ -170,7 +170,7 @@ function SettingsDialog.run(api)
   if ret == 2 then return 0 end -- cancel
 
   SettingsDialog.store(all, api)
-  if ret == 6 then ModeEffects.apply_all(current) end
+  if ret == 6 then ModeEffects.apply_and_report(current) end -- dialog if an effect failed
   return #all
 end
 

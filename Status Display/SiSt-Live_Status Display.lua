@@ -292,7 +292,7 @@ end
 
 local function apply_effects_again()
   retry_problem = nil
-  local ok, err = pcall(ModeEffects.apply_all, Mode.get())
+  local ok, err = pcall(ModeEffects.apply_and_report, Mode.get()) -- dialog if an effect failed
   if not ok then retry_problem = "Applying the mode effects failed: " .. first_line(err) end
   debug_log("apply again: %s", ok and "done" or tostring(err))
 end
@@ -310,7 +310,7 @@ local function switch_mode(target)
   retry_problem = nil
   Mode.set(target)
   if log then log:info("mode switched to %s from the status display", target) end
-  local ok, err = pcall(ModeEffects.apply_all, target)
+  local ok, err = pcall(ModeEffects.apply_and_report, target) -- dialog if an effect failed
   if not ok then retry_problem = "Applying the mode effects failed: " .. first_line(err) end
 end
 

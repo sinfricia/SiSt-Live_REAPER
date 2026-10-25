@@ -82,12 +82,13 @@ function Theme.apply(mode, api)
   end
 
   local full = Theme.resolve(ref, api.GetResourcePath())
-  if Theme.same_path(api.GetLastColorThemeFile(), full) then
-    return "skipped", "already active: " .. file_name(ref)
-  end
-
+  -- The file first: REAPER keeps reporting the last loaded theme even after its file was renamed or deleted,
+  -- so "already active" alone would hide a missing file until the next start.
   if not api.file_exists(full) then
     error(("theme for %s mode not found: %s"):format(mode, full), 0)
+  end
+  if Theme.same_path(api.GetLastColorThemeFile(), full) then
+    return "skipped", "already active: " .. file_name(ref)
   end
   if not api.OpenColorThemeFile(full) then
     error("REAPER could not load the theme: " .. full, 0)
@@ -218,6 +219,12 @@ function Theme.self_test()
   local ok, err = pcall(Theme.apply, "show", api2)
   check("apply: missing file fails with a clear message",
     not ok and tostring(err):find("not found", 1, true) and #loads2 == 0)
+
+  local api4, loads4 = fake({ files = {}, current = show_full }) -- loaded in REAPER, but the file is gone
+  Theme.set_assignment("show", "Show.ReaperTheme", api4)
+  local ok4, err4 = pcall(Theme.apply, "show", api4)
+  check("apply: missing file fails even while REAPER still has it loaded",
+    not ok4 and tostring(err4):find("not found", 1, true) and #loads4 == 0)
 
   local api3 = fake({ files = { show_full }, current = edit_full, load_fails = true })
   Theme.set_assignment("show", "Show.ReaperTheme", api3)

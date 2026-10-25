@@ -3050,6 +3050,15 @@ end)
 ------- MAIN FLOW --------
 --------------------------
 
+-- True while REAPER renders. REAPER then has an extra instance of the project being rendered, which the project
+-- check below would take for a project that is open twice ("DUPLICATE PROJECTS FOUND" during a render).
+-- Same check as in Region Looping (defered).lua; becomes a shared helper in step 6.
+function IsRendering()
+   return reaper.EnumProjects(0x40000000) ~= nil
+end
+
+local wasRendering = false
+
 -- Called by the Window once per frame. The Window runs the loop, handles closing and saves its state.
 function Frame(w)
    if terminate then
@@ -3063,9 +3072,17 @@ function Frame(w)
       if pollMode then pollMode() end -- picks up edit/show changes (callback errors are logged, not thrown)
       if Mode then w:set_mode(gui.mode) end -- the window saves / restores its position per mode
 
+      local rendering = IsRendering()
+      if rendering ~= wasRendering then
+         log:info("rendering %s: project check %s", rendering and "started" or "finished", rendering and "paused" or "resumed")
+         wasRendering = rendering
+      end
+
       local numProjInList = #GetProjEntriesInList(setlist)
       local tabProjs = GetOpenProjectPtrs()
-      if openProjCount ~= numProjInList then
+      if rendering then
+         -- no project check while rendering (see IsRendering)
+      elseif openProjCount ~= numProjInList then
          setlist = ResolveConflictsWithOpenProj(setlist, true) or GetOpenProjectList()
          if not terminate then SaveAutosave() end
       elseif not IsListOrderInSync(setlist, tabProjs) then

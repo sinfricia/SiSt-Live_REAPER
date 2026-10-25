@@ -17,7 +17,7 @@ local ModeEffects = require("SiSt-Live_ModeEffects")
 local log         = Log.get("ApplyMode")
 
 local mode = Mode.get()
-local _, failed = ModeEffects.apply_all(mode)
+local _, failed = ModeEffects.apply_and_report(mode) -- dialog if an effect failed
 log:info("applied %s mode, %d effect(s) failed", mode, failed)
 
 reaper.defer(function() end) -- no undo point

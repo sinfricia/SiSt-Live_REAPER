@@ -35,11 +35,16 @@ log:info("mode is now %s", mode)
 -- undoes it. The effects library is loaded here, not at the top, so that even a missing or broken
 -- effects file can't stop the toggle itself.
 local ok, err = pcall(function()
-  require("SiSt-Live_ModeEffects").apply_all(mode)
+  require("SiSt-Live_ModeEffects").apply_and_report(mode) -- dialog if an effect failed
 end)
 if not ok then
-  local report = mode == Mode.SHOW and log.debug or log.error -- no console popup on stage
-  report(log, "mode effects could not run: %s", tostring(err))
+  log:error("mode effects could not run: %s", tostring(err)) -- Log keeps the console closed on stage
+  if mode == Mode.SHOW then
+    -- Nothing was switched (no locking, keyboard, windows...) and no effect status was stored, so the Status
+    -- Display can't show it: this needs immediate attention.
+    reaper.MB("Show mode: the mode effects could not run.\n\nDetails in the log:\n" .. Log.file_path(),
+      "SiSt-Live: mode effects", 0)
+  end
 end
 
 reaper.defer(function() end) -- prevents REAPER from creating an undo point

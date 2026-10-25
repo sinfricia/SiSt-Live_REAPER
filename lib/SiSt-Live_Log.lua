@@ -257,6 +257,7 @@ function Log.self_test()
   local t = Log.get("SelfTest")
 
   Log.set_debug(false)
+  records = {} -- switching off logs "debug logging disabled" if debug was on: not part of this check
   t:debug("hidden")
   t:warn("shown")
   check("debug off: debug suppressed, warn emitted",

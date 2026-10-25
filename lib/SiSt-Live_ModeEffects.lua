@@ -149,8 +149,7 @@ function ModeEffects.apply_all(mode, opts)
 
     if result == ModeEffects.FAILED then
       failed = failed + 1
-      local report = mode == Mode.SHOW and log.debug or log.warn -- no console popup on stage
-      report(log, "%s failed (%s mode): %s", effect.name, mode, trace or message)
+      log:warn("%s failed (%s mode): %s", effect.name, mode, trace or message) -- Log keeps the console closed on stage
     else
       log:debug("%s: %s - %s", effect.name, result, message)
     end
@@ -163,6 +162,32 @@ function ModeEffects.apply_all(mode, opts)
     ("%s|%d|%d|%d"):format(mode, now, #results - failed, failed), false)
   log:debug("applied %s mode: %d effects, %d failed", mode, #results, failed)
 
+  return results, failed
+end
+
+--- Text for the dialog after a mode switch when effects failed, or nil if none failed.
+--- results: as returned by apply_all.
+function ModeEffects.failure_message(mode, results)
+  local names = {}
+  for _, r in ipairs(results or {}) do
+    if r.result == ModeEffects.FAILED then names[#names + 1] = r.name end
+  end
+  if #names == 0 then return nil end
+  return ("%s mode: %d mode effect%s failed: %s\n\nDetails in the log:\n%s"):format(
+    mode == Mode.SHOW and "Show" or "Edit", #names, #names == 1 and "" or "s", table.concat(names, ", "),
+    Log.file_path())
+end
+
+ModeEffects.DIALOG_TITLE = "SiSt-Live: mode effects"
+
+--- What every place that switches or re-applies the mode calls (Toggle Edit-Show Mode, Apply current mode, the
+--- Status Display's mode and retry buttons, Configure modes): runs the effects, then shows a dialog if any failed.
+--- The user just triggered it, so the dialog is not a background dialog. Returns what apply_all returns.
+--- opts: passed on to apply_all; opts.api.MB is used for the dialog (default: reaper).
+function ModeEffects.apply_and_report(mode, opts)
+  local results, failed = ModeEffects.apply_all(mode, opts)
+  local msg = ModeEffects.failure_message(mode, results)
+  if msg then ((opts and opts.api) or reaper).MB(msg, ModeEffects.DIALOG_TITLE, 0) end
   return results, failed
 end
 
