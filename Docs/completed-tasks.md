@@ -1,0 +1,94 @@
+# SiSt-Live: completed tasks
+
+Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
+Docs/design-decisions.md.
+
+## 2026-10-25 - Step 1 complete (bug fixes)
+- 1.7 REAPER starts in edit mode: __startup.lua runs Apply current mode with "startup" (always edit, all effects
+  except locking, which stays as saved per project). ModeEffects option `except` (skipped with a reason, self-test).
+  Tested first: projects are already open when __startup.lua runs.
+- 1.5 Setlist: projects without an end marker show "--:--" and no progress indicator (no crash before: Lua's /
+  gives infinity). No fallback to GetProjectLength (re-check in step 7).
+- Dropped: 1.6 (Start Song region match "contains" is fine; rethink in step 6), 1.8 (REAPER already moves
+  off-screen gfx windows onto the screen).
+- Found on the way: files written twice from the same staging path arrived as the old version (not kDrive).
+- Docs moved into the repo (Docs/), kept in the claude.ai project as well.
+
+## 2026-10-25 - 1.4 Toolbar "off" indicator
+- `or nil` removed from the toggle expression: toggle buttons that are off show the dim indicator bar.
+
+## 2026-10-25 - 1.3 Workflows without the fixed debugger path
+- Removed the dofile of the VS Code debugger (one laptop's path, one extension version). Proper debugger support
+  is planned in step 3.
+
+## 2026-10-25 - 1.2 Mode-effect failures are visible
+- Failed effects are logged as warning/error (log file; the console stays closed on stage) instead of debug.
+- ModeEffects.apply_and_report: used by every place that switches or re-applies the mode (Toggle, Apply current
+  mode, Status Display mode/retry buttons, Configure modes); a dialog lists failed effects with the log path.
+- Toggle action: dialog in show mode if the effects can't run at all (uniform handling: step 3 loader).
+- Theme effect: checks that the file exists before "already active" (REAPER keeps reporting a renamed or deleted
+  theme as loaded); new self-test for it.
+- Log self-test fix written again (kDrive had put back the old version).
+
+## 2026-10-25 - 1.9 Setlist pauses its project check while rendering
+- IsRendering() (reaper.EnumProjects(0x40000000)) in the Setlist: no conflict check / tab-order sync during a
+  render, so the render instance isn't taken for a duplicate project. Debug log on start/finish. Tested by Sina.
+- 1.1 dropped: Setlist conflict dialogs stay in show mode (they need immediate action); Cancel closing the
+  Setlist goes into the resolver redesign (step 7).
+
+## 2026-10-21 - kDrive conflict check v1.0.1
+- At startup (quiet), added folders that don't exist on this computer are skipped silently (the folder list
+  travels with the config); run by hand they are still reported.
+
+## 2026-10-20 - 0.4 Show checklist + 0.5 Live test (one commit)
+- Debug/Show checklist.md: only what the tests can't see (looks, no pop-ups/console, REAPER restart; recording,
+  rendering, Region Looper when the step touched them).
+- Debug/SiSt-Live_DEBUG Run Live Test.lua: menu (Run / Choose test folder, folder stored relative to the
+  config). Closes other projects (asks first), opens every .rpp of the test folder in alphabetical order, checks
+  their action markers, edit -> show, then twice (playback mode play, then rec): Start Show, Start Song, end
+  marker Project End Handler, move to previous project, end marker NO STOP; show -> edit. Rec round: Start Show
+  records routing, Start Song and NO STOP record, the other end handlers only play. Cleanup: stop, playback mode
+  play, edit mode, recorded items removed and their files deleted. Report: Data/SiSt Libraries/Live test
+  report.txt.
+- Test projects: one with "ROUTING" in the name; at least three songs with =START (not at 0) and the end marker
+  >= 60 s after =START; one song (not the last) with the Project End Handler marker, another with NO STOP; they
+  record into the test folder.
+- lib/SelfTest.lua: run_scenario (run / wait / check steps, required steps, cleanup rows), configurable report
+  file name, computer name removed from the report header.
+
+## 2026-10-20 - 0.3 dropped
+- Computer name in the log file: written, then reverted (not relevant).
+
+## 2026-10-20 - Log self-test fix
+- The "debug off" test no longer fails when debug logging was on before the test.
+
+## 2026-10-20 - 0.2b kDrive conflict check (SiSt-Local)
+- Scripts/SiSt-Local/SiSt_Check kDrive conflict copies.lua: standalone, read only. Always checks the whole config
+  incl. .git. By hand: menu (Check now / Add folder... / Remove folder), result in the console. Added folders:
+  only inside kDrive (picker starts there), confirmation after adding, full paths in ExtState. No automated
+  tests.
+- __startup.lua runs it quietly: loadfile(path)("quiet") (no global; a missing file doesn't break the rest of
+  the startup); console only if something is found.
+
+## 2026-10-20 - 0.2a Fail counter
+- ActionReferenceChecks.results(): one FAIL row per broken reference; "references checked" moved to the
+  diagnostics.
+
+## 2026-10-20 - 0.2 Self-Test on one generic runner
+- New: lib/SelfTest.lua, lib/SiSt-Live_Tests.lua (SiSt-Live's test list), Debug/SiSt-Live_DEBUG Run all
+  self-tests.lua (temporary; moves to SiSt Libraries in 5a).
+- Changed: DEBUG Run Self-Test (registers + runs SiSt-Live's list); Setlist (SelfTestResults(), Alt start
+  prints FAIL lines + summary); Status Display, Toolbar, Setup use the SELFTEST_COLLECT switch instead of their
+  own *_SELFTEST_ONLY globals; Setup registers the test list and provides the new lib files.
+- Coverage exceptions: lib/SiSt-Live_Tests.lua (the list itself), lib/SiSt-Live_Toolbar.lua (deleted in step 2).
+- Result: 724 passed, only the 3 known config FAILs.
+
+## 2026-10-20 - 0.1 Action reference checks
+- lib/ActionReferenceChecks.lua (read only, future shared module): config check in "DEBUG Run Self-Test" (named
+  command IDs in reaper-kb.ini, reaper-menu.ini, reaper-mouse.ini, S&M_Cyclactions.ini, S&M.ini must exist;
+  script files too; unused registered scripts with missing files listed).
+- Debug/SiSt-Live_DEBUG Check action markers.lua (not shipped; moves to Batch Project Tools in 5c).
+- Findings (fixed in roadmap step 2): toolbar 32 button, cycle action steps, unused entries with missing files.
+
+## 2026-10-20 - Step -1 Prepare
+- Repo pushed, tag `pre-refactor` set, .ini files backed up, roadmap saved.

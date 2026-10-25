@@ -129,6 +129,8 @@ end
 
 --- Makes REAPER match `mode`: runs every effect, stores its status and logs it.
 --- opts.api: reaper table to use (default: reaper). opts.effects: effect list (default: MODULES).
+--- opts.except: { [effect name] = true } effects that are not run (status "skipped" with opts.except_reason),
+--- e.g. locking at REAPER startup.
 --- Returns results ({ name, result, mode, time, message } per effect, in run order) and the
 --- number of failures. Throws only for an invalid mode (a programming error).
 function ModeEffects.apply_all(mode, opts)
@@ -143,7 +145,12 @@ function ModeEffects.apply_all(mode, opts)
   local results, failed = {}, 0
 
   for _, effect in ipairs(effects) do
-    local result, message, trace = run_one(effect, mode, api)
+    local result, message, trace
+    if opts.except and opts.except[effect.name] then
+      result, message = ModeEffects.SKIPPED, opts.except_reason or "left as it is"
+    else
+      result, message, trace = run_one(effect, mode, api)
+    end
     local status = { name = effect.name, result = result, mode = mode, time = now, message = message }
     results[#results + 1] = status
 
@@ -299,6 +306,14 @@ function ModeEffects.self_test()
   local last = ModeEffects.get_last_run(api)
   check("last run summary stored", last and last.mode == "edit" and last.ok_count == 2 and last.failed_count == 3)
   check("invalid mode is rejected", threw)
+
+  -- except (REAPER startup leaves locking alone): the effect must not run, but gets a status
+  local ran = false
+  local some = { { name = "locking", apply = function() ran = true; return "ok", "" end } }
+  local res2 = ModeEffects.apply_all(Mode.EDIT, { api = api, effects = some, except = { locking = true },
+    except_reason = "not at startup" })
+  check("except: effect not run, reported as skipped with the reason",
+    not ran and res2[1].result == "skipped" and res2[1].message == "not at startup")
 
   return results
 end

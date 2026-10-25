@@ -1,0 +1,157 @@
+# SiSt-Live: design decisions
+
+How we work and what we decided, with the reason. Changes rarely. The plan is in Docs/roadmap.md, finished
+work in Docs/completed-tasks.md.
+
+Background: the refactor started with the code review of Scripts/SiSt-Live (plus SiSt-Local, the SiSt Scripts
+repo and the REAPER config), 2026-10-19. Goal: the best possible foundation for future development, balancing
+robustness and simplicity. Functionality stays the same, except for bug fixes that Sina approves one by one.
+
+## Working rules
+
+- One step = one approval = one commit. Bug fixes that change behaviour: approved and worked through one at a
+  time, never in batch.
+- Work through every step together: explain in detail, ask before every change.
+- Done = "DEBUG Run Self-Test" green + "DEBUG Run Live Test" green + Debug/Show checklist.md green.
+  Core items (must work after EVERY step): the three Project End Handler custom actions, Start Show, Start Song
+  (via MIDI), mode switch in both directions.
+- No moving or renaming a script without running the reference check first (a script's _RS ID comes from its
+  path).
+- Back up reaper-kb.ini, reaper-menu.ini, reaper-extstate.ini before any step that touches them. Edit them only
+  with REAPER closed (REAPER rewrites them on exit).
+- Show safety: Sina takes care of show-free periods (risky steps: 4 and 7).
+- Dialogs in show mode (2026-10-25): background code (defer loops) shows a dialog in show mode ONLY for problems
+  that could make the show not work as intended and need immediate action (e.g. a setlist conflict). Everything
+  else goes to the log (the console stays closed on stage).
+- Code calls reaper.X / gfx.X directly and never stores `reaper` in a local (tests swap the global).
+- A REAPER install used for development never subscribes to its own ReaPack repo (ReaPack would overwrite the
+  working copy). Working copies mirror ReaPack's folder layout (Scripts/<index name>/<category>/...).
+- Delivery: Claude writes directly into the repo and says what changed; no files sent in the chat.
+- Documentation (2026-10-25): Docs/roadmap.md, Docs/design-decisions.md, Docs/completed-tasks.md in the repo
+  (versioned with the code); Claude keeps the same three files in the claude.ai project.
+- After writing, Claude sends the details of the change right away, checks that the file on the computer is
+  exactly what was written (right after writing), and says when it is ready to test.
+- Writes always go through a NEW staging path per write (2026-10-25): files written a second time from the same
+  staging path arrived as the OLD version. That, not kDrive, most likely caused all the "reverted" files.
+
+## Working on several machines (2026-10-20)
+
+The SiSt-Live config is a self-contained portable install synced via kDrive; used and developed on one machine
+at a time. The main install also lives in kDrive but is only used on one machine.
+- Show machines keep the SiSt-Live config folder and the show projects "always on this device" in kDrive
+  (REAPER must load everything offline at a venue).
+- kDrive has DIFFERENT drive letters on the machines (may change later). The Setlist checks paths relative to
+  the setlist file first. Never store absolute kDrive paths in new code; store paths relative to the config
+  where it matters (e.g. the live test folder).
+- End every session with `git push`; wait until kDrive has finished syncing before switching machines (git's
+  history is many small files). kDrive conflict copies are named `<name>_conflict_<date>_<time>_<random>`.
+- (Earlier suspicion that kDrive puts back older versions: most likely the staging-path issue above.)
+- Deliberately NOT done: per-machine saved state (too complex), moving .git out of kDrive, computer name in the
+  log or reports (not relevant, 2026-10-20).
+
+## Action IDs (2026-10-20)
+
+Two different things: a CHECK ("does it still exist?") and a LOOKUP ("which number is it right now?"). Checks
+only ever run on demand; lookups only where unavoidable.
+
+| Action type | In the code | At run time | Checked |
+|---|---|---|---|
+| Native (e.g. 40346) | number + comment | nothing extra | Self-Test, on demand (after REAPER updates) |
+| Extension (_SWS_...) | name ID + comment | the name -> number lookup it needs anyway | Self-Test, plus "extension installed" |
+| Script (e.g. Setlist) | file name (never an _RS ID) | lookup by file name, kept in memory for that run | Self-Test: every declared script found |
+| Config (custom actions, toolbars/menus, shortcuts, mouse modifiers, SWS cycle/startup actions) | - | - | Self-Test (config reference check) |
+| Action markers ("!..." in projects) | - | - | own action on demand; live test for the test projects |
+
+- Each package declares the actions it uses (plus required extensions) in ONE table; the shared library offers
+  the tools and makes no distinction between packages. Calling other packages' scripts is for windows/toggles;
+  logic is called as library functions.
+- Lookup by FILE NAME (not path): survives moves and different repo/category names; prefixes keep names unique;
+  duplicates fail clearly. Verify first how to enumerate the action list (SWS CF_EnumerateActions, or
+  reaper-kb.ini as fallback).
+- Looked-up IDs are cached in memory for the script run only, never stored (command numbers change between
+  sessions; a stored name ID is exactly the _RS problem).
+- Registering missing scripts in the action list moves to Setup (a lookup only looks).
+- No new _RS IDs in code.
+
+## Testing (2026-10-20)
+
+- lib/SelfTest.lua is GENERIC (usable by anyone): check helper, components, counting, coverage, report,
+  scenarios. A module/component exposes self_test() -> { {name, ok} }, optionally live_check (read-only checks
+  against the real REAPER) and diagnostics (information rows).
+- Module name SelfTest (not Test): says what it does, less likely to clash on Lua's shared module path.
+- One test list file per package (SiSt-Live: lib/SiSt-Live_Tests.lua), works from anywhere.
+- Component scripts keep their tests inside the script, collected through the test-only switch SELFTEST_COLLECT
+  (stopgap: testable logic moves into lib modules over time).
+- Registry (automatic, self-healing): ExtState "SiSt Libraries" / "test_registry", name=path|..., paths relative
+  to the resource folder; packages register themselves when their scripts run. ExtState over a file: per machine
+  is correct, no file handling.
+- Reports: console summary + FAIL lines; full report in Data/SiSt Libraries/. WARN counts as neither passed nor
+  failed. Coverage: WARN for a lib file no component names, unless listed as an exception with a reason.
+- Visibility: in the end only two global actions ("Run all self-tests", "Debug logging on/off"); per package,
+  Setup is the entry point. No self-test actions cluttering the action list.
+- Live test (scenario): acts in the running REAPER, waits (deferred), checks. Only with its own test projects
+  (closes others after asking). Fully automatic: Start Show's recording question is answered by temporarily
+  replacing ShowMessageBox. Recordings are deleted afterwards; the empty folders REAPER creates stay (Windows
+  doesn't let Lua delete folders).
+- What deserves a test: a bug that would go UNNOTICED or cause HARM (show safety, silent data loss), or logic
+  with edge cases nobody tries by hand. Not: bugs that show up on first use, tests that repeat the code
+  (get/set, format round trips, trivial path helpers). Real file system / REAPER behaviour: live test or
+  checklist, not fakes.
+- Known limitation: all suites run in one Lua environment. Accepted.
+
+## Shared code
+
+- Only code used by MORE THAN ONE package goes into the shared libraries. Every file named for what it does
+  (no "Core").
+- Extract when there is a third use, or when copies could drift apart in tricky logic; not before (e.g. marker
+  loop, popup menu: decided 2026-10-20).
+- Future shared modules already live in SiSt-Live's lib/ WITHOUT the "SiSt-Live_" prefix and contain nothing
+  SiSt-Live-specific, so extracting them later is a pure move.
+- Tools specific to Sina's own setup (e.g. kDrive conflict check) belong in SiSt-Local, not SiSt-Live or the
+  libraries. They may still travel with the config to other machines (e.g. quiet at startup when a folder is
+  missing).
+
+## Packages and repos (2026-10-19)
+
+- A separate package only when it gives the USER something to run on its own, or when it is shared code used by
+  more than one package. Readability comes from clearly named files, not from more packages.
+- Repo sinfricia/ReaScripts (general, working copy on Sina's main install):
+  - **SiSt Libraries**: Gui/ (Window, Theme, Widgets, TextField, Zoom), Log, SelfTest, Actions,
+    ActionReferenceChecks, BatchProjects. One VERSION. Installs only "Run all self-tests" and
+    "Debug logging on/off".
+  - **Batch Project Tools**: apply actions to project tabs now; create "apply to all" actions (written into
+    Scripts/Apply to all projects (created actions), outside the package so ReaPack never deletes them); the
+    action-marker check.
+  - **Toolbar** (name to be decided): big-button toolbar window + Toolbars.lua. Works without SiSt-Live; per-mode
+    toolbars only with SiSt-Live.
+  - SiSt-Local scripts (grouping decided in roadmap step 4).
+- Repo sinfricia/SiSt-Live_REAPER: one package "SiSt-Live" for the show system (Modes, effects, per-mode
+  settings, SettingsDialog, Setlist, Status Display, Setup, Transport + Project End Handler scripts, Region
+  Looper (deferred in use, action-marker version kept as option), REC/render/export scripts, Web Remote (WIP),
+  Debug). Libraries only SiSt-Live uses stay in SiSt-Live.
+- ReaPack has no dependencies: SiSt-Live's loader checks the SiSt Libraries VERSION, Setup checks the general
+  repo is installed. Inside one package no version checks between files. Shared modules move out only once
+  stable (developing across repos is slower).
+
+## SiSt-Live package
+
+- Main file: Setup/SiSt-Live_Setup.lua ("SiSt-Live: Setup"). Its @provides lists every file (component scripts
+  [main], libs [nomain]); all other files are @noindex. Debug tools are not in @provides.
+- Pre-release (0.x, currently 0.1.0); 1.0.0 only when Sina says release ready. index.xml is not rebuilt until
+  then. Old standalone index entries (Project List, Apply action to all open projects, Region Looper, Web
+  Interface) are replaced at 1.0.
+- @provides can override file types ([data], [theme], ...), so themes and config files can join later. Never let
+  ReaPack overwrite reaper.ini / reaper-kb.ini / reaper-menu.ini; options later: data files that Setup imports,
+  or distribute the portable install via git/zip and use ReaPack only for scripts.
+- Adding a file: add it to @provides; if other scripts run it, one line in the script list (today Actions.SCRIPTS);
+  a new lib file also gets an entry in lib/SiSt-Live_Tests.lua.
+- ReaPack has moved to Codeberg and v2 is in development: details may shift.
+
+## Naming (2026-10-19)
+
+- A window is named after what it IS (a noun), never after a mode: "Show"/"Edit" only ever mean the mode.
+- One noun everywhere: folder `<Noun>/`, file `SiSt-Live_<Noun>.lua`, window title "SiSt-Live <Noun>", ExtState
+  section `SiSt-Live_<Noun>`, log component `<Noun>`, script-list id. (Setlist and Status Display ExtState
+  sections don't follow it yet: decision in roadmap step 3.)
+- A library serving one component is named `<Noun><Role>`, e.g. lib/SiSt-Live_ToolbarSource.lua.
+- SiSt-Local scripts: `SiSt_<what it does>.lua`.
