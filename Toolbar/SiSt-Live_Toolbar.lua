@@ -413,7 +413,7 @@ local function main()
       local text_size = math.max(SIZE.min_text, math.floor(r.h * SIZE.text_ratio * (1 + zoom * 0.1)))
       local label, size = ToolbarWindow.fit_label(b.label, r.w - 2 * s.pad, text_size, measure)
       local clicked = Widgets.button(win, label, r.x, r.y, r.w, r.h,
-        { size = size, disabled = b.cmd == nil, toggle = b.cmd and toggles[b.cmd] or nil })
+        { size = size, disabled = b.cmd == nil, toggle = b.cmd and toggles[b.cmd] }) -- true on / false off / nil no toggle
       if clicked and b.cmd then
         debug_log("run %d (%s)", b.cmd, b.label)
         reaper.Main_OnCommand(b.cmd, 0)

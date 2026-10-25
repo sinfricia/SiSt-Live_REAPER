@@ -1,5 +1,4 @@
 -- @noindex
-local VSDEBUG = dofile("c:/Users/sinas/.vscode/extensions/antoinebalaine.reascript-docs-0.1.15/debugger/LoadDebug.lua")
 
 function Msg(input)
    local str = tostring(input)
