@@ -2402,17 +2402,19 @@ function DrawListEntry(y, entry)
          -- draw pos indicator
          local projLen = GetProjectLengthFromMarker(entry.proj)
 
-         local playPos = reaper.GetPlayPositionEx(entry.proj)
-         local r, g, b, a = table.unpack(gui.playPosColor)
-         gfx.set(r, g, b, a)
+         if projLen > 0 then -- no end marker = no length: no position to show
+            local playPos = reaper.GetPlayPositionEx(entry.proj)
+            local r, g, b, a = table.unpack(gui.playPosColor)
+            gfx.set(r, g, b, a)
 
-         local x = (gfx.w - gui.scrollW - gui.entryIndent) * playPos / projLen + 5
-         gfx.rect(x, y, gui.leftBorder, gui.lineHeight)
+            local x = (gfx.w - gui.scrollW - gui.entryIndent) * playPos / projLen + 5
+            gfx.rect(x, y, gui.leftBorder, gui.lineHeight)
 
-         a = 0.2
-         gfx.set(r, g, b, a)
+            a = 0.2
+            gfx.set(r, g, b, a)
 
-         gfx.rect(gui.leftBorder, y, x, gui.lineHeight)
+            gfx.rect(gui.leftBorder, y, x, gui.lineHeight)
+         end
 
 
          -- draw project playstate indicator
@@ -2469,7 +2471,7 @@ function DrawListEntry(y, entry)
       -- proj length
       local projLen = GetProjectLengthFromMarker(entry.proj)
 
-      local projLenStr = FormatTimeMMSS(projLen)
+      local projLenStr = projLen > 0 and FormatTimeMMSS(projLen) or "--:--" -- no end marker: no length
 
       Theme.set_font(gui.projLenTextSize)
       local strW, strH = gfx.measurestr(projLenStr)
