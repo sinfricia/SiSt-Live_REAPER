@@ -5,15 +5,14 @@ Docs/completed-tasks.md.
 
 ## Status
 
-- Done: step -1, step 0, step 1.
+- Done: step -1, step 0, step 1, step 1b.
 - Waiting for Sina: commit 0.4 + 0.5 (if not done yet); test kDrive conflict check v1.0.1 (startup skips missing
   folders).
-- Current: step 1b (routing check in the live test), design.
+- Current: step 1b done. Next: step 2 (cleanup).
 
-## Step 1b: Live test - routing check
+## Step 1b: Live test extensions - DONE 2026-10-25 (see completed tasks)
 
-- Check that MIDI and audio arrive in the routing project as they should. Design first (e.g. peak meters / MIDI
-  input of the routing tracks while a test song plays a known test signal).
+- Later: "right track in the routing session" per function (needs a naming scheme; MIDI by name first).
 
 ## Step 2: Cleanup
 
@@ -135,7 +134,8 @@ Docs/completed-tasks.md.
 
 ## Later / ideas
 
-- Configuration window (setting descriptions + Gui), replacing the text dialog.
+- Configuration window (setting descriptions + Gui), replacing the text dialog. Needs a checkbox widget (also for
+  the live test's test selection).
 - Project export workflow: more control over which track template gets imported (today
   Rendering/SiSt-Live_Import IVS_export track template.lua), easier batch rendering. Likely builds on 5c.
 - SiSt-Live_Workflows: rework so repetitive tasks can be applied to many projects very easily. Overlaps with 5c:

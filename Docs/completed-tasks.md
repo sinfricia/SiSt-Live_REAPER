@@ -3,6 +3,23 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-10-25 - Step 1b: live test extensions
+- Test selection: the live test menu shows the tests as check items (remembered); "Run selected tests" runs
+  the ticked ones in one report. Order: loopbacks, then show workflow.
+- Loopback test: two unsaved projects ("LB OUT" tone generator, "LB IN" receiving tracks heard on the main outs),
+  both playing. Audio: REAPER's internal loopbacks = track input / hardware output 768 + n (512 is ReaRoute);
+  one send per loopback, all active, volume 1 only on the one under test (a loopback nobody writes to repeats
+  its last audio); 0.2 s per loopback, one melody note each; an input counts only if its meter rises. MIDI:
+  pairs found by the names "LB<n> OUT / IN", one note of an A major scale per loopback through ReaSynth (ch 1,
+  no shortcut fires). Tone -35 dB, silent until the level is set; FX windows closed. Offers to stop for
+  inspection if it failed and the show test follows.
+- Show workflow test: Region Looper (first LOOP region, starts the looper if needed, next pass, Stop loop with one
+  final pass, end); only the routing project and the active song play; projects opened into the loopback tabs
+  ("noprompt:"); Setlist test mode (ExtState "TestMode": autosave neither read nor written).
+- SelfTest: quiet steps, progress window (top center, amber, shows the step before running it; closing it stops
+  the test), after_report (the close question comes after the report, with the result).
+- Debug/SiSt-Live_DEBUG List audio and MIDI devices.lua (read only).
+
 ## 2026-10-25 - Step 1 complete (bug fixes)
 - 1.7 REAPER starts in edit mode: __startup.lua runs Apply current mode with "startup" (always edit, all effects
   except locking, which stays as saved per project). ModeEffects option `except` (skipped with a reason, self-test).

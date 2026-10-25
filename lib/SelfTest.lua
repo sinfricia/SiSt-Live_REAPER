@@ -410,7 +410,9 @@ REAPER keeps running. Scenarios change REAPER's state: only run them on test pro
         run   = function() ... end,                         -- acts; an error here stops the scenario
         wait  = 2,                                          -- seconds before check
         check = function() return { { name, ok }, ... } end,
-        required = true },                                  -- optional: a failed check stops the scenario
+        required = true,                                    -- optional: a failed check stops the scenario
+        quiet = true },                                     -- optional: no own report section; its rows go to
+                                                            -- the next step that isn't quiet (many small steps)
       ...
     },
     cleanup     = function() ... end,                       -- optional: always runs at the end; may return
@@ -421,8 +423,10 @@ A step whose run fails stops the scenario (later steps build on it); the remaini
 skipped. A failed check only stops it if the step is `required` (e.g. preparing the test projects). The result is a normal report (one component per step).
 ]]
 
---- Runs a scenario (see above). opts: passed on to run_suites (e.g. report_file). Returns false if check_ready
---- refused, true once started (the report comes when the last step is done).
+--- Runs a scenario (see above). opts: passed on to run_suites (e.g. report_file); opts.progress = true opens a
+--- small window that shows the running step; closing it stops the scenario (cleanup still runs);
+--- opts.after_report(passed, failed, warnings) runs after the report is in the console.
+--- Returns false if check_ready refused, true once started (the report comes when the last step is done).
 function SelfTest.run_scenario(scenario, title, opts)
   title = title or scenario.name
   if scenario.check_ready then
@@ -434,9 +438,47 @@ function SelfTest.run_scenario(scenario, title, opts)
   end
 
   local results, index, current, wake = {}, 0, nil, 0
-  local function add(name, rows) results[#results + 1] = { name = name, rows = rows } end
+  local progress, stopped, started = opts and opts.progress, false, reaper.time_precise()
+  if progress then -- top center of the screen (the middle is often covered by REAPER windows)
+    local W, H, MARGIN = 520, 110, 60
+    local l, top, r = reaper.my_getViewport(0, 0, 0, 0, 0, 0, 0, 0, true)
+    gfx.init(title, W, H, 0, math.floor(l + (r - l - W) / 2), top + MARGIN)
+  end
+  local function show_progress()
+    if not progress then return end
+    if gfx.getchar() < 0 then stopped = true; return end -- the window was closed
+    -- "Debug" look: dark amber with an amber bar at the top, so the test window stands out from REAPER's windows.
+    -- The whole background is painted every time, so no old text stays visible.
+    gfx.set(0.28, 0.21, 0.07)
+    gfx.rect(0, 0, gfx.w, gfx.h, 1)
+    gfx.set(1.0, 0.74, 0.22)
+    gfx.rect(0, 0, gfx.w, 4, 1)
+    gfx.setfont(1, "Arial", 16)
+    gfx.set(1.0, 0.90, 0.70)
+    gfx.x, gfx.y = 12, 10
+    gfx.drawstr(("Step %d of %d  (%d s)"):format(index, #scenario.steps, math.floor(reaper.time_precise() - started)))
+    gfx.setfont(1, "Arial", 20, string.byte("b"))
+    gfx.x, gfx.y = 12, 36
+    gfx.drawstr(current and current.name or "")
+    gfx.setfont(1, "Arial", 14)
+    gfx.set(0.88, 0.76, 0.52)
+    gfx.x, gfx.y = 12, 78
+    gfx.drawstr("Close this window to stop the test.")
+    gfx.update()
+  end
+  local pending = {} -- rows of quiet steps, waiting for the next step that isn't quiet
+  local function add(name, rows)
+    if #pending > 0 then
+      local all = pending
+      for _, r in ipairs(rows) do all[#all + 1] = r end
+      rows, pending = all, {}
+    end
+    results[#results + 1] = { name = name, rows = rows }
+  end
 
   local function finish()
+    if progress then gfx.quit() end
+    if #pending > 0 then add("(more results)", {}) end
     if scenario.cleanup then
       local ok, rows = xpcall(scenario.cleanup, debug.traceback)
       if not ok then
@@ -450,7 +492,11 @@ function SelfTest.run_scenario(scenario, title, opts)
       local rows = r.rows
       components[#components + 1] = { name = r.name, live_check = function() return rows end }
     end
-    SelfTest.run_suites({ { name = scenario.name, components = components } }, title, opts)
+    local passed, failed, warnings = SelfTest.run_suites({ { name = scenario.name, components = components } }, title, opts)
+    if opts and opts.after_report then -- e.g. a question that depends on the results, asked with the report in view
+      local ok, err = xpcall(opts.after_report, debug.traceback, passed, failed, warnings)
+      if not ok then reaper.ShowConsoleMsg("after_report failed: " .. tostring(err) .. "\n") end
+    end
   end
 
   -- Reports the steps after `last` as skipped and finishes.
@@ -463,10 +509,19 @@ function SelfTest.run_scenario(scenario, title, opts)
 
   local next_step
   local function wait_and_check()
+    show_progress()
+    if stopped then
+      add(current.name, { SelfTest.warning("stopped: the progress window was closed") })
+      return stop_after(index)
+    end
     if reaper.time_precise() < wake then return reaper.defer(wait_and_check) end
     local ok, rows = xpcall(current.check or function() return {} end, debug.traceback)
     if not ok or type(rows) ~= "table" then rows = { { name = "check crashed: " .. tostring(rows), ok = false } } end
-    add(current.name, rows)
+    if current.quiet then
+      for _, r in ipairs(rows) do pending[#pending + 1] = r end
+    else
+      add(current.name, rows)
+    end
     if current.required then
       for _, r in ipairs(rows) do
         if not r.ok and not r.warn then return stop_after(index) end
@@ -475,10 +530,11 @@ function SelfTest.run_scenario(scenario, title, opts)
     next_step()
   end
 
-  next_step = function()
-    index = index + 1
-    current = scenario.steps[index]
-    if not current then return finish() end
+  local function run_current()
+    if stopped then
+      add(current.name, { SelfTest.warning("stopped: the progress window was closed") })
+      return stop_after(index)
+    end
     local ok, err = xpcall(current.run, debug.traceback)
     if not ok then
       add(current.name, { { name = "could not run: " .. tostring(err), ok = false } })
@@ -486,6 +542,16 @@ function SelfTest.run_scenario(scenario, title, opts)
     end
     wake = reaper.time_precise() + (current.wait or 0)
     reaper.defer(wait_and_check)
+  end
+
+  next_step = function()
+    index = index + 1
+    current = scenario.steps[index]
+    if not current then return finish() end
+    -- Show the step first and run it in the next cycle: the window only repaints when the script yields, so the
+    -- name would otherwise appear only after the step's action (late, e.g. while a dialog is open).
+    show_progress()
+    reaper.defer(run_current)
   end
 
   next_step()

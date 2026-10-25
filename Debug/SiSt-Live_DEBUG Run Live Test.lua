@@ -1,6 +1,10 @@
 -- @noindex
 -- SiSt-Live: DEBUG Run Live Test
--- Plays through the core show workflow in the running REAPER with the TEST projects and checks every result:
+-- Live tests in the running REAPER. The menu lists them as check items (click to tick / untick, remembered);
+-- "Run selected tests" runs the ticked ones in one report:
+--
+-- SHOW WORKFLOW: plays through the core show workflow with the TEST projects and checks every result
+--   (after the play round also the Region Looper on the first "LOOP..." region of the test songs, incl. Stop loop):
 --   open the test projects, edit -> show mode, then twice (playback mode play, then rec): Start Show, Start Song,
 --   the end markers (Project End Handler, NO STOP), Project End Handler - move to previous project; show -> edit
 --   mode. In rec mode it checks what records: Start Show (routing), Start Song and NO STOP record, the other end
@@ -9,8 +13,15 @@
 -- What it can't see (looks, pop-ups, a real MIDI message from the WING, REAPER restart) stays on the manual
 -- show checklist.
 --
--- Menu: "Run live test" / "Choose test folder...". The first run asks for the test folder. It is stored relative
--- to the REAPER config when possible, so it works on machines with different kDrive drive letters.
+-- LOOPBACKS: REAPER's internal audio loopbacks (one channel at a time: a quiet test tone goes out on loopback N,
+--   only input N may receive it) and MIDI loopbacks (a note on "LB<n> OUT ..." must arrive on "LB<n> IN ..." only;
+--   each loopback plays the next note of a scale through ReaSynth). Builds two unsaved projects, "LB OUT" (tone
+--   generator) and "LB IN" (receiving tracks, heard on the main outs); both play. Needs no test projects.
+-- A small window shows which step is running; closing it stops the test (cleanup still runs).
+--
+-- Before every run, other projects are closed (after asking), so nothing reaches the WING through the routing
+-- session. "Choose test folder..." sets the folder of the show workflow test projects (asked when needed). It is
+-- stored relative to the REAPER config when possible, so it works on machines with different kDrive drive letters.
 --
 -- The test folder holds the test projects (*.rpp). They are opened in alphabetical order, so the file names set
 -- the setlist order (e.g. "1 ROUTING.rpp", "2 Song A.rpp", "3 Song B.rpp"):
@@ -53,6 +64,9 @@ local TOGGLE_PLAYBACK_MODE = "_RSa9686300d4ed1b32912b2918386a4fe072559b3a" -- Sc
 local STOP         = 1016  -- Transport: Stop
 local NEW_TAB      = 40859 -- File: New project tab
 local CLOSE_ALL    = 40886 -- File: Close all projects
+
+-- The Setlist's test mode (see Setlist.lua): its autosave is neither read nor written while set (not persisted)
+local SETLIST_SECTION, SETLIST_TEST_MODE = "Sist-Live_Setlist", "TestMode"
 
 local TOLERANCE   = 0.05 -- s, edit cursor position
 local PLAY_WINDOW = 3    -- s, "plays from X": play position at most this far after X
@@ -281,6 +295,15 @@ end
 
 local function playback_mode() return reaper.GetExtState("SiSt-Live", "playback_mode") == "rec" and "rec" or "play" end
 
+--- Stops every project except the routing project and the active song: only what the next step needs plays,
+--- so the transport shows at a glance whether the test runs correctly.
+local function keep_only_needed_playing()
+  local keep = active()
+  for _, p in ipairs(projects()) do
+    if p.proj ~= routing and p.proj ~= keep then reaper.Main_OnCommandEx(STOP, 0, p.proj) end
+  end
+end
+
 local function stop_all()
   for _, p in ipairs(projects()) do reaper.Main_OnCommandEx(STOP, 0, p.proj) end
 end
@@ -327,6 +350,7 @@ local function show_round(rec)
     { name = "Start Song" .. suffix,
       run = function()
         local song1 = songs[1]
+        keep_only_needed_playing()
         reaper.Main_OnCommandEx(STOP, 0, song1)
         reaper.SetEditCurPos2(song1, song_start(song1) + 10, false, false) -- somewhere in the song
         run(START_SONG)
@@ -342,7 +366,7 @@ local function show_round(rec)
 
     { name = "End marker: Project End Handler" .. suffix,
       required = true, -- the next steps build on this switch
-      run = function() play_into_end_marker(peh, PEH) end,
+      run = function() keep_only_needed_playing(); play_into_end_marker(peh, PEH) end,
       wait = MARKER_WAIT,
       check = function()
         if not peh.from then return { marker_missing("the Project End Handler") } end
@@ -359,7 +383,7 @@ local function show_round(rec)
       end },
 
     { name = "Project End Handler - move to previous project" .. suffix,
-      run = function() run(PEH_PREVIOUS) end,
+      run = function() keep_only_needed_playing(); run(PEH_PREVIOUS) end,
       wait = 2,
       check = function()
         local back, left = songs[peh.from], songs[peh.from + 1]
@@ -372,7 +396,7 @@ local function show_round(rec)
       end },
 
     { name = "End marker: Project End Handler - NO STOP" .. suffix,
-      run = function() play_into_end_marker(no_stop, PEH_NO_STOP) end,
+      run = function() keep_only_needed_playing(); play_into_end_marker(no_stop, PEH_NO_STOP) end,
       wait = MARKER_WAIT,
       check = function()
         if not no_stop.from then return { marker_missing("the Project End Handler - NO STOP") } end
@@ -434,139 +458,740 @@ local function delete_recordings()
   return rows
 end
 
-local steps = {
-  { name = "Close open projects",
-    required = true,
-    run = function()
-      local saved = 0
-      for _, p in ipairs(projects()) do if p.file ~= "" then saved = saved + 1 end end
-      if saved == 0 then return end
-      if reaper.MB(("%d project(s) are open. The live test only runs with its own test projects.\n\n" ..
-          "Close all projects now? REAPER asks whether to save changes."):format(saved), TITLE, 4) ~= 6 then
-        error("cancelled: close the open projects first", 0)
+-- Loopback test -------------------------------------------------------------------------------------
+-- REAPER's internal loopbacks (not ReaRoute). Audio: track inputs and hardware outputs from 768 on are the loopback
+-- channels (as in the routing and song projects: REC 768 = loopback 1), 1:1, count = reaper.ini loopback_size.
+-- MIDI: loopback devices look like normal MIDI devices; found by Sina's naming scheme "LB<n> OUT ..." /
+-- "LB<n> IN ..." (same n = one pair). A track's MIDI input = 4096 + device * 32 (+ channel, 0 = all).
+-- Two projects, like the show: "LB OUT" sends (tone generator), "LB IN" receives and plays what arrives on the
+-- main outs. Both must play (stopped background projects don't run in this config).
+
+local LOOPBACK_FIRST = 768                   -- first internal loopback channel (track input / hardware output)
+local MIDI_LOOPBACK  = "^LB(%d+)%s+(%a+)"    -- naming scheme: number and OUT / IN
+local MIDI_INPUT     = 4096                  -- I_RECINPUT flag for a MIDI input (+ device * 32, channel 0 = all)
+local TONE_DB        = -35                   -- test tone level (the tone generator's default is too loud)
+local TONE_HZ        = 440                   -- first test tone: A4. The MIDI test plays a scale from one octave below.
+local TONE_NOTE      = 69                    -- MIDI note of TONE_HZ
+local MAJOR_SCALE    = { 0, 2, 4, 5, 7, 9, 11 }
+local SYNTH_VOL      = 0.05                  -- receiving ReaSynth tracks: about -26 dB
+local SIGNAL_MIN     = 0.001                 -- linear peak (-60 dB): above = a signal arrives
+local SETTLE_WAIT    = 0.5                   -- s, before the first channel: everything must be silent
+local AUDIO_WAIT     = 0.2                   -- s, tone on one loopback (one melody note), then the meters are read
+local MIDI_WAIT      = 0.5                   -- s, note length (heard), then checked
+local RISE           = 1.2                   -- another input "receives" only if its meter rose by this factor
+                                             -- (a meter still falling from the previous note is not a signal)
+-- Melody for the audio loopbacks, one note per loopback (MIDI note numbers, repeats if there are more loopbacks)
+local MELODY = { 69, 73, 76, 81, 80, 76, 73, 71, 69, 71, 73, 74, 76, 74, 73, 71,
+                 69, 73, 76, 78, 81, 80, 78, 76, 74, 73, 71, 73, 69, 68, 69, 69 }
+local function note_hz(note) return 440 * 2 ^ ((note - 69) / 12) end
+-- Test notes on channel 1 at velocity 100. Action shortcuts use channel 16, so they trigger nothing.
+local NOTE_ON, NOTE_OFF, TEST_VEL = 0x90, 0x80, 100
+local TONE_FX  = { "JS: Tone Generator", "Tone Generator", "JS: synthesis/tonegenerator" }
+local SYNTH_FX = { "ReaSynth (Cockos)", "VSTi: ReaSynth (Cockos)", "ReaSynth" }
+local PLAY = 1007 -- Transport: Play
+
+local lb = { receivers = {}, synths = {} } -- the two test projects, the sender track and the receiving tracks
+
+local function loopback_size()
+  local ok, value = reaper.get_config_var_string("loopback_size")
+  return ok and tonumber(value) or 0
+end
+
+--- Note of the i-th MIDI loopback: a major scale from one octave below the tone generator's note.
+local function scale_note(i)
+  local octave, degree = (i - 1) // #MAJOR_SCALE, (i - 1) % #MAJOR_SCALE + 1
+  return TONE_NOTE - 12 + octave * 12 + MAJOR_SCALE[degree]
+end
+
+--- Loopback MIDI devices by number: { [n] = { OUT = {idx, name, present}, IN = {...} } } and the sorted numbers.
+local function midi_loopbacks()
+  local by_n, numbers = {}, {}
+  local function scan(count, name_of, key)
+    for i = 0, count - 1 do
+      local present, name = name_of(i, "")
+      local n, dir = (name or ""):match(MIDI_LOOPBACK)
+      if n and dir:upper() == key then
+        n = tonumber(n)
+        if not by_n[n] then by_n[n] = {}; numbers[#numbers + 1] = n end
+        by_n[n][key] = { idx = i, name = name, present = present }
       end
-      local name = reaper.kbd_getTextFromCmd(CLOSE_ALL, 0) or ""
-      if not name:lower():find("close all projects", 1, true) then -- this one must never be a different action
-        error(("action %d is \"%s\", expected \"File: Close all projects\""):format(CLOSE_ALL, name), 0)
+    end
+  end
+  scan(reaper.GetNumMIDIOutputs(), reaper.GetMIDIOutputName, "OUT")
+  scan(reaper.GetNumMIDIInputs(), reaper.GetMIDIInputName, "IN")
+  table.sort(numbers)
+  return by_n, numbers
+end
+
+local function peak(tr) return math.max(reaper.Track_GetPeakInfo(tr, 0), reaper.Track_GetPeakInfo(tr, 1)) end
+local function inputs_with_signal()
+  local list = {}
+  for n, tr in ipairs(lb.receivers) do if peak(tr) > SIGNAL_MIN then list[#list + 1] = n end end
+  return list
+end
+
+local function valid(proj) return proj and reaper.ValidatePtr(proj, "ReaProject*") end
+
+local function stop_loopback_projects()
+  for _, proj in ipairs({ lb.tx, lb.rx }) do
+    if valid(proj) then
+      reaper.Main_OnCommandEx(STOP, 0, proj)
+      for i = 0, reaper.CountTracks(proj) - 1 do
+        reaper.SetMediaTrackInfo_Value(reaper.GetTrack(proj, i), "I_RECARM", 0)
       end
-      reaper.Main_OnCommand(CLOSE_ALL, 0)
-    end,
-    wait = 0.5, -- REAPER's save questions are modal: the check runs after they are answered
-    check = function()
-      local left = {}
-      for _, p in ipairs(projects()) do if p.file ~= "" then left[#left + 1] = name_of(p.proj) end end
-      return { { name = #left == 0 and "no other project open"
-        or ("still open (closing cancelled?): " .. table.concat(left, ", ")), ok = #left == 0 } }
-    end },
+    end
+  end
+  lb.tx, lb.rx = nil, nil -- done: the tabs may be reused by the show workflow test
+end
 
-  { name = "Open test projects",
-    required = true,
-    run = function()
-      local dir = test_folder()
-      local files = rpp_files(dir)
-      if #files == 0 then error("no .rpp files in " .. dir, 0) end
-      files_before = {}
-      for _, f in ipairs(all_files(dir)) do files_before[f:lower()] = true end
-      for i, f in ipairs(files) do
-        if i > 1 then reaper.Main_OnCommand(NEW_TAB, 0) end
-        reaper.Main_openProject("noprompt:" .. dir .. sep .. f)
+--- A new track in proj (any tab may be active).
+local function new_track(proj, idx, name)
+  if reaper.InsertTrackInProject then
+    reaper.InsertTrackInProject(proj, idx, 0)
+  else
+    reaper.SelectProjectInstance(proj)
+    reaper.InsertTrackAtIndex(idx, false)
+  end
+  local tr = reaper.GetTrack(proj, idx)
+  reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", name, true)
+  return tr
+end
+
+local function add_fx(tr, names)
+  for _, fx_name in ipairs(names) do
+    local fx = reaper.TrackFX_AddByName(tr, fx_name, false, -1)
+    if fx >= 0 then
+      reaper.TrackFX_Show(tr, fx, 2) -- no floating FX window during the test
+      reaper.TrackFX_Show(tr, fx, 0) -- and no FX chain window
+      return fx
+    end
+  end
+  return -1
+end
+
+--- Sets the first parameter whose name contains one of the words. Returns { name, value } or nil.
+local function set_param(tr, fx, words, value)
+  for p = 0, reaper.TrackFX_GetNumParams(tr, fx) - 1 do
+    local _, pname = reaper.TrackFX_GetParamName(tr, fx, p, "")
+    for _, w in ipairs(words) do
+      if pname:lower():find(w, 1, true) then
+        reaper.TrackFX_SetParam(tr, fx, p, value)
+        return { name = pname, index = p, value = (reaper.TrackFX_GetParam(tr, fx, p)) }
       end
-    end,
-    wait = 2,
-    check = function()
-      local dir = SelfTest.normalize(test_folder()):lower()
-      local function inside(path)
-        local p = SelfTest.normalize(path):lower()
-        return p == dir or p:sub(1, #dir + 1) == dir .. "/"
-      end
-      local outside, rec_outside = {}, {}
-      for _, p in ipairs(projects()) do
-        if not inside(p.file) then outside[#outside + 1] = name_of(p.proj) end
-        if not inside(reaper.GetProjectPathEx(p.proj)) then rec_outside[#rec_outside + 1] = name_of(p.proj) end
-      end
-      find_projects()
-      return {
-        { name = #outside == 0 and "only test projects open" or ("not from the test folder: " .. table.concat(outside, ", ")),
-          ok = #outside == 0 },
-        { name = #rec_outside == 0 and "all test projects record into the test folder"
-          or ("records outside the test folder (recordings couldn't be deleted safely): " .. table.concat(rec_outside, ", ")),
-          ok = #rec_outside == 0 },
-        { name = "routing project (\"ROUTING\" in the name) open", ok = routing ~= nil },
-        { name = ("at least three songs open (%d)"):format(#songs), ok = #songs >= 3 },
-      }
-    end },
-
-  { name = "Action markers",
-    run = function() end,
-    check = function()
-      -- every action marker of the open (= test) projects must run existing actions
-      return ActionReferenceChecks.results(ActionReferenceChecks.check_markers(), "Action markers")
-    end },
-
-  { name = "Edit -> Show mode",
-    run = function() run_script("mode") end,
-    wait = 2,
-    check = function()
-      local rows = mode_checks(Mode.SHOW)
-      rows[#rows + 1] = { name = "Setlist is open", ok = window_open("setlist") }
-      rows[#rows + 1] = { name = "Status Display is open", ok = window_open("status") }
-      return rows
-    end },
-}
-for _, s in ipairs(show_round(false)) do steps[#steps + 1] = s end
-for _, s in ipairs(show_round(true)) do steps[#steps + 1] = s end
-steps[#steps + 1] = { name = "Show -> Edit mode",
-  run = function()
-    stop_all()
-    run_script("mode")
-  end,
-  wait = 2,
-  check = function()
-    local rows = mode_checks(Mode.EDIT)
-    rows[#rows + 1] = { name = "Status Display back as before (" .. (status_was_open and "open" or "closed") .. ")",
-      ok = window_open("status") == status_was_open }
-    return rows
-  end }
-
-local scenario = {
-  name = TITLE,
-
-  check_ready = function()
-    if not test_folder() then return false, "no test folder chosen" end
-    if playback_mode() == "rec" then return false, "playback mode is \"rec\": switch it to play first" end
-    if not Mode.is_edit() then return false, "switch to edit mode first" end
-    return true
-  end,
-
-  steps = steps,
-
-  -- Always: stop, playback mode back to play, edit mode back, recordings deleted. Returns report rows.
-  cleanup = function()
-    stop_all()
-    if playback_mode() == "rec" then run(TOGGLE_PLAYBACK_MODE) end
-    if Mode.get() ~= start_mode then run_script("mode") end
-    local rows = { { name = "playback mode back to play", ok = playback_mode() == "play" } }
-    for _, r in ipairs(delete_recordings()) do rows[#rows + 1] = r end
-    return rows
-  end,
-}
-
--- Menu ---------------------------------------------------------------------------------------------
-
-local function menu()
-  local folder = test_folder()
-  local items = { "Run live test", "Choose test folder...", "", "#Test folder: " .. (folder or "(none)") }
-  local x, y = reaper.GetMousePosition()
-  gfx.init("", 0, 0, 0, x, y)
-  gfx.x, gfx.y = gfx.screentoclient(x, y)
-  local choice = gfx.showmenu(table.concat(items, "|"))
-  gfx.quit()
-  if choice == 1 then
-    SelfTest.run_scenario(scenario, TITLE, { report_file = "Live test report.txt" })
-  elseif choice == 2 then
-    choose_folder()
+    end
   end
 end
 
-if not test_folder() and not choose_folder() then return end -- first run: ask for the test folder
+--- The empty unsaved tab left after closing the projects, otherwise a new tab.
+local function empty_project()
+  local current, file = reaper.EnumProjects(-1)
+  if file == "" and reaper.CountTracks(current) == 0 and current ~= lb.rx then return current end
+  reaper.Main_OnCommand(NEW_TAB, 0)
+  local proj = reaper.EnumProjects(-1)
+  if proj == current then error("could not open a new project tab for the test", 0) end
+  return proj
+end
+
+local function loopback_steps(sel)
+  local size = loopback_size()
+  local by_n, numbers = midi_loopbacks()
+
+  local steps = {
+    { name = "Loopback test projects",
+      required = true,
+      run = function()
+        -- LB IN: what arrives on the loopbacks, played on the main outs
+        lb.rx = empty_project()
+        lb.receivers, lb.synths = {}, {}
+        for n = 1, size do -- audio: input = loopback n (mono), armed with monitoring, never records
+          local tr = new_track(lb.rx, n - 1, "LB in " .. n)
+          reaper.SetMediaTrackInfo_Value(tr, "I_RECINPUT", LOOPBACK_FIRST + n - 1)
+          reaper.SetMediaTrackInfo_Value(tr, "I_RECMODE", 2) -- record: none
+          reaper.SetMediaTrackInfo_Value(tr, "I_RECMON", 1)
+          reaper.SetMediaTrackInfo_Value(tr, "I_RECARM", 1)
+          lb.receivers[n] = tr
+        end
+        for i, n in ipairs(numbers) do -- MIDI: input = LB<n> IN, ReaSynth, quiet
+          local pair = by_n[n]
+          if pair.IN and pair.IN.present then
+            local tr = new_track(lb.rx, reaper.CountTracks(lb.rx), "LB MIDI in " .. n)
+            reaper.SetMediaTrackInfo_Value(tr, "I_RECINPUT", MIDI_INPUT + pair.IN.idx * 32)
+            reaper.SetMediaTrackInfo_Value(tr, "I_RECMODE", 2)
+            reaper.SetMediaTrackInfo_Value(tr, "I_RECMON", 1)
+            reaper.SetMediaTrackInfo_Value(tr, "I_RECARM", 1)
+            reaper.SetMediaTrackInfo_Value(tr, "D_VOL", SYNTH_VOL)
+            lb.synths[n] = add_fx(tr, SYNTH_FX)
+          end
+        end
+
+        -- LB OUT: the tone generator, sent to one loopback at a time (not to the main outs). Silent until the
+        -- level is set: the tone generator starts at full volume.
+        lb.tx = empty_project()
+        local tr = new_track(lb.tx, 0, "LB test tone")
+        reaper.SetMediaTrackInfo_Value(tr, "D_VOL", 0)
+        reaper.SetMediaTrackInfo_Value(tr, "B_MAINSEND", 0)
+        lb.sender = tr
+        lb.fx = add_fx(tr, TONE_FX)
+        if lb.fx >= 0 then
+          lb.level = set_param(tr, lb.fx, { "vol", "db" }, TONE_DB)
+          lb.freq = set_param(tr, lb.fx, { "freq" }, TONE_HZ)
+        end
+        -- One hardware send per loopback, all active, volume 0 except the loopback under test: a loopback nobody
+        -- writes to keeps repeating its last audio (seen 2026-10-25), so every loopback is always written.
+        lb.sends = {}
+        for n = 1, size do
+          local send = reaper.CreateTrackSend(tr, nil)
+          reaper.SetTrackSendInfo_Value(tr, 1, send, "D_VOL", 0)
+          reaper.SetTrackSendInfo_Value(tr, 1, send, "I_SRCCHAN", 1024)                          -- mono, ch 1
+          reaper.SetTrackSendInfo_Value(tr, 1, send, "I_DSTCHAN", 1024 | (LOOPBACK_FIRST + n - 1)) -- mono, loopback n
+          lb.sends[n] = send
+        end
+        if lb.level then reaper.SetMediaTrackInfo_Value(tr, "D_VOL", 1) end -- level set: unmute (else silent)
+
+        -- Both play: stopped background projects don't run
+        reaper.Main_OnCommandEx(PLAY, 0, lb.rx)
+        reaper.Main_OnCommandEx(PLAY, 0, lb.tx)
+      end,
+      wait = 1,
+      check = function()
+        local synths_ok = true
+        for _, fx in pairs(lb.synths) do synths_ok = synths_ok and fx >= 0 end
+        return {
+          { name = ("loopback_size: %d audio loopback channels"):format(size), ok = size > 0 },
+          { name = ("LB IN project: %d tracks (%d audio + %d MIDI)"):format(reaper.CountTracks(lb.rx), size,
+              #numbers), ok = reaper.CountTracks(lb.rx) >= size },
+          { name = "LB OUT project: 1 track (test tone)", ok = reaper.CountTracks(lb.tx) == 1 },
+          { name = "two different test projects", ok = lb.rx ~= lb.tx },
+          { name = "tone generator added", ok = (lb.fx or -1) >= 0 },
+          { name = lb.level and ("tone level %s = %.1f (wanted %d dB)"):format(lb.level.name, lb.level.value, TONE_DB)
+              or "tone level parameter found", ok = lb.level ~= nil and math.abs(lb.level.value - TONE_DB) < 1 },
+          { name = lb.freq and ("tone frequency %s = %.0f (wanted %d Hz)"):format(lb.freq.name, lb.freq.value, TONE_HZ)
+              or "tone frequency parameter found", ok = lb.freq ~= nil and math.abs(lb.freq.value - TONE_HZ) < 1 },
+          { name = "ReaSynth on every MIDI receiving track", ok = synths_ok },
+          { name = ("%d hardware sends (one per loopback)"):format(#lb.sends), ok = #lb.sends == size
+              and reaper.GetTrackNumSends(lb.sender, 1) == size },
+          is_playing(lb.rx, "LB IN project", true),
+          is_playing(lb.tx, "LB OUT project", true),
+        }
+      end },
+  }
+
+  local failed_audio, start_peaks = 0, {}
+  local function set_send(n, vol) if lb.sends[n] then reaper.SetTrackSendInfo_Value(lb.sender, 1, lb.sends[n], "D_VOL", vol) end end
+  steps[#steps + 1] = { name = "Audio loopbacks", quiet = true,
+    run = function() end,
+    wait = SETTLE_WAIT,
+    check = function()
+      local noisy = inputs_with_signal()
+      if #noisy == 0 then return { { name = "all loopback inputs silent without the tone", ok = true } } end
+      return { { name = "signal without the tone on input(s) " .. table.concat(noisy, ", "), ok = false } }
+    end }
+  for n = 1, size do
+    local note = MELODY[(n - 1) % #MELODY + 1]
+    steps[#steps + 1] = { name = "Audio loopback " .. n, quiet = true,
+      run = function()
+        set_send(n - 1, 0)
+        if lb.freq then reaper.TrackFX_SetParam(lb.sender, lb.fx, lb.freq.index, note_hz(note)) end
+        for m, tr in ipairs(lb.receivers) do start_peaks[m] = peak(tr) end -- before the note arrives
+        set_send(n, 1)
+      end,
+      wait = AUDIO_WAIT,
+      check = function()
+        local here, elsewhere = false, {}
+        for m, tr in ipairs(lb.receivers) do
+          local p = peak(tr)
+          if m == n then
+            here = p > SIGNAL_MIN
+          elseif p > SIGNAL_MIN and p > (start_peaks[m] or 0) * RISE then
+            elsewhere[#elsewhere + 1] = m
+          end
+        end
+        local ok = here and #elsewhere == 0
+        if not ok then failed_audio = failed_audio + 1 end
+        return { { name = ("audio loopback %d: %s"):format(n, ok and "arrives on input " .. n .. " only"
+          or ((here and "" or "NOT on input " .. n) .. (#elsewhere > 0 and ((here and "" or ", ") ..
+            "also on input(s) " .. table.concat(elsewhere, ", ")) or ""))), ok = ok } }
+      end }
+  end
+  steps[#steps + 1] = { name = "Audio loopbacks",
+    run = function() set_send(size, 0) end,
+    wait = 0.5, -- a short break between the audio melody and the MIDI scale
+    check = function()
+      return { { name = ("%d of %d audio loopbacks ok"):format(size - failed_audio, size), ok = failed_audio == 0 } }
+    end }
+
+  local failed_midi = 0
+  for i, n in ipairs(numbers) do
+    local pair, note, before = by_n[n], scale_note(i), 0
+    steps[#steps + 1] = { name = "MIDI loopback LB" .. n, quiet = true,
+      run = function()
+        if not (pair.OUT and pair.IN and pair.OUT.present and pair.IN.present) then return end
+        before = (reaper.MIDI_GetRecentInputEvent(0)) -- sequence number of the newest event so far
+        reaper.StuffMIDIMessage(16 + pair.OUT.idx, NOTE_ON, note, TEST_VEL)
+      end,
+      wait = MIDI_WAIT,
+      check = function()
+        local label = "MIDI loopback LB" .. n
+        local problem
+        if not pair.OUT then problem = "LB" .. n .. " IN has no LB" .. n .. " OUT"
+        elseif not pair.IN then problem = pair.OUT.name .. " has no LB" .. n .. " IN"
+        elseif not pair.OUT.present then problem = pair.OUT.name .. " is not enabled"
+        elseif not pair.IN.present then problem = pair.IN.name .. " is not enabled" end
+        if problem then
+          failed_midi = failed_midi + 1
+          return { { name = label .. ": " .. problem, ok = false } }
+        end
+        reaper.StuffMIDIMessage(16 + pair.OUT.idx, NOTE_OFF, note, 0)
+        local seen, elsewhere = false, {}
+        local i = 0
+        while true do -- newest first, back to the events from before the test note
+          local seq, buf, _, dev = reaper.MIDI_GetRecentInputEvent(i)
+          if seq == 0 or seq <= before then break end
+          if #buf >= 2 and (buf:byte(1) & 0xF0) == NOTE_ON and buf:byte(2) == note then
+            if dev == pair.IN.idx then seen = true else elsewhere[#elsewhere + 1] = tostring(dev) end
+          end
+          i = i + 1
+        end
+        local ok = seen and #elsewhere == 0
+        if not ok then failed_midi = failed_midi + 1 end
+        return { { name = ("%s: %s -> %s (note %d)%s"):format(label, pair.OUT.name, pair.IN.name, note,
+          ok and " ok" or ((seen and "" or ": NOT received") ..
+            (#elsewhere > 0 and (" (also on input device(s) " .. table.concat(elsewhere, ", ") .. ")") or ""))),
+          ok = ok } }
+      end }
+  end
+  steps[#steps + 1] = { name = "MIDI loopbacks",
+    run = function() end,
+    check = function()
+      return { { name = ("%d of %d MIDI loopbacks ok (found by the names LB<n> OUT / LB<n> IN)"):format(
+        #numbers - failed_midi, #numbers), ok = #numbers > 0 and failed_midi == 0 } }
+    end }
+
+  steps[#steps + 1] = { name = "Loopback test projects: stop",
+    run = function()
+      stop_loopback_projects()
+      -- The show workflow test reuses these tabs. If something failed, offer to stop here and inspect them.
+      if sel.show and (failed_audio + failed_midi) > 0 and reaper.MB(("The loopback test found %d problem(s).\n\n" ..
+          "Stop here to inspect the loopback test projects?\nYes: stop (the show workflow test is skipped)\n" ..
+          "No: continue with the show workflow test"):format(failed_audio + failed_midi), TITLE, 4) == 6 then
+        error("stopped after the loopback test to inspect its projects (they stay open)", 0)
+      end
+    end,
+    check = function() return { { name = "stopped and disarmed", ok = true } } end }
+  return steps
+end
+
+-- Region Looper (part of the show workflow test, play mode only) -------------------------------------
+-- The deferred Region Looper loops regions named "LOOP <n>" n times, "LOOP" until "Stop loop", which then allows
+-- one final pass. While looping: repeat on, time selection = region, the "cue" and "timecode" tracks muted; when
+-- the loop ends everything is restored. The test takes the first LOOP region in the test songs, whatever kind.
+-- To keep it short, it jumps to shortly before the region end for every pass (the looper only counts the jump
+-- back to the region start).
+
+local LOOPER_FILE    = "Region Looper/SiSt-Live_Region Looping (defered).lua"
+local STOP_LOOP_FILE = "Region Looper/SiSt-Live_Region Looping_Stop loop.lua"
+local LOOP_LEAD_IN   = 1      -- s, start playing this far before the region
+local LOOP_BEFORE_END = 0.8   -- s, jump to this far before the region end for the next pass
+local LOOP_PASS_WAIT = 1.5    -- s, then wait: the jump back to the start (or past the end) has happened
+local LOOPER_TRACKS  = { "cue", "timecode" } -- muted by the looper while looping
+
+local loop = {} -- the region under test: { proj, start, stop, count (-1 = until Stop loop), name, mutes = {} }
+
+local function script_cmd(file)
+  local cmd = reaper.AddRemoveReaScript(true, 0, Actions.join_path(reaper.GetResourcePath(), file, sep), true)
+  if not cmd or cmd <= 0 then error("script not found: " .. file, 0) end
+  return cmd
+end
+
+local function find_loop_region()
+  for _, proj in ipairs(songs) do
+    local i = 0
+    while true do
+      local rv, isrgn, pos, rgnend, name = reaper.EnumProjectMarkers2(proj, i)
+      if rv == 0 then break end
+      if isrgn and name:find("^LOOP") then
+        local count = tonumber(name:match("^LOOP%s+(%d+)$"))
+        return { proj = proj, start = pos, stop = rgnend, name = name, count = (count and count >= 1) and count or -1 }
+      end
+      i = i + 1
+    end
+  end
+end
+
+local function looper_tracks(proj)
+  local list = {}
+  for i = 0, reaper.CountTracks(proj) - 1 do
+    local tr = reaper.GetTrack(proj, i)
+    local _, name = reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)
+    for _, wanted in ipairs(LOOPER_TRACKS) do
+      if name:lower() == wanted then list[#list + 1] = { tr = tr, name = name } end
+    end
+  end
+  return list
+end
+
+local function looping_state()
+  local proj = loop.proj
+  local _, ext = reaper.GetProjExtState(proj, "SiSt-Live", "RegionLooping")
+  local sel_start, sel_end = reaper.GetSet_LoopTimeRange2(proj, false, false, 0, 0, false)
+  return {
+    pos = reaper.GetPlayPositionEx(proj),
+    rep = reaper.GetSetRepeatEx(proj, -1) == 1,
+    ext = ext,
+    selection = math.abs(sel_start - loop.start) < TOLERANCE and math.abs(sel_end - loop.stop) < TOLERANCE,
+  }
+end
+
+local function jump_before_end()
+  reaper.SelectProjectInstance(loop.proj)
+  reaper.SetEditCurPos2(loop.proj, loop.stop - LOOP_BEFORE_END, false, true) -- seek the running playback
+end
+
+local function mute_rows(want_muted)
+  local rows = {}
+  for _, t in ipairs(loop.mutes or {}) do
+    local muted = reaper.GetMediaTrackInfo_Value(t.tr, "B_MUTE") == 1
+    local expected = want_muted or t.before
+    rows[#rows + 1] = { name = ("track %s %s"):format(t.name, want_muted and "muted while looping"
+      or ("back to " .. (t.before and "muted" or "unmuted"))), ok = muted == expected }
+  end
+  if #rows == 0 then rows[1] = SelfTest.warning("no cue / timecode track in " .. name_of(loop.proj) .. ": muting not tested") end
+  return rows
+end
+
+local function loop_steps()
+  return {
+    { name = "Region Looper running",
+      run = function()
+        local cmd = script_cmd(LOOPER_FILE)
+        loop.started_by_test = reaper.GetToggleCommandState(cmd) ~= 1
+        if loop.started_by_test then reaper.Main_OnCommand(cmd, 0) end -- normally started by __startup.lua
+      end,
+      wait = 0.5,
+      check = function()
+        local running = reaper.GetToggleCommandState(script_cmd(LOOPER_FILE)) == 1
+        return { { name = running and ("Region Looper running" .. (loop.started_by_test and " (started by the test)" or ""))
+          or "Region Looper could not be started", ok = running } }
+      end },
+
+    { name = "Loop: start",
+      required = true, -- the next loop steps build on it
+      run = function()
+        local found = find_loop_region()
+        for k in pairs(loop) do loop[k] = nil end
+        if not found then return end
+        for k, v in pairs(found) do loop[k] = v end
+        loop.mutes = looper_tracks(loop.proj)
+        for _, t in ipairs(loop.mutes) do t.before = reaper.GetMediaTrackInfo_Value(t.tr, "B_MUTE") == 1 end
+        reaper.SelectProjectInstance(loop.proj)
+        keep_only_needed_playing()
+        reaper.Main_OnCommandEx(STOP, 0, loop.proj)
+        reaper.SetEditCurPos2(loop.proj, math.max(0, loop.start - LOOP_LEAD_IN), false, false)
+        reaper.Main_OnCommandEx(1007, 0, loop.proj) -- Transport: Play (play mode)
+        -- Not tested (2026-10-25, Sina: maybe later): REC take switching - in play mode the looper switches the
+        -- REC folder items starting at the loop start to their next take on every pass.
+      end,
+      wait = LOOP_LEAD_IN + 1,
+      check = function()
+        if not loop.proj then
+          return { { name = "no region named LOOP... in the test songs", ok = false } }
+        end
+        local s = looping_state()
+        local rows = {
+          { name = ("loop region \"%s\" in %s (%.1f - %.1f s, %s)"):format(loop.name, name_of(loop.proj), loop.start,
+            loop.stop, loop.count > 0 and (loop.count .. " passes") or "until Stop loop"), ok = true },
+          { name = "playing inside the loop region", ok = s.pos >= loop.start and s.pos < loop.stop },
+          { name = "repeat on", ok = s.rep },
+          { name = "time selection = loop region", ok = s.selection },
+          { name = "looping flag (project ExtState RegionLooping) on", ok = s.ext == "true" },
+        }
+        for _, r in ipairs(mute_rows(true)) do rows[#rows + 1] = r end
+        return rows
+      end },
+
+    { name = "Loop: next pass",
+      run = jump_before_end,
+      wait = LOOP_PASS_WAIT,
+      check = function()
+        local s = looping_state()
+        return { { name = ("jumped back to the loop start (position %.2f s)"):format(s.pos),
+          ok = s.pos >= loop.start and s.pos < loop.stop - LOOP_BEFORE_END } }
+      end },
+
+    { name = "Loop: Stop loop",
+      run = function()
+        if loop.count == 2 then return end -- already in its last pass: nothing left to stop
+        reaper.SelectProjectInstance(loop.proj) -- Stop loop acts on the active project
+        reaper.Main_OnCommand(script_cmd(STOP_LOOP_FILE), 0)
+        jump_before_end()
+      end,
+      wait = LOOP_PASS_WAIT,
+      check = function()
+        if loop.count == 2 then
+          return { SelfTest.warning("\"" .. loop.name .. "\" is already in its last pass: Stop loop not tested") }
+        end
+        local s = looping_state()
+        return {
+          { name = ("one final pass after Stop loop (position %.2f s)"):format(s.pos),
+            ok = s.pos >= loop.start and s.pos < loop.stop - LOOP_BEFORE_END },
+          { name = "repeat off during the final pass", ok = not s.rep },
+        }
+      end },
+
+    { name = "Loop: end",
+      run = jump_before_end,
+      wait = LOOP_PASS_WAIT,
+      check = function()
+        local s = looping_state()
+        local rows = {
+          { name = ("plays on past the loop region (position %.2f s, region end %.2f s)"):format(s.pos, loop.stop),
+            ok = s.pos >= loop.stop },
+          { name = "repeat off", ok = not s.rep },
+          { name = "looping flag off", ok = s.ext ~= "true" },
+        }
+        for _, r in ipairs(mute_rows(false)) do rows[#rows + 1] = r end
+        reaper.Main_OnCommandEx(STOP, 0, loop.proj)
+        return rows
+      end },
+  }
+end
+
+-- Show workflow test --------------------------------------------------------------------------------
+
+local function show_steps()
+  local steps = {
+    { name = "Open test projects",
+      required = true,
+      run = function()
+        local dir = test_folder()
+        local files = rpp_files(dir)
+        if #files == 0 then error("no .rpp files in " .. dir, 0) end
+        files_before = {}
+        for _, f in ipairs(all_files(dir)) do files_before[f:lower()] = true end
+        -- Into the open tabs first ("noprompt:" replaces whatever is there without asking, e.g. the loopback
+        -- test's unsaved projects), new tabs for the rest; tabs left over are closed.
+        local tabs = projects()
+        for i, f in ipairs(files) do
+          if tabs[i] then reaper.SelectProjectInstance(tabs[i].proj) else reaper.Main_OnCommand(NEW_TAB, 0) end
+          reaper.Main_openProject("noprompt:" .. dir .. sep .. f)
+        end
+        for i = #tabs, #files + 1, -1 do
+          reaper.SelectProjectInstance(tabs[i].proj)
+          reaper.Main_OnCommand(40860, 0) -- File: Close current project tab
+        end
+      end,
+      wait = 2,
+      check = function()
+        local dir = SelfTest.normalize(test_folder()):lower()
+        local function inside(path)
+          local p = SelfTest.normalize(path):lower()
+          return p == dir or p:sub(1, #dir + 1) == dir .. "/"
+        end
+        local outside, rec_outside = {}, {}
+        for _, p in ipairs(projects()) do
+          if not inside(p.file) then outside[#outside + 1] = name_of(p.proj) end
+          if not inside(reaper.GetProjectPathEx(p.proj)) then rec_outside[#rec_outside + 1] = name_of(p.proj) end
+        end
+        find_projects()
+        return {
+          { name = #outside == 0 and "only test projects open" or ("not from the test folder: " .. table.concat(outside, ", ")),
+            ok = #outside == 0 },
+          { name = #rec_outside == 0 and "all test projects record into the test folder"
+            or ("records outside the test folder (recordings couldn't be deleted safely): " .. table.concat(rec_outside, ", ")),
+            ok = #rec_outside == 0 },
+          { name = "routing project (\"ROUTING\" in the name) open", ok = routing ~= nil },
+          { name = ("at least three songs open (%d)"):format(#songs), ok = #songs >= 3 },
+        }
+      end },
+
+    { name = "Action markers",
+      run = function() end,
+      check = function()
+        -- every action marker of the open (= test) projects must run existing actions
+        return ActionReferenceChecks.results(ActionReferenceChecks.check_markers(), "Action markers")
+      end },
+
+    { name = "Edit -> Show mode",
+      run = function()
+        reaper.SetExtState(SETLIST_SECTION, SETLIST_TEST_MODE, "1", false) -- show mode opens the Setlist
+        run_script("mode")
+      end,
+      wait = 2,
+      check = function()
+        local rows = mode_checks(Mode.SHOW)
+        rows[#rows + 1] = { name = "Setlist is open", ok = window_open("setlist") }
+        rows[#rows + 1] = { name = "Status Display is open", ok = window_open("status") }
+        return rows
+      end },
+  }
+  for _, s in ipairs(show_round(false)) do steps[#steps + 1] = s end
+  for _, s in ipairs(loop_steps()) do steps[#steps + 1] = s end -- Region Looper: play mode only
+  for _, s in ipairs(show_round(true)) do steps[#steps + 1] = s end
+  steps[#steps + 1] = { name = "Show -> Edit mode",
+    run = function()
+      stop_all()
+      run_script("mode")
+    end,
+    wait = 2,
+    check = function()
+      local rows = mode_checks(Mode.EDIT)
+      rows[#rows + 1] = { name = "Status Display back as before (" .. (status_was_open and "open" or "closed") .. ")",
+        ok = window_open("status") == status_was_open }
+      return rows
+    end }
+  return steps
+end
+
+-- Tests and selection ------------------------------------------------------------------------------
+
+-- Run in this order. Loopbacks first: then no routing or song project is open yet that could receive the test
+-- signals; the show workflow test then opens its projects into the loopback test's tabs (no save questions).
+local TESTS = {
+  { id = "loopback", label = "Loopbacks (audio + MIDI)",              steps = loopback_steps },
+  { id = "show",     label = "Show workflow (play/rec, end markers)", steps = show_steps },
+}
+local KEY_SELECTION = "tests" -- ExtState: ids of the ticked tests, "loopback,show"
+
+local function selection()
+  local stored = reaper.GetExtState(EXT_SECTION, KEY_SELECTION)
+  local sel = {}
+  if stored == "" then
+    for _, t in ipairs(TESTS) do sel[t.id] = true end -- default: all
+  else
+    for id in stored:gmatch("[^,]+") do sel[id] = true end
+  end
+  return sel
+end
+
+local function save_selection(sel)
+  local ids = {}
+  for _, t in ipairs(TESTS) do if sel[t.id] then ids[#ids + 1] = t.id end end
+  reaper.SetExtState(EXT_SECTION, KEY_SELECTION, #ids > 0 and table.concat(ids, ",") or "none", true)
+end
+
+--- Closes all projects after asking (question: the dialog text), with REAPER's "File: Close all projects": REAPER
+--- then asks whether to save each changed project. Returns false if the user said no. Used at the start and the end.
+local function close_all_projects(question)
+  if reaper.MB(question, TITLE, 4) ~= 6 then return false end
+  local name = reaper.kbd_getTextFromCmd(CLOSE_ALL, 0) or ""
+  if not name:lower():find("close all projects", 1, true) then -- this one must never be a different action
+    error(("action %d is \"%s\", expected \"File: Close all projects\""):format(CLOSE_ALL, name), 0)
+  end
+  reaper.Main_OnCommand(CLOSE_ALL, 0)
+  return true
+end
+
+--- Projects with something in them (a file or tracks). After closing everything REAPER keeps one empty tab.
+local function non_empty_projects()
+  local list = {}
+  for _, p in ipairs(projects()) do
+    if p.file ~= "" or reaper.CountTracks(p.proj) > 0 then list[#list + 1] = p end
+  end
+  return list
+end
+
+local close_step = { name = "Close open projects",
+  required = true,
+  run = function()
+    local saved = 0
+    for _, p in ipairs(projects()) do if p.file ~= "" then saved = saved + 1 end end
+    if saved == 0 then return end
+    if not close_all_projects(("%d project(s) are open. The live test only runs with its own test projects.\n\n" ..
+        "Close all projects now? REAPER asks whether to save changes."):format(saved)) then
+      error("cancelled: close the open projects first", 0)
+    end
+  end,
+  wait = 0.5, -- REAPER's save questions are modal: the check runs after they are answered
+  check = function()
+    local left = {}
+    for _, p in ipairs(projects()) do if p.file ~= "" then left[#left + 1] = name_of(p.proj) end end
+    return { { name = #left == 0 and "no other project open"
+      or ("still open (closing cancelled?): " .. table.concat(left, ", ")), ok = #left == 0 } }
+  end }
+
+-- After the report (so the results can be read first): offer to close the test projects, as at the start
+local function offer_closing(passed, failed)
+  local open = #non_empty_projects()
+  if open == 0 then return end
+  local closed = close_all_projects(("Live test done: %d passed, %d failed (report in the console).\n\n" ..
+    "Close the %d test project(s) now? REAPER asks whether to save changes: answer No."):format(passed, failed, open))
+  reaper.ShowConsoleMsg(closed and "Test projects closed.\n" or "Test projects left open.\n")
+end
+
+local function build_scenario(sel)
+  local steps = { close_step }
+  for _, t in ipairs(TESTS) do
+    if sel[t.id] then for _, s in ipairs(t.steps(sel)) do steps[#steps + 1] = s end end
+  end
+  return {
+    name = TITLE,
+
+    check_ready = function()
+      if sel.show then
+        if not test_folder() then return false, "no test folder chosen (needed for the show workflow test)" end
+        if playback_mode() == "rec" then return false, "playback mode is \"rec\": switch it to play first" end
+        if not Mode.is_edit() then return false, "switch to edit mode first" end
+      end
+      return true
+    end,
+
+    steps = steps,
+
+    -- Always: stop, playback mode back to play, edit mode back, recordings deleted. Returns report rows.
+    cleanup = function()
+      reaper.DeleteExtState(SETLIST_SECTION, SETLIST_TEST_MODE, false)
+      stop_loopback_projects()
+      stop_all()
+      if not sel.show then return {} end
+      if playback_mode() == "rec" then run(TOGGLE_PLAYBACK_MODE) end
+      if Mode.get() ~= start_mode then run_script("mode") end
+      local rows = { { name = "playback mode back to play", ok = playback_mode() == "play" } }
+      for _, r in ipairs(delete_recordings()) do rows[#rows + 1] = r end
+      return rows
+    end,
+  }
+end
+
+-- Menu ---------------------------------------------------------------------------------------------
+-- The tests are check items: clicking one ticks / unticks it and the menu opens again.
+
+local function menu()
+  local x, y = reaper.GetMousePosition()
+  gfx.init("", 0, 0, 0, x, y)
+  local run_now = false
+  while true do
+    local sel = selection()
+    local items, any = {}, false
+    for _, t in ipairs(TESTS) do
+      items[#items + 1] = (sel[t.id] and "!" or "") .. t.label
+      any = any or sel[t.id] == true
+    end
+    local RUN, CHOOSE = #TESTS + 1, #TESTS + 2
+    items[#items + 1] = ""
+    items[#items + 1] = (any and "" or "#") .. "Run selected tests"
+    items[#items + 1] = "Choose test folder..."
+    items[#items + 1] = ""
+    items[#items + 1] = "#Test folder: " .. (test_folder() or "(none)")
+    gfx.x, gfx.y = gfx.screentoclient(x, y)
+    local choice = gfx.showmenu(table.concat(items, "|"))
+    if choice >= 1 and choice <= #TESTS then
+      local id = TESTS[choice].id
+      sel[id] = not sel[id]
+      save_selection(sel)
+    elseif choice == CHOOSE then
+      choose_folder()
+    else
+      run_now = choice == RUN
+      break
+    end
+  end
+  gfx.quit()
+  if not run_now then return end
+
+  local sel = selection()
+  if sel.show and not test_folder() and not choose_folder() then return end
+  SelfTest.run_scenario(build_scenario(sel), TITLE,
+    { report_file = "Live test report.txt", progress = true, after_report = offer_closing })
+end
+
 menu()

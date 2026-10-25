@@ -117,6 +117,9 @@ local displayTabIdx = true
 local ExtStateSection = scriptName -- also the Window's section: its "WindowState" key is the same as before
 local ExtKeySetlist = "Setlist"
 local ExtKeySessionMarker = "StartedInThisSession" -- never persisted: empty again after a REAPER restart
+-- Test mode, set by "SiSt-Live: DEBUG Run Live Test" (never persisted): the autosave is neither read nor written,
+-- so a test never asks about it and never replaces the real setlist with the test projects.
+local ExtKeyTestMode = "TestMode"
 
 --- DATA ---
 local setlist = {} -- Table of entries with fields { "name", "path", "proj", "type", "color", "listIdx", "tabIdx",} though not all fields need to be present
@@ -843,7 +846,15 @@ function WriteTextFileAtomic(path, content, fs)
    return false, "renaming " .. tmpPath .. " to " .. path .. ": " .. tostring(renameErr)
 end
 
+function IsTestMode()
+   return reaper.GetExtState(ExtStateSection, ExtKeyTestMode) == "1"
+end
+
 function SaveAutosave()
+   if IsTestMode() then
+      log:debug("test mode: autosave not written")
+      return
+   end
    log:debug("Saving autosave")
    local path = GetAutosavePath()
    reaper.RecursiveCreateDirectory(path:match("^(.*)[\\/][^\\/]*$") or "", 0) -- make sure the Data folder exists
@@ -890,6 +901,7 @@ end
 
 -- Keeps a copy of the autosave before a clean start overwrites it. Returns true on success.
 function BackupAutosave(setlistStr)
+   if IsTestMode() then return true end -- test mode: the real autosave is left alone
    local ok, err = WriteTextFileAtomic(GetAutosaveBackupPath(), setlistStr or "")
    if ok then
       log:info("old autosave backed up to %s", GetAutosaveBackupPath())
@@ -3178,12 +3190,14 @@ function Init()
 
    CountOpenProjects()
 
-   local ignoreAutosave = IsModifierDown(MOD.SHIFT)
+   local testMode = IsTestMode()
+   local ignoreAutosave = IsModifierDown(MOD.SHIFT) or testMode
    local firstRun = IsFirstRunInSession()
    local saved, invalid, savedStr, source = {}, {}, "", ""
 
    if ignoreAutosave then
-      log:info("started with Shift held: ignoring the autosave")
+      log:info(testMode and "test mode (live test): the autosave is neither read nor written"
+         or "started with Shift held: ignoring the autosave")
    else
       saved, invalid, savedStr, source = ReadAutosave()
    end
