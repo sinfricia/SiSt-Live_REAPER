@@ -3,6 +3,21 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-10-26 - Review round, switch to Claude Code
+- Review of the work so far, the workflow and the tooling. Decisions: coding moves to Claude Code (started in the
+  repo, CLAUDE.md holds the working rules); Docs/ in the repo is the only documentation (claude.ai project copies
+  removed); new Docs/system-overview.md; approval per step; workflow order, no hurry; packaging plan confirmed
+  (components are used on other configs and by others). New roadmap items: 2b line endings, live test
+  simplification, clean-install test, Setup checks REAPER version/extensions; to be discussed: static analysis,
+  config distribution/version control.
+
+## 2026-10-26 - Step 2: cleanup (config part)
+- Archived 5 scripts, deleted lib/SiSt-Live_Toolbar.lua (Sina). Config, with REAPER closed and *.ini-backup
+  copies: 14 action-list entries with missing files removed from reaper-kb.ini (the mpl script edits the file
+  on disk, and the running REAPER wrote it back); Lock/Unlock Session custom actions renamed "... all items
+  (except in REC folder), envelopes, time selection, tempo and markers (deprecated)"; reaper-extstate.ini
+  reduced to the sections something still reads; cycle action fixed (Sina). Self-test: 729 passed.
+
 ## 2026-10-26 - Step 2: cleanup (code part)
 - Setlist: removed dead code (displayTabIdx - always true, gui.minHeight/minWidth, gui.autoscrolling - written,
   never read, own FileExists -> reaper.file_exists); CountEntryOccurrences no longer shadows `table`; renamed

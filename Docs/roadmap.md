@@ -5,15 +5,14 @@ Docs/completed-tasks.md.
 
 ## Status
 
-- Done: step -1, step 0, step 1, step 1b.
-- Current: step 2. Code part written (Setlist, __startup.lua, test list); waiting for Sina: archive moves, git rm,
-  REAPER action-list cleanup, ExtState keys, then self-test + commit.
+- Done: step -1, step 0, step 1, step 1b, step 2.
+- Next: step 2b (line endings), first step in Claude Code. Then step 3.
 
 ## Step 1b: Live test extensions - DONE 2026-10-25 (see completed tasks)
 
 - Later: "right track in the routing session" per function (needs a naming scheme; MIDI by name first).
 
-## Step 2: Cleanup
+## Step 2: Cleanup - DONE 2026-10-26 (see completed tasks)
 
 - Done by Claude (2026-10-26): Setlist dead code and typos; __startup.lua Auto Ansage call removed; coverage
   exception for lib/SiSt-Live_Toolbar.lua removed.
@@ -33,13 +32,22 @@ Docs/completed-tasks.md.
     of third-party scripts that are not in the action list.
   - Floating toolbar 32: already fixed (item 0 = Setlist).
 
+## Step 2b: Line endings (first step in Claude Code)
+
+- .gitattributes: LF for all text files. Check `git config core.autocrlf` first, so git doesn't convert back.
+- Normalize once (`git add --renormalize .`) in a commit of its own, nothing else in it.
+- Also check in this first Claude Code session: does `.claude/settings.json` (additionalDirectories "../..")
+  give access to the whole config? Can REAPER run a script in the open instance from the command line (then
+  Claude Code can start the self-test and read its report)?
+
 ## Step 3: Simplify and prepare generalization (behaviour unchanged)
 
 - Tests: strict fakes SelfTest.with_reaper / with_gfx (an unfaked call fails; built-in ExtState and clock); api.X
   -> reaper.X module by module with unchanged assertions; then trim tests by the rule "what deserves a test";
   ActionReferenceChecks.check() switches to with_reaper.
 - Self-test must not write config files: today it registers its scripts (AddRemoveReaScript with commit) on every
-  run, so REAPER rewrites reaper-kb.ini. Look the actions up first; register only when missing.
+  run, and that makes REAPER rewrite reaper-kb.ini (confirmed 2026-10-26). Look the actions up first; register only
+  when missing.
 - One loader line per script, replacing the "optional library" fallbacks and the Setlist's 3-folder lib search;
   a broken install gets one clear message. The loader auto-registers the test list.
 - Mode effects can't load or run: one uniform message (log + dialog in show mode) for every place that switches
@@ -78,8 +86,13 @@ Docs/completed-tasks.md.
 - Setup becomes the entry point for checks (installation, tests, action markers); then remove the DEBUG actions
   one by one (approval for each).
 - Status Display / Toolbar debug-on-open test runs switch to SelfTest.
-- Check whether AddRemoveReaScript(add, commit=true) rewrites reaper-kb.ini.
 - Editor setup: REAPER/ImGui Lua definition files in the repo, .vscode/settings.json points at them relatively.
+- TO BE DISCUSSED: static analysis (a tool reads the code without running it and reports e.g. variables used
+  before they exist or misspelled names; would have caught the `songs` bug). Decide whether it is worth it.
+- After the loader and the action lookup: simplify the live test. Action IDs by file name instead of 8 literal
+  IDs; general helpers (relative paths, file lists, folder picker, close all projects) into the libraries; one FX
+  name each for Tone Generator / ReaSynth; split into a short main file + LiveTest/Loopback.lua, Show.lua,
+  Looper.lua. The melodies stay.
 - DECISION: rename ExtState sections to the naming rule (Sist-Live_Setlist, SiSt-Live_Status) with a one-time
   migration, or leave them?
 
@@ -149,8 +162,15 @@ Docs/completed-tasks.md.
 - Web interface (WIP), incl. its bugs: Save open project info uses project.name instead of projName
   (OpenProjects always empty); Remote - Select project with empty ExtState.
 - SiSt-Live 1.0: rebuild index.xml, remove old entries.
+- Before 1.0: clean-install test (fresh portable REAPER -> ReaPack -> Setup -> self-test).
+- Setup checks the minimum REAPER version and the required extensions (SWS, js_ReaScriptAPI, ReaImGui).
+- TO BE DISCUSSED: how the config is distributed (whole portable install, config file, ReaPack), and whether the
+  config files (reaper-kb.ini etc.) get version control (today config changes leave no history).
 
 ## Open decisions (at their step)
+
+- 3: static analysis? (to be discussed)
+- Later: config distribution and version control for the config files (to be discussed)
 
 - 3: rename ExtState sections (with migration)?
 - 4: index name + categories, working copy, SiSt-Local packaging, may SiSt-Local use the SiSt Libraries?
