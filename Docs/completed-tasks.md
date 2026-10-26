@@ -3,6 +3,19 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-10-26 - Step 2b: line endings (first Claude Code session)
+- Cause: core.autocrlf=true from Git for Windows' system config, so git checked files out as CRLF while the repo
+  (GitHub) stored LF. Fix: .gitattributes `* text=auto eol=lf` (overrides autocrlf and goes with the repo to every
+  machine). Renormalize changed nothing else; working tree checked out again: all 81 files LF.
+- Repo repair: git fsck found one missing object (an old version of "Select all tracks in REC folder.lua", commit
+  ddff44d), most likely lost when kDrive synced the loose object files. Copied from a clone of GitHub; git gc
+  packed the 305 loose objects into one pack file.
+- Claude Code started in the config folder reads both CLAUDE.md files.
+- `reaper.exe -nonewinst "<script>.lua"` runs a script in the open REAPER: no second instance, not added to the
+  action list. So Claude can start the self-test and read its report. Side effect: REAPER moves its window each
+  time, so only in edit mode.
+- Self-test: 728 passed. Live test: 152 passed.
+
 ## 2026-10-26 - Review round, switch to Claude Code
 - Review of the work so far, the workflow and the tooling. Decisions: coding moves to Claude Code (started in the
   repo, CLAUDE.md holds the working rules); Docs/ in the repo is the only documentation (claude.ai project copies

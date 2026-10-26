@@ -5,8 +5,8 @@ Docs/completed-tasks.md.
 
 ## Status
 
-- Done: step -1, step 0, step 1, step 1b, step 2.
-- Next: step 2b (line endings), first step in Claude Code. Then step 3.
+- Done: step -1, step 0, step 1, step 1b, step 2, step 2b.
+- Next: step 3.
 
 ## Step 1b: Live test extensions - DONE 2026-10-25 (see completed tasks)
 
@@ -32,7 +32,7 @@ Docs/completed-tasks.md.
     of third-party scripts that are not in the action list.
   - Floating toolbar 32: already fixed (item 0 = Setlist).
 
-## Step 2b: Line endings (first step in Claude Code)
+## Step 2b: Line endings - DONE 2026-10-26 (see completed tasks)
 
 - .gitattributes: LF for all text files. Check `git config core.autocrlf` first, so git doesn't convert back.
 - Normalize once (`git add --renormalize .`) in a commit of its own, nothing else in it.
