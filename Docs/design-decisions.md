@@ -18,7 +18,7 @@ robustness and simplicity. Functionality stays the same, except for bug fixes th
 - Order of steps (2026-10-26): what makes sense for our workflow, not urgency. Side project, no hurry: take as
   long as it needs to get it right. Every commit is show-ready (tests green); at a show Sina can use a backup
   copy without the newest features.
-- Done = "DEBUG Run Self-Test" green + "DEBUG Run Live Test" green + Debug/Show checklist.md green.
+- Done = "DEBUG Run Self-Test" green + "DEBUG Run Live Test" green + Docs/Show checklist.md green.
   Core items (must work after EVERY step): the three Project End Handler custom actions, Start Show, Start Song
   (via MIDI), mode switch in both directions.
 - No moving or renaming a script without running the reference check first (a script's _RS ID comes from its

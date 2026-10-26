@@ -24,7 +24,7 @@ REAPER API: Docs/reference/ (generated, not in git). Look signatures up there; n
 - Naming rules: Docs/design-decisions.md (Naming).
 
 ## Testing
-Done = "DEBUG Run Self-Test" green + "DEBUG Run Live Test" green + Debug/Show checklist.md.
+Done = "DEBUG Run Self-Test" green + "DEBUG Run Live Test" green + Docs/Show checklist.md.
 Must work after every step: the three Project End Handler custom actions, Start Show, Start Song,
 mode switch both ways. Self-test report: Data/SiSt Libraries/Self-test report.txt in the config folder
 (read it, don't ask Sina to paste it).

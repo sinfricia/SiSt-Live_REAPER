@@ -45,6 +45,8 @@ Docs/completed-tasks.md.
 - Tests: strict fakes SelfTest.with_reaper / with_gfx (an unfaked call fails; built-in ExtState and clock); api.X
   -> reaper.X module by module with unchanged assertions; then trim tests by the rule "what deserves a test";
   ActionReferenceChecks.check() switches to with_reaper.
+- Self-test count: 729 passed on 2026-10-26 (15:03 run, report overwritten), 728 since (0 failed both times).
+  No code change explains it; check while reworking the tests.
 - Self-test must not write config files: today it registers its scripts (AddRemoveReaScript with commit) on every
   run, and that makes REAPER rewrite reaper-kb.ini (confirmed 2026-10-26). Look the actions up first; register only
   when missing.
