@@ -36,9 +36,9 @@ Docs/completed-tasks.md.
 
 - .gitattributes: LF for all text files. Check `git config core.autocrlf` first, so git doesn't convert back.
 - Normalize once (`git add --renormalize .`) in a commit of its own, nothing else in it.
-- Also check in this first Claude Code session: does `.claude/settings.json` (additionalDirectories "../..")
-  give access to the whole config? Can REAPER run a script in the open instance from the command line (then
-  Claude Code can start the self-test and read its report)?
+- Also check in this first Claude Code session (started in the config folder): are both CLAUDE.md files read
+  from the start? Can REAPER run a script in the open instance from the command line (then Claude Code can
+  start the self-test and read its report)?
 
 ## Step 3: Simplify and prepare generalization (behaviour unchanged)
 
