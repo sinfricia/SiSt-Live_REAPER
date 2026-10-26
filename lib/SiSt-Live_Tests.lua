@@ -111,7 +111,6 @@ return {
     folder = "lib",
     exceptions = {
       ["lib/SiSt-Live_Tests.lua"] = "this test list",
-      ["lib/SiSt-Live_Toolbar.lua"] = "unused old copy of ToolbarSource, deleted in step 2",
     },
   },
 }

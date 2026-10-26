@@ -3,6 +3,14 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-10-26 - Step 2: cleanup (code part)
+- Setlist: removed dead code (displayTabIdx - always true, gui.minHeight/minWidth, gui.autoscrolling - written,
+  never read, own FileExists -> reaper.file_exists); CountEntryOccurrences no longer shadows `table`; renamed
+  HandleIInvalid... -> HandleInvalid..., setlistLenght -> setlistLength; dialog typos ("mismatch", "conflict",
+  "File not found"). Behaviour unchanged.
+- __startup.lua: dead Auto Ansage call removed (the script is archived).
+- SiSt-Live_Tests.lua: coverage exception for lib/SiSt-Live_Toolbar.lua removed (the file is deleted).
+
 ## 2026-10-25 - Step 1b: live test extensions
 - Test selection: the live test menu shows the tests as check items (remembered); "Run selected tests" runs
   the ticked ones in one report. Order: loopbacks, then show workflow.

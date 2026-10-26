@@ -6,9 +6,8 @@ Docs/completed-tasks.md.
 ## Status
 
 - Done: step -1, step 0, step 1, step 1b.
-- Waiting for Sina: commit 0.4 + 0.5 (if not done yet); test kDrive conflict check v1.0.1 (startup skips missing
-  folders).
-- Current: step 1b done. Next: step 2 (cleanup).
+- Current: step 2. Code part written (Setlist, __startup.lua, test list); waiting for Sina: archive moves, git rm,
+  REAPER action-list cleanup, ExtState keys, then self-test + commit.
 
 ## Step 1b: Live test extensions - DONE 2026-10-25 (see completed tasks)
 
@@ -16,30 +15,31 @@ Docs/completed-tasks.md.
 
 ## Step 2: Cleanup
 
-- Run the reference check first.
-- Archive (_Archive): Toggle Auto Ansage (deprecated), Sync WING custom control states (test only), DEBUG Main
-  Toolbar Switch Test, Apply action ImGui Rewrite, Apply action (create action). Keep "Apply action to all open
-  projects" until 5c replaces it (Floating toolbar 1 uses it).
-- Delete lib/SiSt-Live_Toolbar.lua (unused old copy of ToolbarSource).
-- Setlist dead code and typos (gui.minHeight/minWidth, gui.autoscrolling, displayTabIdx, FileExists,
-  CountEntryOccurrences(table,...), HandleIInvalid..., setlistLenght, "mismach", "conlict", "File no found").
-- __startup.lua: remove the dead Auto Ansage call.
-- Delete old ExtState keys: toolbar_button_w/h, [Sist-Live Setlist], [SiSt-Live_ShowToolbar],
-  DockingState/DockingIndex (keep [ProjectList]: the web interface uses it).
-- For Sina in REAPER (list provided):
-  - remove action-list entries with missing files: Modes/SiSt-Live_Button.lua; Modes/ "Choose screenset / Use
-    current layouts / Use current theme for EDIT/SHOW mode" (6); Project List/textInputMultiTest.lua,
-    textInputTest.lua; SiSt-Live_Display Song Name (Marker 0) and current marker.lua
-  - Floating toolbar 32, item 1 "Project List" -> _RSde31ba7... (deleted script)
-  - cycle action "SiSt-Live_Loop current region 4x (action marker)" steps 3 and 11 -> _c72da9d9..., _984d31ba...
-    (custom actions that no longer exist); fix or retire with the action-marker looper
-  - rename the Lock/Unlock Session custom actions to say what they do + "(deprecated)"
+- Done by Claude (2026-10-26): Setlist dead code and typos; __startup.lua Auto Ansage call removed; coverage
+  exception for lib/SiSt-Live_Toolbar.lua removed.
+- For Sina (list given 2026-10-26):
+  - git mv to _Archive: Toggle Auto Ansage (deprecated), Sync WING custom control states (test only), DEBUG Main
+    Toolbar Switch Test, Apply action ImGui Rewrite, Apply action (create action). Keep "Apply action to all open
+    projects" until 5c replaces it (Floating toolbar 1 uses it).
+  - git rm lib/SiSt-Live_Toolbar.lua (unused old copy of ToolbarSource).
+  - action-list entries with missing files: removed 2026-10-26 (Claude, in reaper-kb.ini with REAPER closed;
+    the mpl script's on-disk edit was overwritten by the running REAPER). Backup: reaper-kb.ini-backup.
+  - cycle action "SiSt-Live_Loop current region 4x (action marker)": fixed (Sina, 2026-10-26).
+  - Lock/Unlock Session custom actions renamed to "SiSt-Live_Lock/Unlock all items (except in REC folder),
+    envelopes, time selection, tempo and markers (deprecated)" (Claude, 2026-10-26; command IDs unchanged).
+  - reaper-extstate.ini: cleaned 2026-10-26 (Claude, REAPER closed; backup reaper-extstate.ini-backup). Only
+    sections a registered script or SiSt-Live reads are kept; removed: old SiSt-Live keys, [ProjectList] /
+    [CustomProjectListSection] docking leftovers (the web remote writes ProjectList non-persistently), 23 sections
+    of third-party scripts that are not in the action list.
+  - Floating toolbar 32: already fixed (item 0 = Setlist).
 
 ## Step 3: Simplify and prepare generalization (behaviour unchanged)
 
 - Tests: strict fakes SelfTest.with_reaper / with_gfx (an unfaked call fails; built-in ExtState and clock); api.X
   -> reaper.X module by module with unchanged assertions; then trim tests by the rule "what deserves a test";
   ActionReferenceChecks.check() switches to with_reaper.
+- Self-test must not write config files: today it registers its scripts (AddRemoveReaScript with commit) on every
+  run, so REAPER rewrites reaper-kb.ini. Look the actions up first; register only when missing.
 - One loader line per script, replacing the "optional library" fallbacks and the Setlist's 3-folder lib search;
   a broken install gets one clear message. The loader auto-registers the test list.
 - Mode effects can't load or run: one uniform message (log + dialog in show mode) for every place that switches

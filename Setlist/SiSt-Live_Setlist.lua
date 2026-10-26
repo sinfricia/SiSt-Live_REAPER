@@ -111,8 +111,6 @@ local MAX_RESOLVE_ATTEMPTS = 3
 ------- VARIABLES --------
 --------------------------
 
-local displayTabIdx = true
-
 --- EXT STATE ---
 local ExtStateSection = scriptName -- also the Window's section: its "WindowState" key is the same as before
 local ExtKeySetlist = "Setlist"
@@ -197,8 +195,6 @@ local gui = setmetatable({
 
    -- Derived layout values (calculated in ApplyZoom, OnWindowOpen and Frame)
    lineHeight = 0,
-   minHeight = 0, --currently unused
-   minWidth = 0,  --currently unused
    listH = 0,
    entryTextSize = CFG.entryTextSize,
    projLenTextSize = CFG.projLenTextSize,
@@ -302,16 +298,6 @@ end
 
 function Clamp(val, min, max)
    return math.max(min, math.min(max, val))
-end
-
-function FileExists(path)
-   local file = io.open(path, "r")
-   if file then
-      file:close()
-      return true
-   else
-      return false
-   end
 end
 
 function CountOpenProjects()
@@ -890,7 +876,7 @@ end
 -- (opens missing projects, asks about conflicts). Returns the resulting setlist.
 function ApplyAutosave(list, invalidEntries, source)
    if next(invalidEntries) then
-      HandleIInvalidSetlistStringEntries(list, invalidEntries, "from " .. source)
+      HandleInvalidSetlistStringEntries(list, invalidEntries, "from " .. source)
    end
 
    if next(list) then
@@ -1022,12 +1008,12 @@ function LoadSetlistFromFile()
    if not next(invalidEntries) then
       reaper.MB("Loaded setlist from\n" .. loadPath, "Load setlist from file", 0)
    else
-      HandleIInvalidSetlistStringEntries(fileList, invalidEntries, "from " .. loadPath)
+      HandleInvalidSetlistStringEntries(fileList, invalidEntries, "from " .. loadPath)
    end
    return list
 end
 
-function HandleIInvalidSetlistStringEntries(validEntries, invalidEntries, context)
+function HandleInvalidSetlistStringEntries(validEntries, invalidEntries, context)
    if not context then context = "" end
    local msg = "Couldn't resolve the following entries while loading " .. context .. ":\n\n"
    local title = "Invalid entries found while parsing"
@@ -1049,10 +1035,10 @@ end
 --- DATA MANIPULATION
 ----------------------------
 
-function CountEntryOccurrences(table, entry)
+function CountEntryOccurrences(entries, entry)
    local count = 0
-   for _, occurence in ipairs(table) do
-      if NormalizePath(occurence.path) == NormalizePath(entry.path) then
+   for _, occurrence in ipairs(entries) do
+      if NormalizePath(occurrence.path) == NormalizePath(entry.path) then
          count = count + 1
       end
    end
@@ -1197,7 +1183,7 @@ function ReplaceProjEntry(list, entry)
    if not retval or loadPath == "" then return end
 
    reaper.Main_OnCommand(CMD.NEW_PROJ_TAB, 0) --New project tab
-   if FileExists(loadPath) then
+   if reaper.file_exists(loadPath) then
       reaper.Main_openProject(loadPath)
    else
       reaper.MB("Selected file couldn't be loaded", "Error", 0)
@@ -1448,7 +1434,7 @@ function ResolveConflictsWithOpenProj(list, silent, isLoadFile, attempt)
             else
                local msg = "The following file was not found. Entry will be added but action needs to be taken:\n\n" ..
                    entry.path
-               reaper.MB(msg, "File no found", 0)
+               reaper.MB(msg, "File not found", 0)
 
                list[entry.listIdx].type = ENTRY.MISSING
             end
@@ -1556,7 +1542,7 @@ function ResolveConflictsWithOpenProj(list, silent, isLoadFile, attempt)
       local ret = reaper.MB(
          "Something went wrong with conflict resolutions. Unequal lengths of openProjList and projEntriesInList: " ..
          str .. ": " .. #openProjList .. " vs " .. #projEntriesInList .. "\nDo you want to run ConclictResolver again?",
-         "Error in conlict resolution", 2)
+         "Error in conflict resolution", 2)
 
       if ret == 3 then
          terminate = true
@@ -1586,7 +1572,7 @@ function ResolveConflictsWithOpenProj(list, silent, isLoadFile, attempt)
 
    if orderConflict then
       local msg =
-      "Order mismach detected between setlist and open projects!\n\nSync setlist -> project tabs?\nClicking 'No' will sync project tabs -> setlist."
+      "Order mismatch detected between setlist and open projects!\n\nSync setlist -> project tabs?\nClicking 'No' will sync project tabs -> setlist."
 
       local ret
       if silent or isLoadFile then
@@ -2022,7 +2008,6 @@ function HandleDraggingEntry()
 
       -- Auto-scroll if mouse is near top or bottom
       if gfx.mouse_y < gui.titleHeight - gui.dragScrollMargin or gfx.mouse_y > gui.listH + gui.titleHeight + gui.dragScrollMargin then
-         gui.autoscrolling = true
          gui.fractionalScrollOffset = gui.fractionalScrollOffset + gui.dragScrollSpeed
 
          if math.abs(gui.fractionalScrollOffset) >= 1 then
@@ -2033,7 +2018,6 @@ function HandleDraggingEntry()
             log:debug("  drag autoscroll: scrollOffset %s", gui.scrollOffset)
          end
       else
-         gui.autoscrolling = false
          gui.fractionalScrollOffset = 0
       end
 
@@ -2346,11 +2330,11 @@ function HandleOffscreenIndicator()
 end
 
 function DrawScrollbar()
-   local setlistLenght = #setlist
-   if setlistLenght <= gui.numVisibleEntries then return end
+   local setlistLength = #setlist
+   if setlistLength <= gui.numVisibleEntries then return end
 
    local scrollTrackHeight = gui.listH + gui.titleHeight
-   gui.scrollH = scrollTrackHeight * (gui.numVisibleEntries / setlistLenght)
+   gui.scrollH = scrollTrackHeight * (gui.numVisibleEntries / setlistLength)
    local offset = gui.displayOffset or gui.scrollOffset
    gui.scrollY = Clamp(offset / math.max(gui.maxScroll, 1), 0, 1) * (scrollTrackHeight - gui.scrollH)
 
@@ -2398,7 +2382,7 @@ function DrawListEntry(y, entry)
    Theme.set_font(gui.entryTextSize)
    if entry.type == ENTRY.PROJECT then
       textAlpha = 1
-      local displayIdx = tostring(displayTabIdx and entry.tabIdx or entry.listIdx)
+      local displayIdx = tostring(entry.tabIdx or entry.listIdx)
       displayIdx = PadNumberStringWithZeroes(displayIdx, math.floor(math.log(openProjCount, 10) + 1)) .. ". "
 
       --draw selected project indicator
@@ -2568,8 +2552,6 @@ function OnWindowOpen(w)
    gui.zoomLevel = w.state.zoomLevel or 0
    gui.scrollOffset = w.state.scrollOffset or 0
    ApplyZoom(gui.zoomLevel) -- needs the open window (font metrics)
-   gui.minHeight = gui.ctrlPanelSize + gui.titleHeight + gui.lineHeight * 3
-   gui.minWidth = gui.buttonW * 3 + gui.entryIndent + 5
 end
 
 function OnWindowClose(w)
