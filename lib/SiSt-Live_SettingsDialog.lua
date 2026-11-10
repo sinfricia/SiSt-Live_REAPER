@@ -7,10 +7,10 @@
 -- ModeEffects.MODULES can list its settings in Effect.settings, so a new effect's settings show up
 -- here without changing this file. Setting contract:
 --   label                 short name, shown after the mode ("SHOW <label>")
---   get(mode, api)        stored value (nil = none)
+--   get(mode)             stored value (nil = none)
 --   format(value)         value -> field text ("" = none)
---   parse(text, api)      field text -> true, value[, note]  or  false, error message
---   set(mode, value, api) stores the value (nil = none)
+--   parse(text)           field text -> true, value[, note]  or  false, error message
+--   set(mode, value)      stores the value (nil = none)
 --
 -- Flow: fields show the stored values. Only fields whose text changed are parsed. If any is
 -- invalid, the errors are shown and the dialog opens again with what was typed. Then one
@@ -75,22 +75,22 @@ function SettingsDialog.split(str, n)
 end
 
 --- Current field texts.
-function SettingsDialog.read(fields, api)
+function SettingsDialog.read(fields)
   local texts = {}
   for i, f in ipairs(fields) do
-    texts[i] = f.setting.format(f.setting.get(f.mode, api))
+    texts[i] = f.setting.format(f.setting.get(f.mode))
   end
   return texts
 end
 
 --- Compares typed texts with the stored ones. Returns changes and errors.
 --- change: { field, value, old (text), new (text), note }
-function SettingsDialog.evaluate(fields, old_texts, new_texts, api)
+function SettingsDialog.evaluate(fields, old_texts, new_texts)
   local changes, errors = {}, {}
   for i, f in ipairs(fields) do
     local typed = (new_texts[i] or ""):match("^%s*(.-)%s*$")
     if typed ~= old_texts[i] then
-      local ok, value, note = f.setting.parse(typed, api)
+      local ok, value, note = f.setting.parse(typed)
       if not ok then
         errors[#errors + 1] = f.mode:upper() .. " " .. tostring(value)
       else
@@ -105,9 +105,9 @@ function SettingsDialog.evaluate(fields, old_texts, new_texts, api)
   return changes, errors
 end
 
-function SettingsDialog.store(changes, api)
+function SettingsDialog.store(changes)
   for _, c in ipairs(changes) do
-    c.field.setting.set(c.field.mode, c.value, api)
+    c.field.setting.set(c.field.mode, c.value)
     log:info("%s: '%s' -> '%s'", c.field.caption, c.old, c.new)
   end
 end
@@ -127,28 +127,27 @@ end
 
 -- Dialog ----------------------------------------------------------------
 -- Runs the dialog for one group until it's valid or cancelled. Returns changes, or nil if cancelled.
-local function run_group(fields, api)
-  local old = SettingsDialog.read(fields, api)
+local function run_group(fields)
+  local old = SettingsDialog.read(fields)
   local texts = old
   local captions = {}
   for i, f in ipairs(fields) do captions[i] = f.caption end
   local captions_csv = table.concat(captions, ",") .. ",separator=" .. SettingsDialog.SEP .. ",extrawidth=220"
 
   while true do
-    local ok, result = api.GetUserInputs(SettingsDialog.TITLE, #fields, captions_csv,
+    local ok, result = reaper.GetUserInputs(SettingsDialog.TITLE, #fields, captions_csv,
       table.concat(texts, SettingsDialog.SEP))
     if not ok then return nil end
     texts = SettingsDialog.split(result, #fields)
 
-    local changes, errors = SettingsDialog.evaluate(fields, old, texts, api)
+    local changes, errors = SettingsDialog.evaluate(fields, old, texts)
     if #errors == 0 then return changes end
-    api.MB("Please fix:\n\n" .. table.concat(errors, "\n"), "SiSt-Live mode settings", 0)
+    reaper.MB("Please fix:\n\n" .. table.concat(errors, "\n"), "SiSt-Live mode settings", 0)
   end
 end
 
 --- The "SiSt-Live: Configure modes" action. Returns the number of stored changes.
-function SettingsDialog.run(api)
-  api = api or reaper
+function SettingsDialog.run()
   local effects = {}
   for _, e in ipairs(ModeEffects.load()) do
     if not e.load_error then effects[#effects + 1] = e end
@@ -156,7 +155,7 @@ function SettingsDialog.run(api)
 
   local all = {}
   for _, group in ipairs(SettingsDialog.groups(SettingsDialog.collect(effects))) do
-    local changes = run_group(group, api)
+    local changes = run_group(group)
     if not changes then return 0 end -- cancelled: nothing is stored
     for _, c in ipairs(changes) do all[#all + 1] = c end
   end
@@ -164,12 +163,12 @@ function SettingsDialog.run(api)
   if #all == 0 then return 0 end
 
   local current = Mode.get()
-  local ret = api.MB(SettingsDialog.describe(all) ..
+  local ret = reaper.MB(SettingsDialog.describe(all) ..
     ("\n\nYes: store and apply %s mode (current) now\nNo: store only (applied at the next switch)\nCancel: discard"):format(current:upper()),
     "SiSt-Live mode settings: store changes?", 3)
   if ret == 2 then return 0 end -- cancel
 
-  SettingsDialog.store(all, api)
+  SettingsDialog.store(all)
   if ret == 6 then ModeEffects.apply_and_report(current) end -- dialog if an effect failed
   return #all
 end
@@ -180,7 +179,6 @@ function SettingsDialog.self_test()
   local function check(name, cond) results[#results + 1] = { name = name, ok = cond and true or false } end
 
   local store = {}
-  local api = {}
   local function setting(label)
     return {
       label  = label,
@@ -213,19 +211,19 @@ function SettingsDialog.self_test()
   check("split: empty fields are kept", table.concat(SettingsDialog.split("a\n\nc\n", 4), "|") == "a||c|")
 
   store = { showone = 1 }
-  local old = SettingsDialog.read(fields, api)
+  local old = SettingsDialog.read(fields)
 
   local new = { "1", " 3 ", "", "", "x", "7" }
-  local changes, errors = SettingsDialog.evaluate(fields, old, new, api)
+  local changes, errors = SettingsDialog.evaluate(fields, old, new)
   check("evaluate: unchanged fields are ignored, changes trimmed",
     #changes == 2 and changes[1].field.caption == "SHOW two" and changes[1].new == "3")
   check("evaluate: invalid field reported with its mode", #errors == 1 and errors[1] == "EDIT two: not a number")
   check("evaluate: notes are passed on", changes[2].note == "EDIT three is big")
 
-  SettingsDialog.store(changes, api)
+  SettingsDialog.store(changes)
 
-  local cleared = SettingsDialog.evaluate(fields, SettingsDialog.read(fields, api), { "", "3", "", "", "", "7" }, api)
-  SettingsDialog.store(cleared, api)
+  local cleared = SettingsDialog.evaluate(fields, SettingsDialog.read(fields), { "", "3", "", "", "", "7" })
+  SettingsDialog.store(cleared)
   check("empty field clears the setting", #cleared == 1 and store.showone == nil)
 
   check("every registered effect setting follows the contract", (function()

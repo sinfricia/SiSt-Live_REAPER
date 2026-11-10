@@ -7,7 +7,7 @@
 -- command ID is looked up by the script's file (SiSt-Live_Actions.lua), so it works from the first
 -- switch in every REAPER session: no script has to register anything first.
 --
--- Uses the global `reaper` lazily (never cached) so tests can swap in a mock.
+-- Calls the global `reaper` directly (never cached), so tests can swap in fakes.
 
 local Actions = require("SiSt-Live_Actions")
 
@@ -17,33 +17,32 @@ local Button = {}
 Button.SCRIPTS = { mode = "mode", debug = "debug" }
 
 --- Light (true) or unlight (false) the button. Returns false (and the reason) if its action isn't found.
-function Button.set_state(id, on, api)
-  api = api or reaper
-  local cmd, err = Actions.script_command(Button.SCRIPTS[id] or id, api)
+function Button.set_state(id, on)
+  local cmd, err = Actions.script_command(Button.SCRIPTS[id] or id)
   if not cmd then return false, err end
-  api.SetToggleCommandState(0, cmd, on and 1 or 0)
-  api.RefreshToolbar2(0, cmd)
+  reaper.SetToggleCommandState(0, cmd, on and 1 or 0)
+  reaper.RefreshToolbar2(0, cmd)
   return true
 end
 
 --- Which action the button belongs to, for diagnostics.
-function Button.describe(id, api)
-  local cmd, err = Actions.script_command(Button.SCRIPTS[id] or id, api)
+function Button.describe(id)
+  local cmd, err = Actions.script_command(Button.SCRIPTS[id] or id)
   return cmd and ("action %d"):format(cmd) or err
 end
 
---- Built-in self-test. Uses a fake REAPER API: never touches a real toolbar button.
+--- Built-in self-test. Uses fake REAPER functions (SelfTest.with_reaper): never touches a real toolbar button.
 function Button.self_test()
   local results = {}
   local function check(name, cond) results[#results + 1] = { name = name, ok = cond and true or false } end
   local states = {}
-  local api = {
+  local fakes = {
     GetResourcePath = function() return "R" end,
     file_exists = function() return false end, -- no script installed
     SetToggleCommandState = function(section, cmd, v) states[#states + 1] = v end,
     RefreshToolbar2 = function() end,
   }
-  local ok, why = Button.set_state("debug", true, api)
+  local ok, why = require("SelfTest").with_reaper(fakes, function() return Button.set_state("debug", true) end)
   check("set_state: script not installed -> false + reason, nothing set",
     not ok and why:find("not installed", 1, true) ~= nil and #states == 0)
   return results

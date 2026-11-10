@@ -34,7 +34,7 @@
 -- A report is { problems = { { where, id, problem } }, unused_missing = { { id, path } }, checked = n,
 --               unreadable = { file names } }.
 -- results(report, title) turns a report into { name, ok } rows for a self-test runner.
--- Self test: ActionReferenceChecks.self_test() uses sample texts and a fake marker list only.
+-- Self test: ActionReferenceChecks.self_test() uses sample texts and fake REAPER functions only.
 
 local Checks = {}
 
@@ -185,12 +185,22 @@ function Checks.is_absolute(path)
   return path:match("^%a:[/\\]") ~= nil or path:match("^[/\\]") ~= nil
 end
 
---- Checks references. Pure: the questions to REAPER and the file system are passed in.
----   known(id)          does REAPER know this command ID?
----   file_exists(path)  does this script file exist? (path as stored in reaper-kb.ini)
+--- Does REAPER know this command ID (named, e.g. "_RS...")?
+local function known(id)
+  return reaper.NamedCommandLookup(id) ~= 0
+end
+
+--- Checks references: REAPER must know every ID, and the file of every referenced script must exist (paths as
+--- stored in reaper-kb.ini: relative to <resource path>/Scripts, or absolute).
 --- Returns problems ({ where, id, problem }) and unused_missing (registered scripts whose file is missing
 --- and that nothing refers to), both sorted.
-function Checks.check(scripts, refs, known, file_exists)
+function Checks.check(scripts, refs)
+  local sep = package.config:sub(1, 1)
+  local resource = reaper.GetResourcePath()
+  local function file_exists(path)
+    local full = Checks.is_absolute(path) and path or (resource .. sep .. "Scripts" .. sep .. path)
+    return reaper.file_exists((full:gsub("[/\\]", sep)))
+  end
   local problems, used, file_ok = {}, {}, {}
   local function script_file_ok(id)
     local path = scripts[id]
@@ -248,10 +258,6 @@ local function read_file(path)
   return text
 end
 
-local function known(id)
-  return reaper.NamedCommandLookup(id) ~= 0
-end
-
 --- Reads the config files and checks every named reference. A missing optional file (mouse modifiers,
 --- SWS files) is not a problem: it simply has nothing to check. A missing reaper-kb.ini is.
 function Checks.check_config()
@@ -267,11 +273,7 @@ function Checks.check_config()
     for _, r in ipairs(more) do refs[#refs + 1] = r end
   end
 
-  local function file_exists(path)
-    local full = Checks.is_absolute(path) and path or (resource .. sep .. "Scripts" .. sep .. path)
-    return reaper.file_exists((full:gsub("[/\\]", sep)))
-  end
-  local problems, unused_missing = Checks.check(scripts, refs, known, file_exists)
+  local problems, unused_missing = Checks.check(scripts, refs)
   return { problems = problems, unused_missing = unused_missing, checked = #refs, unreadable = unreadable }
 end
 
@@ -360,9 +362,12 @@ function Checks.self_test()
   for _, more in ipairs({ menu, mouse, cycle, sws }) do for _, r in ipairs(more) do refs[#refs + 1] = r end end
   local known_ids = { _RSaaa = true, _RSbbb = true, _RSccc = true, _abc999 = true, _XENAKIOS_RESETTAKEVOL = true,
     _e65a75cf = true, _c72d = true }
-  local files = { ["SiSt-Live/Transport/Play.lua"] = true }
-  local problems, unused = Checks.check(scripts, refs, function(id) return known_ids[id] end,
-    function(path) return files[path] end)
+  local files = { ["R/Scripts/SiSt-Live/Transport/Play.lua"] = true }
+  local problems, unused = require("SelfTest").with_reaper({
+    GetResourcePath = function() return "R" end,
+    NamedCommandLookup = function(id) return known_ids[id] and 1 or 0 end,
+    file_exists = function(path) return files[(path:gsub("\\", "/"))] or false end,
+  }, Checks.check, scripts, refs)
   local by_id = {}
   for _, p in ipairs(problems) do by_id[p.id] = p.problem end
   check("check: unknown extension action", by_id._SWS_GONE == "no such action")
@@ -380,7 +385,6 @@ function Checks.self_test()
   check("results: no problems gives one passed row", #clean == 1 and clean[1].ok)
   local unread = Checks.results({ problems = {}, checked = 0, unreadable = { "x.ini" } }, "Config")
   check("results: an unreadable file is a failure", #unread == 1 and not unread[1].ok)
-  check("is_absolute", Checks.is_absolute("C:\\x.lua") and Checks.is_absolute("/x.lua") and not Checks.is_absolute("a/x.lua"))
   check("empty files give nothing", #select(2, Checks.parse_kb(nil)) == 0 and #Checks.parse_menu(nil) == 0)
   return results
 end

@@ -34,6 +34,11 @@ WRITING TESTS
     check("adds numbers", MyModule.add(1, 2) == 3)
     return results
   end
+  Code that calls REAPER is tested with fakes: the module calls reaper.X directly, the test swaps the global.
+  SelfTest.with_reaper is strict (a call nobody faked fails) and has a working ExtState built in:
+    SelfTest.with_reaper({ GetResourcePath = function() return "R" end }, function()
+      check("reads the path", MyModule.config_path() == "R/x.ini")
+    end)
 
 COMPONENT SCRIPTS (actions with a window)
   Their tests live inside the script. SelfTest.collect_script(path) runs the script with the test-only switch set
@@ -70,6 +75,42 @@ end
 --- A warning row: shown in the report, counted as a warning (neither passed nor failed).
 function SelfTest.warning(name)
   return { name = name, ok = true, warn = true }
+end
+
+--- Runs fn(...) with the global `name` (e.g. "reaper") replaced by the table `fakes`, STRICT: reading anything
+--- that is not in fakes fails ("unfaked: reaper.X"), so a test can never reach the real REAPER by accident. The
+--- real global is always put back, also when fn fails (the error is passed on). Returns what fn returns.
+local function with_global(name, fakes, fn, ...)
+  local real = _G[name]
+  _G[name] = setmetatable(fakes, { __index = function(_, key)
+    error(("unfaked: %s.%s"):format(name, tostring(key)), 2)
+  end })
+  local results = table.pack(xpcall(fn, debug.traceback, ...))
+  _G[name] = real
+  setmetatable(fakes, nil) -- outside, the test may look at its fakes freely
+  if not results[1] then error(results[2], 0) end
+  return table.unpack(results, 2, results.n)
+end
+
+--- with_global for `reaper`. Adds a working ExtState (Get/Set/Has/DeleteExtState, in memory) to fakes unless it
+--- has its own; it lives in the fakes table, so calls with the same fakes share it:
+---   local fakes = { GetResourcePath = function() return "R" end }
+---   with_reaper(fakes, Theme.set_assignment, "show", "x")   -- fn and its arguments
+---   with_reaper(fakes, function() check(...) end)            -- or a block of test code
+function SelfTest.with_reaper(fakes, fn, ...)
+  if not rawget(fakes, "GetExtState") then
+    local ext = {}
+    fakes.GetExtState    = function(section, key) return ext[section .. "/" .. key] or "" end
+    fakes.SetExtState    = function(section, key, value) ext[section .. "/" .. key] = tostring(value) end
+    fakes.HasExtState    = function(section, key) return ext[section .. "/" .. key] ~= nil end
+    fakes.DeleteExtState = function(section, key) ext[section .. "/" .. key] = nil end
+  end
+  return with_global("reaper", fakes, fn, ...)
+end
+
+--- with_global for `gfx`: fakes holds the functions and the values (gfx.w, gfx.x, ...) the code may use.
+function SelfTest.with_gfx(fakes, fn, ...)
+  return with_global("gfx", fakes, fn, ...)
 end
 
 -- Paths (pure) ---------------------------------------------------------------------------
@@ -571,6 +612,17 @@ end
 
 function SelfTest.self_test()
   local check, results = SelfTest.checker()
+
+  -- fakes: a test must never reach the real REAPER, and the real one must always come back
+  local real = reaper
+  local unfaked_ok, unfaked_err = pcall(SelfTest.with_reaper, {}, function() return reaper.GetResourcePath() end)
+  check("with_reaper: a call nobody faked fails and names it",
+    not unfaked_ok and tostring(unfaked_err):find("unfaked: reaper.GetResourcePath", 1, true) ~= nil)
+  check("with_reaper: the real reaper is back after a failure", reaper == real)
+  check("with_reaper: built-in ExtState", SelfTest.with_reaper({}, function()
+    reaper.SetExtState("s", "k", 5, false)
+    return reaper.GetExtState("s", "k") == "5" and reaper.HasExtState("s", "k")
+  end) and reaper.GetExtState ~= nil and reaper == real)
 
   check("normalize: separators and ..", SelfTest.normalize("C:\\R\\Scripts\\x\\..\\lib\\a.lua") == "C:/R/Scripts/lib/a.lua")
   check("normalize: unix root and .", SelfTest.normalize("/r/./x//y") == "/r/x/y")

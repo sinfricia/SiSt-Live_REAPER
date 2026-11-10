@@ -37,12 +37,12 @@ function Screenset.command(slot)
 end
 
 --- Live check: every command ID with its current name. Fails only for a missing action. Runs nothing.
-function Screenset.check_actions(api)
+function Screenset.check_actions()
   local list = {}
   for slot = 1, Screenset.SLOTS do
     list[#list + 1] = { cmd = Screenset.command(slot), what = ("load window set #%02d"):format(slot) }
   end
-  return Actions.check_native(list, api)
+  return Actions.check_native(list)
 end
 
 --- Pure. Parses the number typed into the settings dialog.
@@ -60,20 +60,18 @@ end
 
 -- Assignments -----------------------------------------------------------
 --- Assigned slot number, or nil.
-function Screenset.get_assignment(mode, api)
-  api = api or reaper
-  return tonumber(api.GetExtState(Screenset.SECTION, Screenset.KEY_PREFIX .. mode))
+function Screenset.get_assignment(mode)
+  return tonumber(reaper.GetExtState(Screenset.SECTION, Screenset.KEY_PREFIX .. mode))
 end
 
 --- slot: number, or nil/false for none.
-function Screenset.set_assignment(mode, slot, api)
-  api = api or reaper
-  api.SetExtState(Screenset.SECTION, Screenset.KEY_PREFIX .. mode, slot and tostring(slot) or "", true) -- persistent
+function Screenset.set_assignment(mode, slot)
+  reaper.SetExtState(Screenset.SECTION, Screenset.KEY_PREFIX .. mode, slot and tostring(slot) or "", true) -- persistent
 end
 
 -- Effect ----------------------------------------------------------------
-function Screenset.apply(mode, api)
-  local slot = Screenset.get_assignment(mode, api)
+function Screenset.apply(mode)
+  local slot = Screenset.get_assignment(mode)
   if not slot then
     return "skipped", ("no screenset assigned to %s mode"):format(mode)
   end
@@ -81,9 +79,9 @@ function Screenset.apply(mode, api)
   local cmd = Screenset.command(slot)
   if not cmd then error(("screenset #%d does not exist"):format(slot), 0) end
 
-  Actions.require_native(cmd, api, ("load window set #%02d"):format(slot))
+  Actions.require_native(cmd, ("load window set #%02d"):format(slot))
 
-  api.Main_OnCommand(cmd, 0)
+  reaper.Main_OnCommand(cmd, 0)
   return "ok", ("loaded screenset #%02d"):format(slot)
 end
 
@@ -92,43 +90,41 @@ end
 Screenset.settings = {
   {
     label  = "screenset",
-    get    = function(mode, api) return Screenset.get_assignment(mode, api) end,
+    get    = function(mode) return Screenset.get_assignment(mode) end,
     format = function(slot) return slot and tostring(slot) or "" end,
     parse  = function(text)
       local slot, err = Screenset.parse_slot(text)
       if slot == nil then return false, "screenset: " .. err end
       return true, slot or nil
     end,
-    set    = function(mode, slot, api) Screenset.set_assignment(mode, slot, api) end,
+    set    = function(mode, slot) Screenset.set_assignment(mode, slot) end,
   },
 }
 
 -- Diagnostics & self-test -----------------------------------------------
-function Screenset.diagnostics(api)
-  api = api or reaper
+function Screenset.diagnostics()
   local rows = {}
   for _, mode in ipairs({ "show", "edit" }) do
-    local slot = Screenset.get_assignment(mode, api)
+    local slot = Screenset.get_assignment(mode)
     rows[#rows + 1] = { mode .. " screenset", slot and ("#%02d"):format(slot) or "(none)" }
   end
   return rows
 end
 
---- Built-in self-test. Uses a fake REAPER API: never loads a screenset or changes an assignment.
+--- Built-in self-test. Uses fake REAPER functions: never loads a screenset or changes an assignment.
 function Screenset.self_test()
+  local with_reaper = require("SelfTest").with_reaper
   local results = {}
   local function check(name, cond) results[#results + 1] = { name = name, ok = cond and true or false } end
 
   local function fake(first_cmd)
-    local ext, runs, names = {}, {}, {}
+    local runs, names = {}, {}
     for i = 1, 10 do names[first_cmd + i - 1] = ("Screenset: Load window set #%02d"):format(i) end
-    local api = {
-      GetExtState = function(s, k) return ext[s .. "/" .. k] or "" end,
-      SetExtState = function(s, k, v) ext[s .. "/" .. k] = v end,
+    local fakes = {
       kbd_getTextFromCmd = function(cmd) return names[cmd] or "" end,
       Main_OnCommand = function(cmd) runs[#runs + 1] = cmd end,
     }
-    return api, runs
+    return fakes, runs
   end
 
   check("command ids: no slot 0, 11 or 1.5",
@@ -138,29 +134,29 @@ function Screenset.self_test()
   local _, err = Screenset.parse_slot("11")
   check("parse: slot out of range names the range", err and err:find("1-10", 1, true) ~= nil)
 
-  local api, runs = fake(Screenset.FIRST_LOAD_CMD)
-  check("apply: nothing assigned -> skipped", (Screenset.apply("show", api)) == "skipped" and #runs == 0)
-  Screenset.set_assignment("show", 2, api)
-  Screenset.apply("show", api)
-  Screenset.apply("show", api)
+  local fakes, runs = fake(Screenset.FIRST_LOAD_CMD)
+  check("apply: nothing assigned -> skipped", (with_reaper(fakes, Screenset.apply, "show")) == "skipped" and #runs == 0)
+  with_reaper(fakes, Screenset.set_assignment, "show", 2)
+  with_reaper(fakes, Screenset.apply, "show")
+  with_reaper(fakes, Screenset.apply, "show")
   check("apply: loads again on every run (not idempotent by design)", #runs == 2)
 
   local missing, missing_runs = fake(50000) -- REAPER has no actions at the expected IDs
-  Screenset.set_assignment("show", 2, missing)
-  local ok, e = pcall(Screenset.apply, "show", missing)
+  with_reaper(missing, Screenset.set_assignment, "show", 2)
+  local ok, e = pcall(with_reaper, missing, Screenset.apply, "show")
   check("apply: missing action fails, runs nothing",
     not ok and #missing_runs == 0 and tostring(e):find("40455", 1, true) ~= nil)
   local renamed, renamed_runs = fake(Screenset.FIRST_LOAD_CMD)
   local real_name = renamed.kbd_getTextFromCmd
   renamed.kbd_getTextFromCmd = function(cmd) return real_name(cmd) ~= "" and "Window sets: Restore set (renamed)" or "" end
-  Screenset.set_assignment("show", 2, renamed)
+  with_reaper(renamed, Screenset.set_assignment, "show", 2)
   check("apply: a renamed action still runs (the ID is trusted)",
-    (Screenset.apply("show", renamed)) == "ok" and renamed_runs[1] == 40455)
+    (with_reaper(renamed, Screenset.apply, "show")) == "ok" and renamed_runs[1] == 40455)
 
   local all_ok = true
-  for _, r in ipairs(Screenset.check_actions(fake(Screenset.FIRST_LOAD_CMD))) do all_ok = all_ok and r.ok end
+  for _, r in ipairs(with_reaper(fake(Screenset.FIRST_LOAD_CMD), Screenset.check_actions)) do all_ok = all_ok and r.ok end
   check("live check passes when every action exists", all_ok)
-  check("live check fails for missing actions", not Screenset.check_actions(missing)[1].ok)
+  check("live check fails for missing actions", not with_reaper(missing, Screenset.check_actions)[1].ok)
 
   return results
 end

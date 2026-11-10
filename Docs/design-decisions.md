@@ -126,6 +126,12 @@ only ever run on demand; lookups only where unavoidable.
   with edge cases nobody tries by hand. Not: bugs that show up on first use, tests that repeat the code
   (get/set, format round trips, trivial path helpers). Real file system / REAPER behaviour: live test or
   checklist, not fakes.
+- Fakes (2026-11-10): code calls reaper.X / gfx.X directly (no `api` parameter); a test swaps the global with
+  SelfTest.with_reaper / with_gfx. STRICT: a call nobody faked fails ("unfaked: reaper.X"), so a test can never
+  reach the real REAPER; the real global always comes back, also after a crash. ExtState is built in (the most
+  common fake); no built-in clock (only the Window test needs one, it fakes time_precise itself).
+- Live test unattended (2026-11-10): Debug/SiSt-Live_DEBUG Run Live Test unattended.lua, for Claude: show
+  workflow only, no questions, never closes other projects (refuses instead), report also when refused.
 - Known limitation: all suites run in one Lua environment. Accepted.
 
 ## Shared code

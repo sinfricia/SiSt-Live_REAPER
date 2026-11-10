@@ -310,9 +310,9 @@ end
 
 -- Drawing & input ------------------------------------------------------------------------------
 
-local function sws_clipboard(api)
-  if not (api.APIExists and api.APIExists("CF_GetClipboard") and api.APIExists("CF_SetClipboard")) then return nil end
-  return { get = function() return api.CF_GetClipboard("") end, set = function(s) api.CF_SetClipboard(s) end }
+local function sws_clipboard()
+  if not (reaper.APIExists("CF_GetClipboard") and reaper.APIExists("CF_SetClipboard")) then return nil end
+  return { get = function() return reaper.CF_GetClipboard("") end, set = function(s) reaper.CF_SetClipboard(s) end }
 end
 
 --- Draws the field and handles mouse and keys. Call it every frame.
@@ -320,7 +320,6 @@ end
 function TextField.draw(win, f, x, y, w, h, opts)
   opts = opts or {}
   local ev = {}
-  local api = win.api or reaper
   local m = win.mouse
   local size = opts.size or TextField.TEXT_SIZE
   local pad = TextField.PAD
@@ -339,7 +338,7 @@ function TextField.draw(win, f, x, y, w, h, opts)
   -- Mouse
   if not opts.disabled and m.left_pressed then
     if inside then
-      local now = api.time_precise()
+      local now = reaper.time_precise()
       if not TextField.has_focus(win, f) then TextField.focus(win, f) end
       if now - f.last_click <= TextField.DOUBLE_CLICK then
         f.anchor, f.caret = 0, #chars -- double-click: select all
@@ -367,14 +366,14 @@ function TextField.draw(win, f, x, y, w, h, opts)
   -- Keys: all of this frame, only for the focused field
   if TextField.has_focus(win, f) and not opts.disabled then
     local mods = { ctrl = m.ctrl, shift = m.shift }
-    local clipboard = sws_clipboard(api)
+    local clipboard = sws_clipboard()
     for _, key in ipairs(win.chars or {}) do
       local event, changed = TextField.apply_key(f, key, mods, clipboard)
-      if changed then ev.changed = true; f.blink_start = api.time_precise() end
+      if changed then ev.changed = true; f.blink_start = reaper.time_precise() end
       if event == "submit" then ev.submitted = true; TextField.blur(win, f); break end
       if event == "escape" then ev.escape = true; break end
       if event == "tab" then ev.tab = true; break end
-      if key ~= 0 then f.blink_start = api.time_precise() end
+      if key ~= 0 then f.blink_start = reaper.time_precise() end
     end
     win.chars = {} -- the keys belong to the field: nothing else in the window reacts to them
     if ev.changed then
@@ -428,7 +427,7 @@ function TextField.draw(win, f, x, y, w, h, opts)
   gfx.drawstr(join(chars, f.first, last))
 
   if focused then
-    local now = api.time_precise()
+    local now = reaper.time_precise()
     f.blink_start = f.blink_start or now
     if math.floor((now - f.blink_start) / TextField.BLINK) % 2 == 0 then
       Theme.set("text")

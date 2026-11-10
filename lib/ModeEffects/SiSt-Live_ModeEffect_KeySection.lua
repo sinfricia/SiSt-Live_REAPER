@@ -46,12 +46,12 @@ function KeySection.label(n)
 end
 
 --- Live check: every command ID with its current name. Fails only for a missing action. Runs nothing.
-function KeySection.check_actions(api)
+function KeySection.check_actions()
   local list = {}
   for n = 0, KeySection.ALT_COUNT do
     list[#list + 1] = { cmd = KeySection.command(n), what = "keyboard " .. KeySection.label(n) }
   end
-  return Actions.check_native(list, api)
+  return Actions.check_native(list)
 end
 
 --- Pure. Parses the text typed into the settings dialog: "main" / "default" / "0" -> 0,
@@ -72,27 +72,25 @@ function KeySection.parse(input)
 end
 
 -- Assignments -----------------------------------------------------------
-function KeySection.get_assignment(mode, api)
-  api = api or reaper
-  return tonumber(api.GetExtState(KeySection.SECTION, KeySection.KEY_PREFIX .. mode))
+function KeySection.get_assignment(mode)
+  return tonumber(reaper.GetExtState(KeySection.SECTION, KeySection.KEY_PREFIX .. mode))
 end
 
-function KeySection.set_assignment(mode, n, api)
-  api = api or reaper
-  api.SetExtState(KeySection.SECTION, KeySection.KEY_PREFIX .. mode, n and tostring(n) or "", true) -- persistent
+function KeySection.set_assignment(mode, n)
+  reaper.SetExtState(KeySection.SECTION, KeySection.KEY_PREFIX .. mode, n and tostring(n) or "", true) -- persistent
 end
 
 --- The active section according to REAPER's toggle states, or nil.
-function KeySection.active(api)
+function KeySection.active()
   for n = 0, KeySection.ALT_COUNT do
-    if api.GetToggleCommandState(KeySection.command(n)) == 1 then return n end
+    if reaper.GetToggleCommandState(KeySection.command(n)) == 1 then return n end
   end
   return nil
 end
 
 -- Effect ----------------------------------------------------------------
-function KeySection.apply(mode, api)
-  local n = KeySection.get_assignment(mode, api)
+function KeySection.apply(mode)
+  local n = KeySection.get_assignment(mode)
   if not n then
     return "skipped", ("no keyboard section assigned to %s mode"):format(mode)
   end
@@ -100,16 +98,16 @@ function KeySection.apply(mode, api)
   local cmd = KeySection.command(n)
   if not cmd then error(("keyboard section %s does not exist"):format(tostring(n)), 0) end
 
-  local name = Actions.require_native(cmd, api, "keyboard " .. KeySection.label(n))
+  local name = Actions.require_native(cmd, "keyboard " .. KeySection.label(n))
 
-  local state = api.GetToggleCommandState(cmd)
+  local state = reaper.GetToggleCommandState(cmd)
   if state == 1 then return "skipped", "already active: " .. KeySection.label(n) end
   if state ~= 0 then
     -- the alt actions toggle: without a known state, running one might switch the section off
     error(("REAPER doesn't report the state of '%s', not switching blindly"):format(name), 0)
   end
 
-  api.Main_OnCommand(cmd, 0)
+  reaper.Main_OnCommand(cmd, 0)
   return "ok", "switched to " .. KeySection.label(n)
 end
 
@@ -118,48 +116,46 @@ end
 KeySection.settings = {
   {
     label  = "keyboard",
-    get    = function(mode, api) return KeySection.get_assignment(mode, api) end,
+    get    = function(mode) return KeySection.get_assignment(mode) end,
     format = function(n) return n == nil and "" or (n == KeySection.MAIN and "main" or tostring(n)) end,
     parse  = function(text)
       local n, err = KeySection.parse(text)
       if n == nil then return false, "keyboard: " .. err end
       return true, n or nil
     end,
-    set    = function(mode, n, api) KeySection.set_assignment(mode, n, api) end,
+    set    = function(mode, n) KeySection.set_assignment(mode, n) end,
   },
 }
 
 -- Diagnostics & self-test -----------------------------------------------
-function KeySection.diagnostics(api)
-  api = api or reaper
+function KeySection.diagnostics()
   local rows = {}
   for _, mode in ipairs({ "show", "edit" }) do
-    local n = KeySection.get_assignment(mode, api)
+    local n = KeySection.get_assignment(mode)
     rows[#rows + 1] = { mode .. " keyboard", n and KeySection.label(n) or "(none)" }
   end
-  local active = KeySection.active(api)
+  local active = KeySection.active()
   rows[#rows + 1] = { "active section", active and KeySection.label(active) or "(not reported by REAPER)" }
   return rows
 end
 
---- Built-in self-test. Uses a fake REAPER API: never switches the real keyboard section.
+--- Built-in self-test. Uses fake REAPER functions: never switches the real keyboard section.
 function KeySection.self_test()
+  local with_reaper = require("SelfTest").with_reaper
   local results = {}
   local function check(name, cond) results[#results + 1] = { name = name, ok = cond and true or false } end
 
   -- fake with the real IDs; alt-1 renamed "SHOW" like in a real setup
   local function fake(opts)
     opts = opts or {}
-    local names, ext, runs = {}, {}, {}
+    local names, runs = {}, {}
     local override = nil -- nil = Main
     names[24800] = "Main action section: Clear any override"
     names[24802] = "Main action section: Toggle override to recording"
     names[24803] = "Main action section: Toggle override to SHOW"
     for i = 2, 16 do names[24802 + i] = ("Main action section: Toggle override to alt-%d"):format(i) end
     if opts.names then for k, v in pairs(opts.names) do names[k] = v end end
-    local api = {
-      GetExtState = function(s, k) return ext[s .. "/" .. k] or "" end,
-      SetExtState = function(s, k, v) ext[s .. "/" .. k] = v end,
+    local fakes = {
       kbd_getTextFromCmd = function(cmd) return names[cmd] or "" end,
       GetToggleCommandState = function(cmd)
         if opts.no_state then return -1 end
@@ -173,7 +169,7 @@ function KeySection.self_test()
         else override = cmd end
       end,
     }
-    return api, runs
+    return fakes, runs
   end
 
   check("command ids: Main, alt-1, alt-16",
@@ -185,30 +181,30 @@ function KeySection.self_test()
     KeySection.parse("1") == 1 and KeySection.parse("alt1") == 1 and KeySection.parse("ALT-1") == 1)
   check("parse: garbage and out of range rejected", KeySection.parse("foo") == nil and KeySection.parse("17") == nil)
 
-  local api, runs = fake()
-  check("apply: nothing assigned -> skipped", (KeySection.apply("show", api)) == "skipped" and #runs == 0)
-  KeySection.set_assignment("show", 1, api)
-  KeySection.set_assignment("edit", 0, api)
-  check("apply: edit while Main is active -> skipped", (KeySection.apply("edit", api)) == "skipped" and #runs == 0)
-  KeySection.apply("show", api)
-  check("apply: second run does NOT toggle it off again", (KeySection.apply("show", api)) == "skipped" and #runs == 1)
+  local fakes, runs = fake()
+  check("apply: nothing assigned -> skipped", (with_reaper(fakes, KeySection.apply, "show")) == "skipped" and #runs == 0)
+  with_reaper(fakes, KeySection.set_assignment, "show", 1)
+  with_reaper(fakes, KeySection.set_assignment, "edit", 0)
+  check("apply: edit while Main is active -> skipped", (with_reaper(fakes, KeySection.apply, "edit")) == "skipped" and #runs == 0)
+  with_reaper(fakes, KeySection.apply, "show")
+  check("apply: second run does NOT toggle it off again", (with_reaper(fakes, KeySection.apply, "show")) == "skipped" and #runs == 1)
 
   local blind, blind_runs = fake({ no_state = true })
-  KeySection.set_assignment("show", 1, blind)
-  check("apply: unknown toggle state fails, runs nothing", not pcall(KeySection.apply, "show", blind) and #blind_runs == 0)
+  with_reaper(blind, KeySection.set_assignment, "show", 1)
+  check("apply: unknown toggle state fails, runs nothing", not pcall(with_reaper, blind, KeySection.apply, "show") and #blind_runs == 0)
 
   local renamed, renamed_runs = fake({ names = { [24803] = "Main action section: Toggle override to STAGE" } })
-  KeySection.set_assignment("show", 1, renamed)
+  with_reaper(renamed, KeySection.set_assignment, "show", 1)
   check("apply: a renamed action still runs (the ID is trusted)",
-    (KeySection.apply("show", renamed)) == "ok" and renamed_runs[1] == 24803)
+    (with_reaper(renamed, KeySection.apply, "show")) == "ok" and renamed_runs[1] == 24803)
   local missing, missing_runs = fake({ names = { [24803] = "" } })
-  KeySection.set_assignment("show", 1, missing)
-  check("apply: missing action fails, runs nothing", not pcall(KeySection.apply, "show", missing) and #missing_runs == 0)
+  with_reaper(missing, KeySection.set_assignment, "show", 1)
+  check("apply: missing action fails, runs nothing", not pcall(with_reaper, missing, KeySection.apply, "show") and #missing_runs == 0)
 
   local all_ok = true
-  for _, r in ipairs(KeySection.check_actions(fake())) do all_ok = all_ok and r.ok end
-  check("live check passes when every action exists", all_ok and #KeySection.check_actions(fake()) == 17)
-  check("live check fails for a missing action", not KeySection.check_actions(missing)[2].ok)
+  for _, r in ipairs(with_reaper(fake(), KeySection.check_actions)) do all_ok = all_ok and r.ok end
+  check("live check passes when every action exists", all_ok and #with_reaper(fake(), KeySection.check_actions) == 17)
+  check("live check fails for a missing action", not with_reaper(missing, KeySection.check_actions)[2].ok)
 
   return results
 end

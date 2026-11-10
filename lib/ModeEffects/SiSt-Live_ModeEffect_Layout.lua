@@ -81,11 +81,11 @@ end
 
 -- Theme layouts ---------------------------------------------------------
 --- All layout names the loaded theme offers for a section (plus "" = theme default).
-function Layout.available(section, api)
+function Layout.available(section)
   local names = { [""] = true }
   local i = 0
   while true do
-    local ok, name = api.ThemeLayout_GetLayout(section, i)
+    local ok, name = reaper.ThemeLayout_GetLayout(section, i)
     if not ok then break end
     names[name] = true
     i = i + 1
@@ -94,32 +94,30 @@ function Layout.available(section, api)
   return names
 end
 
-function Layout.current(section, api)
-  local _, name = api.ThemeLayout_GetLayout(section, -1)
+function Layout.current(section)
+  local _, name = reaper.ThemeLayout_GetLayout(section, -1)
   return name or ""
 end
 
 --- Current layout of every managed section.
-function Layout.capture(api)
+function Layout.capture()
   local map = {}
-  for _, s in ipairs(Layout.SECTIONS) do map[s.id] = Layout.current(s.id, api) end
+  for _, s in ipairs(Layout.SECTIONS) do map[s.id] = Layout.current(s.id) end
   return map
 end
 
 -- Assignments -----------------------------------------------------------
-function Layout.get_assignment(mode, api)
-  api = api or reaper
-  return Layout.decode(api.GetExtState(Layout.SECTION, Layout.KEY_PREFIX .. mode))
+function Layout.get_assignment(mode)
+  return Layout.decode(reaper.GetExtState(Layout.SECTION, Layout.KEY_PREFIX .. mode))
 end
 
-function Layout.set_assignment(mode, map, api)
-  api = api or reaper
-  api.SetExtState(Layout.SECTION, Layout.KEY_PREFIX .. mode, Layout.encode(map), true) -- persistent
+function Layout.set_assignment(mode, map)
+  reaper.SetExtState(Layout.SECTION, Layout.KEY_PREFIX .. mode, Layout.encode(map), true) -- persistent
 end
 
 -- Effect ----------------------------------------------------------------
-function Layout.apply(mode, api)
-  local target = Layout.get_assignment(mode, api)
+function Layout.apply(mode)
+  local target = Layout.get_assignment(mode)
   if not target then
     return "skipped", ("no layouts assigned to %s mode"):format(mode)
   end
@@ -127,10 +125,10 @@ function Layout.apply(mode, api)
   local changed, problems = {}, {}
   for _, s in ipairs(Layout.SECTIONS) do
     local want = target[s.id]
-    if want ~= nil and Layout.current(s.id, api) ~= want then
-      if not Layout.available(s.id, api)[want] then
+    if want ~= nil and Layout.current(s.id) ~= want then
+      if not Layout.available(s.id)[want] then
         problems[#problems + 1] = ("%s layout '%s' not in the loaded theme"):format(s.id, want)
-      elseif not api.ThemeLayout_SetLayout(s.id, want) then
+      elseif not reaper.ThemeLayout_SetLayout(s.id, want) then
         problems[#problems + 1] = ("REAPER refused %s layout '%s'"):format(s.id, want)
       else
         changed[#changed + 1] = ("%s=%s"):format(s.id, show_layout(want))
@@ -138,7 +136,7 @@ function Layout.apply(mode, api)
     end
   end
 
-  if #changed > 0 and api.ThemeLayout_RefreshAll then api.ThemeLayout_RefreshAll() end
+  if #changed > 0 and reaper.ThemeLayout_RefreshAll then reaper.ThemeLayout_RefreshAll() end
 
   if #problems > 0 then
     local done = #changed > 0 and (" (applied: " .. table.concat(changed, ", ") .. ")") or ""
@@ -160,10 +158,10 @@ function Layout.format_setting(map)
   return table.concat(parts, ", ")
 end
 
-function Layout.parse_setting(text, api)
+function Layout.parse_setting(text)
   local s = (text or ""):match("^%s*(.-)%s*$")
   if s == "" then return true, nil end
-  if s:lower() == "current" then return true, Layout.capture(api) end
+  if s:lower() == "current" then return true, Layout.capture() end
 
   local known, ids = {}, {}
   for _, sec in ipairs(Layout.SECTIONS) do known[sec.id] = true; ids[#ids + 1] = sec.id end
@@ -186,22 +184,21 @@ end
 Layout.settings = {
   {
     label  = "layouts",
-    get    = function(mode, api) return Layout.get_assignment(mode, api) end,
+    get    = function(mode) return Layout.get_assignment(mode) end,
     format = Layout.format_setting,
-    parse  = function(text, api) return Layout.parse_setting(text, api) end,
-    set    = function(mode, map, api)
-      if map then Layout.set_assignment(mode, map, api)
-      else api.SetExtState(Layout.SECTION, Layout.KEY_PREFIX .. mode, "", true) end
+    parse  = function(text) return Layout.parse_setting(text) end,
+    set    = function(mode, map)
+      if map then Layout.set_assignment(mode, map)
+      else reaper.SetExtState(Layout.SECTION, Layout.KEY_PREFIX .. mode, "", true) end
     end,
   },
 }
 
 -- Diagnostics & self-test -----------------------------------------------
-function Layout.diagnostics(api)
-  api = api or reaper
+function Layout.diagnostics()
   local rows = {}
   for _, mode in ipairs({ "show", "edit" }) do
-    local map = Layout.get_assignment(mode, api)
+    local map = Layout.get_assignment(mode)
     if not map then
       rows[#rows + 1] = { mode .. " layouts", "(none)" }
     else
@@ -209,7 +206,7 @@ function Layout.diagnostics(api)
       for _, s in ipairs(Layout.SECTIONS) do
         local want = map[s.id]
         if want ~= nil then
-          local ok = Layout.available(s.id, api)[want]
+          local ok = Layout.available(s.id)[want]
           parts[#parts + 1] = ("%s=%s%s"):format(s.id, show_layout(want), ok and "" or " [NOT IN THEME]")
         end
       end
@@ -217,25 +214,24 @@ function Layout.diagnostics(api)
     end
   end
   local now = {}
-  for _, s in ipairs(Layout.SECTIONS) do now[#now + 1] = s.id .. "=" .. show_layout(Layout.current(s.id, api)) end
+  for _, s in ipairs(Layout.SECTIONS) do now[#now + 1] = s.id .. "=" .. show_layout(Layout.current(s.id)) end
   rows[#rows + 1] = { "active layouts", table.concat(now, ", ") }
   return rows
 end
 
---- Built-in self-test. Uses a fake REAPER API: never changes the real layouts or assignments.
+--- Built-in self-test. Uses fake REAPER functions: never changes the real layouts or assignments.
 function Layout.self_test()
+  local with_reaper = require("SelfTest").with_reaper
   local results = {}
   local function check(name, cond)
     results[#results + 1] = { name = name, ok = cond and true or false }
   end
 
   local function fake(opts)
-    local ext, sets, refreshes = {}, {}, { n = 0 }
+    local sets, refreshes = {}, { n = 0 }
     local theme = opts.theme or { tcp = { "A", "B", "B150%" }, trans = { "default", "150%" } }
     local current = opts.current or { tcp = "", trans = "" }
-    local api = {
-      GetExtState = function(s, k) return ext[s .. "/" .. k] or "" end,
-      SetExtState = function(s, k, v) ext[s .. "/" .. k] = v end,
+    local fakes = {
       ThemeLayout_GetLayout = function(section, idx)
         if idx == -1 then return true, current[section] or "" end
         local list = theme[section] or {}
@@ -250,7 +246,7 @@ function Layout.self_test()
       end,
       ThemeLayout_RefreshAll = function() refreshes.n = refreshes.n + 1 end,
     }
-    return api, sets, refreshes, current
+    return fakes, sets, refreshes, current
   end
 
   -- encoding
@@ -261,46 +257,46 @@ function Layout.self_test()
   check("decode: empty / garbage = nothing assigned", Layout.decode("") == nil and Layout.decode("garbage") == nil)
 
   -- apply
-  local api, sets, refreshes = fake({})
-  check("apply: nothing assigned -> skipped", (Layout.apply("show", api)) == "skipped" and #sets == 0)
+  local fakes, sets, refreshes = fake({})
+  check("apply: nothing assigned -> skipped", (with_reaper(fakes, Layout.apply, "show")) == "skipped" and #sets == 0)
 
-  Layout.set_assignment("show", { tcp = "B150%", trans = "150%" }, api)
-  Layout.set_assignment("edit", { tcp = "", trans = "" }, api)
-  local result, msg = Layout.apply("show", api)
+  with_reaper(fakes, Layout.set_assignment, "show", { tcp = "B150%", trans = "150%" })
+  with_reaper(fakes, Layout.set_assignment, "edit", { tcp = "", trans = "" })
+  local result, msg = with_reaper(fakes, Layout.apply, "show")
   check("apply: sets every differing section, in order",
     result == "ok" and table.concat(sets, ",") == "tcp=B150%,trans=150%")
   check("apply: refreshes once after changes", refreshes.n == 1)
-  result = Layout.apply("show", api)
+  result = with_reaper(fakes, Layout.apply, "show")
   check("apply: second run is skipped (idempotent), no refresh",
     result == "skipped" and #sets == 2 and refreshes.n == 1)
-  result = Layout.apply("edit", api)
+  result = with_reaper(fakes, Layout.apply, "edit")
   check("apply: empty layout restores the theme default", result == "ok" and sets[3] == "tcp=" and sets[4] == "trans=")
 
-  local api2, sets2 = fake({ theme = { tcp = { "A" }, trans = { "150%" } } })
-  Layout.set_assignment("show", { tcp = "B150%", trans = "150%" }, api2)
-  local ok, err = pcall(Layout.apply, "show", api2)
+  local fakes2, sets2 = fake({ theme = { tcp = { "A" }, trans = { "150%" } } })
+  with_reaper(fakes2, Layout.set_assignment, "show", { tcp = "B150%", trans = "150%" })
+  local ok, err = pcall(with_reaper, fakes2, Layout.apply, "show")
   check("apply: layout missing in theme fails and names it",
     not ok and tostring(err):find("tcp layout 'B150%' not in the loaded theme", 1, true) ~= nil)
   check("apply: the other sections are still applied", #sets2 == 1 and sets2[1] == "trans=150%"
     and tostring(err):find("applied: trans=150%", 1, true) ~= nil)
 
-  local api3 = fake({ refuse = true })
-  Layout.set_assignment("show", { tcp = "B" }, api3)
-  check("apply: REAPER refusing a layout fails", not pcall(Layout.apply, "show", api3))
+  local fakes3 = fake({ refuse = true })
+  with_reaper(fakes3, Layout.set_assignment, "show", { tcp = "B" })
+  check("apply: REAPER refusing a layout fails", not pcall(with_reaper, fakes3, Layout.apply, "show"))
 
-  local api4 = fake({ current = { tcp = "A", trans = "default" } })
-  Layout.set_assignment("show", { tcp = "B" }, api4)
-  local r4 = Layout.apply("show", api4)
+  local fakes4 = fake({ current = { tcp = "A", trans = "default" } })
+  with_reaper(fakes4, Layout.set_assignment, "show", { tcp = "B" })
+  local r4 = with_reaper(fakes4, Layout.apply, "show")
   check("apply: sections missing from the assignment are left alone",
-    r4 == "ok" and Layout.current("trans", api4) == "default")
+    r4 == "ok" and with_reaper(fakes4, Layout.current, "trans") == "default")
 
   -- settings field
-  local lapi = fake({ current = { tcp = "B", trans = "150%", mcp = "" } })
-  local okp, mp = Layout.parse_setting("tcp = B150% , trans=150%", lapi)
+  local sfakes = fake({ current = { tcp = "B", trans = "150%", mcp = "" } })
+  local okp, mp = with_reaper(sfakes, Layout.parse_setting, "tcp = B150% , trans=150%")
   check("setting: typed text parsed, sections left out stay unmanaged",
     okp and mp.tcp == "B150%" and mp.trans == "150%" and mp.mcp == nil)
   check("setting: unknown section / missing '=' rejected",
-    not Layout.parse_setting("foo=1", lapi) and not Layout.parse_setting("tcp", lapi))
+    not with_reaper(sfakes, Layout.parse_setting, "foo=1") and not with_reaper(sfakes, Layout.parse_setting, "tcp"))
 
   return results
 end

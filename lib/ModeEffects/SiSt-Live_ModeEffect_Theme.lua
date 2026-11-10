@@ -64,33 +64,31 @@ end
 
 -- Assignments -----------------------------------------------------------
 --- Stored ref for the mode, "" if none.
-function Theme.get_assignment(mode, api)
-  api = api or reaper
-  return api.GetExtState(Theme.SECTION, Theme.KEY_PREFIX .. mode)
+function Theme.get_assignment(mode)
+  return reaper.GetExtState(Theme.SECTION, Theme.KEY_PREFIX .. mode)
 end
 
-function Theme.set_assignment(mode, ref, api)
-  api = api or reaper
-  api.SetExtState(Theme.SECTION, Theme.KEY_PREFIX .. mode, ref, true) -- persistent
+function Theme.set_assignment(mode, ref)
+  reaper.SetExtState(Theme.SECTION, Theme.KEY_PREFIX .. mode, ref, true) -- persistent
 end
 
 -- Effect ----------------------------------------------------------------
-function Theme.apply(mode, api)
-  local ref = Theme.get_assignment(mode, api)
+function Theme.apply(mode)
+  local ref = Theme.get_assignment(mode)
   if ref == "" then
     return "skipped", ("no theme assigned to %s mode"):format(mode)
   end
 
-  local full = Theme.resolve(ref, api.GetResourcePath())
+  local full = Theme.resolve(ref, reaper.GetResourcePath())
   -- The file first: REAPER keeps reporting the last loaded theme even after its file was renamed or deleted,
   -- so "already active" alone would hide a missing file until the next start.
-  if not api.file_exists(full) then
+  if not reaper.file_exists(full) then
     error(("theme for %s mode not found: %s"):format(mode, full), 0)
   end
-  if Theme.same_path(api.GetLastColorThemeFile(), full) then
+  if Theme.same_path(reaper.GetLastColorThemeFile(), full) then
     return "skipped", "already active: " .. file_name(ref)
   end
-  if not api.OpenColorThemeFile(full) then
+  if not reaper.OpenColorThemeFile(full) then
     error("REAPER could not load the theme: " .. full, 0)
   end
   return "ok", "loaded " .. file_name(ref)
@@ -99,14 +97,14 @@ end
 -- Settings --------------------------------------------------------------
 -- Field text: theme file (relative to ColorThemes, or a full path), "current" = the theme loaded in
 -- REAPER right now, empty = none.
-function Theme.parse_setting(text, api)
+function Theme.parse_setting(text)
   local s = (text or ""):match("^%s*(.-)%s*$")
   if s == "" then return true, nil end
-  local resource = api.GetResourcePath()
+  local resource = reaper.GetResourcePath()
 
   if s:lower() == "current" then
-    local current = api.GetLastColorThemeFile()
-    if current == "" or not api.file_exists(current) then
+    local current = reaper.GetLastColorThemeFile()
+    if current == "" or not reaper.file_exists(current) then
       return false, "theme: REAPER has no theme file loaded right now"
     end
     local ref, portable = Theme.make_ref(current, resource)
@@ -114,7 +112,7 @@ function Theme.parse_setting(text, api)
   end
 
   local ref = Theme.make_ref(s, resource) -- a full path inside ColorThemes becomes relative
-  if not api.file_exists(Theme.resolve(ref, resource)) then
+  if not reaper.file_exists(Theme.resolve(ref, resource)) then
     return false, ("theme file not found: %s"):format(s)
   end
   local note = Theme.is_absolute(ref) and ("theme %s is outside ColorThemes: it won't move with the REAPER folder"):format(ref) or nil
@@ -124,33 +122,33 @@ end
 Theme.settings = {
   {
     label  = "theme",
-    get    = function(mode, api) local ref = Theme.get_assignment(mode, api) return ref ~= "" and ref or nil end,
+    get    = function(mode) local ref = Theme.get_assignment(mode) return ref ~= "" and ref or nil end,
     format = function(ref) return ref or "" end,
-    parse  = function(text, api) return Theme.parse_setting(text, api) end,
-    set    = function(mode, ref, api) Theme.set_assignment(mode, ref or "", api) end,
+    parse  = function(text) return Theme.parse_setting(text) end,
+    set    = function(mode, ref) Theme.set_assignment(mode, ref or "") end,
   },
 }
 
 -- Diagnostics & self-test -----------------------------------------------
-function Theme.diagnostics(api)
-  api = api or reaper
+function Theme.diagnostics()
   local rows = {}
   for _, mode in ipairs({ "show", "edit" }) do
-    local ref = Theme.get_assignment(mode, api)
+    local ref = Theme.get_assignment(mode)
     local value = "(none)"
     if ref ~= "" then
-      local exists = api.file_exists(Theme.resolve(ref, api.GetResourcePath()))
+      local exists = reaper.file_exists(Theme.resolve(ref, reaper.GetResourcePath()))
       value = ref .. (exists and "" or "  [FILE MISSING]")
     end
     rows[#rows + 1] = { mode .. " theme", value }
   end
-  local current = api.GetLastColorThemeFile()
+  local current = reaper.GetLastColorThemeFile()
   rows[#rows + 1] = { "loaded theme", current ~= "" and file_name(current) or "(none)" }
   return rows
 end
 
---- Built-in self-test. Uses a fake REAPER API: never touches the real theme or assignments.
+--- Built-in self-test. Uses fake REAPER functions: never touches the real theme or assignments.
 function Theme.self_test()
+  local with_reaper = require("SelfTest").with_reaper
   local results = {}
   local function check(name, cond)
     results[#results + 1] = { name = name, ok = cond and true or false }
@@ -158,12 +156,10 @@ function Theme.self_test()
 
   local R = "C:\\REAPER"
   local function fake(opts)
-    local ext, loads = {}, {}
+    local loads = {}
     local files = {}
     for _, f in ipairs(opts.files or {}) do files[normalize(f):lower()] = true end
-    local api = {
-      GetExtState = function(s, k) return ext[s .. "/" .. k] or "" end,
-      SetExtState = function(s, k, v) ext[s .. "/" .. k] = v end,
+    local fakes = {
       GetResourcePath = function() return R end,
       GetLastColorThemeFile = function() return opts.current or "" end,
       file_exists = function(p) return files[normalize(p):lower()] == true end,
@@ -174,7 +170,7 @@ function Theme.self_test()
         return true
       end,
     }
-    return api, loads
+    return fakes, loads
   end
 
   -- paths
@@ -198,39 +194,39 @@ function Theme.self_test()
   local edit_full = "C:\\REAPER\\ColorThemes\\Edit.ReaperTheme"
 
   -- apply
-  local api, loads = fake({ files = { show_full, edit_full }, current = edit_full })
-  local result, msg = Theme.apply("show", api)
+  local fakes, loads = fake({ files = { show_full, edit_full }, current = edit_full })
+  local result, msg = with_reaper(fakes, Theme.apply, "show")
   check("apply: nothing assigned -> skipped, nothing loaded", result == "skipped" and #loads == 0)
 
-  Theme.set_assignment("show", "Show.ReaperTheme", api)
-  Theme.set_assignment("edit", "Edit.ReaperTheme", api)
-  result, msg = Theme.apply("edit", api)
+  with_reaper(fakes, Theme.set_assignment, "show", "Show.ReaperTheme")
+  with_reaper(fakes, Theme.set_assignment, "edit", "Edit.ReaperTheme")
+  result, msg = with_reaper(fakes, Theme.apply, "edit")
   check("apply: theme already active -> skipped", result == "skipped" and #loads == 0)
 
-  result, msg = Theme.apply("show", api)
-  result = Theme.apply("show", api)
+  result, msg = with_reaper(fakes, Theme.apply, "show")
+  result = with_reaper(fakes, Theme.apply, "show")
   check("apply: second run is skipped (idempotent)", result == "skipped" and #loads == 1)
 
-  local api2, loads2 = fake({ files = {}, current = edit_full })
-  Theme.set_assignment("show", "Gone.ReaperTheme", api2)
-  local ok, err = pcall(Theme.apply, "show", api2)
+  local fakes2, loads2 = fake({ files = {}, current = edit_full })
+  with_reaper(fakes2, Theme.set_assignment, "show", "Gone.ReaperTheme")
+  local ok, err = pcall(with_reaper, fakes2, Theme.apply, "show")
   check("apply: missing file fails with a clear message",
     not ok and tostring(err):find("not found", 1, true) and #loads2 == 0)
 
-  local api4, loads4 = fake({ files = {}, current = show_full }) -- loaded in REAPER, but the file is gone
-  Theme.set_assignment("show", "Show.ReaperTheme", api4)
-  local ok4, err4 = pcall(Theme.apply, "show", api4)
+  local fakes4, loads4 = fake({ files = {}, current = show_full }) -- loaded in REAPER, but the file is gone
+  with_reaper(fakes4, Theme.set_assignment, "show", "Show.ReaperTheme")
+  local ok4, err4 = pcall(with_reaper, fakes4, Theme.apply, "show")
   check("apply: missing file fails even while REAPER still has it loaded",
     not ok4 and tostring(err4):find("not found", 1, true) and #loads4 == 0)
 
-  local api3 = fake({ files = { show_full }, current = edit_full, load_fails = true })
-  Theme.set_assignment("show", "Show.ReaperTheme", api3)
-  check("apply: REAPER refusing the file fails", not pcall(Theme.apply, "show", api3))
+  local fakes3 = fake({ files = { show_full }, current = edit_full, load_fails = true })
+  with_reaper(fakes3, Theme.set_assignment, "show", "Show.ReaperTheme")
+  check("apply: REAPER refusing the file fails", not pcall(with_reaper, fakes3, Theme.apply, "show"))
 
   -- settings field
-  local sapi = fake({ files = { show_full }, current = show_full })
-  check("setting: missing file rejected", not Theme.parse_setting("Nope.ReaperTheme", sapi))
-  check("setting: 'current' without a loaded theme rejected", not Theme.parse_setting("current", fake({ current = "" })))
+  local sfakes = fake({ files = { show_full }, current = show_full })
+  check("setting: missing file rejected", not with_reaper(sfakes, Theme.parse_setting, "Nope.ReaperTheme"))
+  check("setting: 'current' without a loaded theme rejected", not with_reaper(fake({ current = "" }), Theme.parse_setting, "current"))
 
   return results
 end

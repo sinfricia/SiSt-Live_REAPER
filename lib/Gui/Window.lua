@@ -259,8 +259,6 @@ function Window.new(opts)
   local self = setmetatable({}, Window)
   self.name = opts.name
   self.title = opts.title or opts.name
-  self.api = opts.api or reaper
-  self.gfx = opts.gfx or gfx
   self.toggle_action = opts.toggle_action ~= false
   self.debug = opts.debug or function() end
   self.on_open = opts.on_open
@@ -294,22 +292,22 @@ end
 -- Saved state ----------------------------------------------------------------------
 
 function Window:load_state()
-  local saved = Window.parse_state(self.api.GetExtState(self.name, Window.EXT_KEY), self.keys)
+  local saved = Window.parse_state(reaper.GetExtState(self.name, Window.EXT_KEY), self.keys)
   for k, v in pairs(saved or {}) do self.state[k] = v end
   return saved ~= nil
 end
 
 function Window:save_state()
-  self.api.SetExtState(self.name, Window.EXT_KEY, Window.serialize_state(self.state, self.keys), true)
+  reaper.SetExtState(self.name, Window.EXT_KEY, Window.serialize_state(self.state, self.keys), true)
 end
 
 function Window:read_placement(prefix, slot)
-  return Window.copy_placement(Window.parse_state(self.api.GetExtState(self.name, prefix .. slot),
+  return Window.copy_placement(Window.parse_state(reaper.GetExtState(self.name, prefix .. slot),
     Window.PLACEMENT_KEYS))
 end
 
 function Window:write_placement(prefix, slot, p)
-  self.api.SetExtState(self.name, prefix .. slot, Window.serialize_state(p, Window.PLACEMENT_KEYS), true)
+  reaper.SetExtState(self.name, prefix .. slot, Window.serialize_state(p, Window.PLACEMENT_KEYS), true)
 end
 
 -- Placement --------------------------------------------------------------------------
@@ -335,16 +333,15 @@ end
 
 --- Moves the open window to a placement. Returns true if anything changed.
 function Window:apply_placement(p)
-  local g = self.gfx
-  g.dock(p.dockState)
+  gfx.dock(p.dockState)
   if not Window.is_docked_state(p.dockState) then
-    g.init("", p.ww, p.wh, p.dockState, p.wx, p.wy) -- empty title: move/resize the open window
+    gfx.init("", p.ww, p.wh, p.dockState, p.wx, p.wy) -- empty title: move/resize the open window
   end
   for _, k in ipairs(Window.PLACEMENT_KEYS) do self.state[k] = p[k] end
 end
 
 function Window:now()
-  return self.api.time_precise()
+  return reaper.time_precise()
 end
 
 --- Tell the window the current mode. See PLACEMENT PER MODE at the top.
@@ -461,9 +458,8 @@ function Window:show_context_menu(extra_items)
   end
 
   local menu, actions = Window.build_menu(items)
-  local g = self.gfx
-  g.x, g.y = self.mouse.x, self.mouse.y
-  local choice = g.showmenu(menu)
+  gfx.x, gfx.y = self.mouse.x, self.mouse.y
+  local choice = gfx.showmenu(menu)
   local action = actions[choice]
   if action then action() end
   return action and choice or nil
@@ -474,9 +470,9 @@ end
 -- Reads position, size and dock state from the open window. Done every frame, because after the
 -- user closed the window these values can no longer be read.
 function Window:capture_geometry()
-  local dock, wx, wy, ww, wh = self.gfx.dock(-1, 1, 1, 1, 1)
+  local dock, wx, wy, ww, wh = gfx.dock(-1, 1, 1, 1, 1)
   if is_finite_number(dock) then self.state.dockState = dock end
-  self.client_w, self.client_h = self.gfx.w, self.gfx.h -- docked: the docker's size (log only)
+  self.client_w, self.client_h = gfx.w, gfx.h -- docked: the docker's size (log only)
   if is_finite_number(ww) and ww > 0 and is_finite_number(wh) and wh > 0 then
     self.state.wx, self.state.wy, self.state.ww, self.state.wh = wx, wy, ww, wh
   end
@@ -498,15 +494,15 @@ function Window:open()
     Window.describe(self:current_placement())))
 
   local s = self.state
-  self.gfx.init(self.title, s.ww, s.wh, s.dockState, s.wx, s.wy)
+  gfx.init(self.title, s.ww, s.wh, s.dockState, s.wx, s.wy)
   self.is_open = true
   self.remembered[slot] = self:current_placement()
   if self.slot then
     -- REAPER may still be docking the window: check it like after a mode change (init was move 1)
     self.pending = { target = self:current_placement(), source = "opening", since = self:now(), attempts = 1 }
   end
-  if self.toggle_action and self.api.set_action_options then
-    self.api.set_action_options(1 | 4) -- 1: starting the action again closes the window, 4: toggle on
+  if self.toggle_action and reaper.set_action_options then
+    reaper.set_action_options(1 | 4) -- 1: starting the action again closes the window, 4: toggle on
   end
   if self.on_open then self.on_open(self) end
 end
@@ -522,9 +518,9 @@ function Window:close()
     self.debug(("closing: saved %s for %s"):format(Window.describe(p), self:current_slot()))
   end
   self:save_state()
-  self.gfx.quit()
-  if self.toggle_action and self.api.set_action_options then
-    self.api.set_action_options(8) -- toggle off
+  gfx.quit()
+  if self.toggle_action and reaper.set_action_options then
+    reaper.set_action_options(8) -- toggle off
   end
 end
 
@@ -537,23 +533,22 @@ function Window:is_docked()
 end
 
 function Window:toggle_dock()
-  local dock = math.floor(self.gfx.dock(-1))
-  if dock & 1 == 1 then self.gfx.dock(dock & ~1) else self.gfx.dock(dock | 1) end
+  local dock = math.floor(gfx.dock(-1))
+  if dock & 1 == 1 then gfx.dock(dock & ~1) else gfx.dock(dock | 1) end
 end
 
 function Window:update_input()
-  local g = self.gfx
-  self.mouse = Window.next_mouse(self.mouse, g.mouse_cap, g.mouse_x, g.mouse_y, g.mouse_wheel)
-  g.mouse_wheel = 0
+  self.mouse = Window.next_mouse(self.mouse, gfx.mouse_cap, gfx.mouse_x, gfx.mouse_y, gfx.mouse_wheel)
+  gfx.mouse_wheel = 0
 end
 
 --- Opens the window and calls frame(win) once per frame until the window is closed.
 function Window:run(frame)
   self:open()
-  self.api.atexit(function() self:close() end) -- also when the script is stopped or REAPER quits
+  reaper.atexit(function() self:close() end) -- also when the script is stopped or REAPER quits
 
   local function loop()
-    local closed, chars = Window.read_chars(self.gfx.getchar)
+    local closed, chars = Window.read_chars(gfx.getchar)
     if closed or self.quit_requested then
       self:close()
       return
@@ -563,8 +558,8 @@ function Window:run(frame)
     self:capture_geometry()
     self:update_input()
     frame(self)
-    self.gfx.update()
-    self.api.defer(loop)
+    gfx.update()
+    reaper.defer(loop)
   end
   loop()
 end
@@ -604,9 +599,10 @@ function Window.self_test()
     select(2, Window.choose_placement(a, b, c)) == "remembered" and select(2, Window.choose_placement(nil, b, c)) == "saved"
     and select(2, Window.choose_placement(nil, nil, c)) == "default" and Window.choose_placement(nil, nil, nil) == nil)
 
-  -- placement per mode, with a fake window, fake ExtState and a fake clock
-  local ext, clock = {}, 0
-  local api = {
+  -- placement per mode, with a fake window (gfx), fake ExtState and a fake clock
+  local SelfTest = require("SelfTest")
+  local ext, clock = {}, 0 -- the test reads the saved placements in ext directly
+  local fakes = {
     GetExtState = function(sec, k) return ext[sec .. "/" .. k] or "" end,
     SetExtState = function(sec, k, v) ext[sec .. "/" .. k] = v end,
     time_precise = function() return clock end,
@@ -614,6 +610,7 @@ function Window.self_test()
   -- fake.redirect[a] = b: REAPER puts the window in b when asked for a (dockers still rearranging)
   local fake = { dock_state = 0, x = 10, y = 20, w = 300, h = 100, redirect = {}, redirect_once = true }
   local g = {
+    w = 300, h = 100, -- the docker or window size, read every frame (log only)
     init = function(title, w, h, d, x, y)
       fake.w, fake.h, fake.dock_state, fake.x, fake.y = w, h, d, x, y
     end,
@@ -628,7 +625,7 @@ function Window.self_test()
   }
   local log = {}
   local function new_win()
-    return Window.new{ name = "T", api = api, gfx = g, toggle_action = false,
+    return Window.new{ name = "T", toggle_action = false,
       debug = function(line) log[#log + 1] = line end }
   end
   local function move(d, x) fake.dock_state, fake.x = d, x end -- the user (or REAPER) moves the window
@@ -641,96 +638,98 @@ function Window.self_test()
     return (Window.parse_state(ext["T/Placement_" .. slot], { key }) or {})[key]
   end
 
-  local win = new_win()
-  win:set_mode("edit")
-  win:open()
-  check("open: first time uses the last state", fake.x == Window.BASE_DEFAULTS.wx and win.slot == "edit")
-  check("open: checked like a mode change", win.pending ~= nil)
-  frame(win, "edit", 0.6)
-  check("open: settled after the check", win.pending == nil)
+  SelfTest.with_reaper(fakes, SelfTest.with_gfx, g, function()
+    local win = new_win()
+    win:set_mode("edit")
+    win:open()
+    check("open: first time uses the last state", fake.x == Window.BASE_DEFAULTS.wx and win.slot == "edit")
+    check("open: checked like a mode change", win.pending ~= nil)
+    frame(win, "edit", 0.6)
+    check("open: settled after the check", win.pending == nil)
 
-  move(0, 111); frame(win, "edit", 0.2)
-  check("same mode: remembered, not written to disk", ext["T/Placement_edit"] == nil and win.remembered.edit.wx == 111)
+    move(0, 111); frame(win, "edit", 0.2)
+    check("same mode: remembered, not written to disk", ext["T/Placement_edit"] == nil and win.remembered.edit.wx == 111)
 
-  move(0, 999)          -- the screenset moves things right before the switch is noticed
-  frame(win, "show")
-  check("switch: saves the old mode's placement from BEFORE the switch", saved("edit", "wx") == 111)
-  check("switch: nothing moves before the settle time", fake.x == 999)
-  frame(win, "show", 0.6)
-  check("switch: mode without placement stays where it is", fake.x == 999 and win.pending == nil)
+    move(0, 999)          -- the screenset moves things right before the switch is noticed
+    frame(win, "show")
+    check("switch: saves the old mode's placement from BEFORE the switch", saved("edit", "wx") == 111)
+    check("switch: nothing moves before the settle time", fake.x == 999)
+    frame(win, "show", 0.6)
+    check("switch: mode without placement stays where it is", fake.x == 999 and win.pending == nil)
 
-  move(257, 999); frame(win, "show", 0.2) -- the user docks it in show mode
-  frame(win, "edit")
-  check("switch back: waits first", fake.dock_state == 257)
-  frame(win, "edit", 0.3)
-  check("switch back: still waiting before the settle time", fake.dock_state == 257)
-  frame(win, "edit", 0.3)
-  check("switch back: moved to the edit placement", fake.dock_state == 0 and fake.x == 111)
-  frame(win, "edit", 0.6)
-  check("switch back: checked and settled", win.pending == nil)
+    move(257, 999); frame(win, "show", 0.2) -- the user docks it in show mode
+    frame(win, "edit")
+    check("switch back: waits first", fake.dock_state == 257)
+    frame(win, "edit", 0.3)
+    check("switch back: still waiting before the settle time", fake.dock_state == 257)
+    frame(win, "edit", 0.3)
+    check("switch back: moved to the edit placement", fake.dock_state == 0 and fake.x == 111)
+    frame(win, "edit", 0.6)
+    check("switch back: checked and settled", win.pending == nil)
 
-  fake.redirect[257] = 513 -- REAPER puts it in the wrong docker once
-  frame(win, "show"); frame(win, "show", 0.6)
-  check("wrong docker: first move went wrong", fake.dock_state == 513 and win.pending ~= nil)
-  frame(win, "show", 0.6)
-  check("wrong docker: moved again", fake.dock_state == 257)
-  frame(win, "show", 0.6)
-  check("wrong docker: settled at the right placement", win.pending == nil and win.remembered.show.dockState == 257)
+    fake.redirect[257] = 513 -- REAPER puts it in the wrong docker once
+    frame(win, "show"); frame(win, "show", 0.6)
+    check("wrong docker: first move went wrong", fake.dock_state == 513 and win.pending ~= nil)
+    frame(win, "show", 0.6)
+    check("wrong docker: moved again", fake.dock_state == 257)
+    frame(win, "show", 0.6)
+    check("wrong docker: settled at the right placement", win.pending == nil and win.remembered.show.dockState == 257)
 
-  frame(win, "edit"); for _ = 1, 3 do frame(win, "edit", 0.6) end
-  fake.redirect, fake.redirect_once = { [257] = 513 }, false -- REAPER always puts it in the wrong docker
-  frame(win, "show"); for _ = 1, Window.MAX_ATTEMPTS + 1 do frame(win, "show", 0.6) end
-  check("gives up after MAX_ATTEMPTS moves", win.pending == nil and fake.dock_state == 513)
-  check("gives up: remembers the wanted placement, not the wrong one", win.remembered.show.dockState == 257)
-  fake.redirect = {}
-  frame(win, "show", 0.2)
-  check("after giving up: normal remembering again", win.remembered.show.dockState == 513)
-  move(257, 999); frame(win, "show", 0.2)
+    frame(win, "edit"); for _ = 1, 3 do frame(win, "edit", 0.6) end
+    fake.redirect, fake.redirect_once = { [257] = 513 }, false -- REAPER always puts it in the wrong docker
+    frame(win, "show"); for _ = 1, Window.MAX_ATTEMPTS + 1 do frame(win, "show", 0.6) end
+    check("gives up after MAX_ATTEMPTS moves", win.pending == nil and fake.dock_state == 513)
+    check("gives up: remembers the wanted placement, not the wrong one", win.remembered.show.dockState == 257)
+    fake.redirect = {}
+    frame(win, "show", 0.2)
+    check("after giving up: normal remembering again", win.remembered.show.dockState == 513)
+    move(257, 999); frame(win, "show", 0.2)
 
-  win:save_default()
-  check("default: saved for the current mode", ext["T/DefaultPlacement_show"] ~= nil and win:has_default())
-  move(0, 5); frame(win, "show", 0.2)
-  check("default: restore moves back at once", win:restore_default() and fake.dock_state == 257)
-  win.slot = "edit"
-  check("default: edit has none", not win:has_default() and not win:restore_default())
-  win.slot = "show"
+    win:save_default()
+    check("default: saved for the current mode", ext["T/DefaultPlacement_show"] ~= nil and win:has_default())
+    move(0, 5); frame(win, "show", 0.2)
+    check("default: restore moves back at once", win:restore_default() and fake.dock_state == 257)
+    win.slot = "edit"
+    check("default: edit has none", not win:has_default() and not win:restore_default())
+    win.slot = "show"
 
-  frame(win, "edit") -- closed during a mode change
-  win:close()
-  check("close during a mode change: saves where the window should be", saved("edit", "wx") == 111)
+    frame(win, "edit") -- closed during a mode change
+    win:close()
+    check("close during a mode change: saves where the window should be", saved("edit", "wx") == 111)
 
-  ext["T/Placement_edit"] = nil -- no saved placement for edit: the default is used on open
-  ext["T/DefaultPlacement_edit"] = "{dockState=0,wx=42,wy=1,ww=200,wh=90}"
-  local win2 = new_win()
-  win2:set_mode("edit")
-  win2:open()
-  check("open: mode without saved placement opens at its default", fake.x == 42 and fake.w == 200)
+    ext["T/Placement_edit"] = nil -- no saved placement for edit: the default is used on open
+    ext["T/DefaultPlacement_edit"] = "{dockState=0,wx=42,wy=1,ww=200,wh=90}"
+    local win2 = new_win()
+    win2:set_mode("edit")
+    win2:open()
+    check("open: mode without saved placement opens at its default", fake.x == 42 and fake.w == 200)
 
-  local win3 = new_win()
-  win3:open()
-  check("no set_mode: works with the 'any' slot, no checking", win3:current_slot() == "any" and win3.pending == nil)
-  win3:close()
-  check("no set_mode: placement saved under 'any'", ext["T/Placement_any"] ~= nil)
+    local win3 = new_win()
+    win3:open()
+    check("no set_mode: works with the 'any' slot, no checking", win3:current_slot() == "any" and win3.pending == nil)
+    win3:close()
+    check("no set_mode: placement saved under 'any'", ext["T/Placement_any"] ~= nil)
 
-  -- menu
-  local _, actions = Window.build_menu({
-    { label = "A", action = "a" }, { separator = true }, { label = "B", checked = true, action = "b" },
-    { label = "C", disabled = true, action = "c" },
-  })
-  check("build_menu: actions numbered like gfx.showmenu, disabled has none",
-    actions[1] == "a" and actions[2] == "b" and actions[3] == false and #actions == 3)
+    -- menu
+    local _, actions = Window.build_menu({
+      { label = "A", action = "a" }, { separator = true }, { label = "B", checked = true, action = "b" },
+      { label = "C", disabled = true, action = "c" },
+    })
+    check("build_menu: actions numbered like gfx.showmenu, disabled has none",
+      actions[1] == "a" and actions[2] == "b" and actions[3] == false and #actions == 3)
 
-  local events = {}
-  ext["H/WindowState"] = "{dockState=0,wx=5,wy=5,ww=500,wh=400}"
-  local hw = Window.new{ name = "H", api = api, gfx = g, toggle_action = false, ignore_saved_state = true,
-    on_open = function() events[#events + 1] = "open" end,
-    on_close = function(w) events[#events + 1] = "close"; w.state.zoomLevel = 7 end,
-    extra_keys = { "zoomLevel" } }
-  hw:open()
-  check("ignore_saved_state: opens with the defaults", fake.w == Window.BASE_DEFAULTS.ww)
-  hw:close()
-  check("on_close: called before saving, so its values are saved",
-    events[2] == "close" and (ext["H/WindowState"] or ""):find("zoomLevel=7", 1, true) ~= nil)
+    local events = {}
+    ext["H/WindowState"] = "{dockState=0,wx=5,wy=5,ww=500,wh=400}"
+    local hw = Window.new{ name = "H", toggle_action = false, ignore_saved_state = true,
+      on_open = function() events[#events + 1] = "open" end,
+      on_close = function(w) events[#events + 1] = "close"; w.state.zoomLevel = 7 end,
+      extra_keys = { "zoomLevel" } }
+    hw:open()
+    check("ignore_saved_state: opens with the defaults", fake.w == Window.BASE_DEFAULTS.ww)
+    hw:close()
+    check("on_close: called before saving, so its values are saved",
+      events[2] == "close" and (ext["H/WindowState"] or ""):find("zoomLevel=7", 1, true) ~= nil)
+  end)
 
   local function queue(list) local i = 0; return function() i = i + 1; return list[i] or 0 end end
   local closed, keys = Window.read_chars(queue({ 97, 98, 99 }))

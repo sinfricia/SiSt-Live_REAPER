@@ -25,7 +25,7 @@ Adding a role: add one line to ROLES or DERIVED. Check the result with Theme.dia
 
 Fonts: REAPER has no API to read the theme's fonts, so the face is set here, in one place.
 
-Self test: Theme.self_test() returns a list of { name, ok }. Uses a fake REAPER api.
+Self test: Theme.self_test() returns a list of { name, ok }. Uses fake REAPER functions (SelfTest.with_reaper).
 ]]
 
 local Theme = {}
@@ -93,9 +93,9 @@ function Theme.to_hex(c)
   return ("#%02X%02X%02X"):format(byte(c[1]), byte(c[2]), byte(c[3]))
 end
 
---- Reads all roles from the theme. Pure apart from the api calls, so tests can pass a fake api.
+--- Reads all roles from the theme. Pure apart from the reaper calls (tests swap in fakes).
 --- Returns colors (name -> {r,g,b}) and sources (name -> theme key, "fallback", "derived" ...).
-function Theme.resolve(api, roles, derived)
+function Theme.resolve(roles, derived)
   roles = roles or Theme.ROLES
   derived = derived or Theme.DERIVED
   local colors, sources = {}, {}
@@ -103,9 +103,9 @@ function Theme.resolve(api, roles, derived)
   for name, def in pairs(roles) do
     colors[name], sources[name] = def.fallback, "fallback"
     for _, key in ipairs(def.keys) do
-      local native = api.GetThemeColor(key, 0)
+      local native = reaper.GetThemeColor(key, 0)
       if type(native) == "number" and native >= 0 then
-        local r, g, b = api.ColorFromNative(native)
+        local r, g, b = reaper.ColorFromNative(native)
         colors[name], sources[name] = { r / 255, g / 255, b / 255 }, key
         break
       end
@@ -134,10 +134,9 @@ local current = nil -- { colors, sources, file }
 
 --- Reads the colors from the current REAPER theme. Called by the first color lookup, so a
 --- window normally never calls it itself. Call it again to pick up a changed theme.
-function Theme.load(api)
-  api = api or reaper
-  local colors, sources = Theme.resolve(api)
-  current = { colors = colors, sources = sources, file = api.GetLastColorThemeFile() or "" }
+function Theme.load()
+  local colors, sources = Theme.resolve()
+  current = { colors = colors, sources = sources, file = reaper.GetLastColorThemeFile() or "" }
 end
 
 --- A role or accent name, or a color table (returned as it is).
@@ -182,9 +181,10 @@ function Theme.self_test()
   local function near(a, b) return math.abs(a - b) < 1e-9 end
   local function same(a, b) return near(a[1], b[1]) and near(a[2], b[2]) and near(a[3], b[3]) end
 
-  -- Fake api: theme colors are stored as "native" r + g*256 + b*65536 (Windows layout)
+  -- Fake REAPER: theme colors are stored as "native" r + g*256 + b*65536 (Windows layout)
   local theme = {}
-  local api = {
+  local with_reaper = require("SelfTest").with_reaper
+  local fakes = {
     GetThemeColor = function(key) return theme[key] or -1 end,
     ColorFromNative = function(n) return n & 0xFF, (n >> 8) & 0xFF, (n >> 16) & 0xFF end,
   }
@@ -196,17 +196,17 @@ function Theme.self_test()
 
   -- resolving
   theme = { bg_b = 0x000033, fg = 0xFFFFFF } -- bg_a missing: second key used
-  local c, s = Theme.resolve(api, roles, derived)
+  local c, s = with_reaper(fakes, Theme.resolve, roles, derived)
   check("resolve: falls through to the second key", s.background == "bg_b" and same(c.background, { 0x33 / 255, 0, 0 }))
   check("resolve: derived color is mixed from the roles", same(c.button, Theme.mix(c.background, c.text, 0.5))
     and s.button == "derived")
 
   theme = {}
-  c, s = Theme.resolve(api, roles, derived)
+  c, s = with_reaper(fakes, Theme.resolve, roles, derived)
   check("resolve: fallback when the theme defines no key", s.background == "fallback" and same(c.text, { 0.9, 0.9, 0.9 }))
 
   theme = { bg_a = 0x808080, fg = 0x828282 } -- grey text on grey background
-  c, s = Theme.resolve(api, roles, derived)
+  c, s = with_reaper(fakes, Theme.resolve, roles, derived)
   check("resolve: unreadable text is replaced", same(c.text, { 0, 0, 0 }) or same(c.text, { 1, 1, 1 }))
   check("resolve: replacement is noted in the source", s.text:find("replaced") ~= nil)
 

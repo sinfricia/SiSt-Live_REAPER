@@ -18,7 +18,7 @@
 -- REAPER writes the file when you close the Customize dialog with OK.
 --
 -- This library only reads (no gfx): the window is in the component.
--- Self test: ToolbarSource.self_test() returns a list of { name, ok }. Uses a fake REAPER api.
+-- Self test: ToolbarSource.self_test() returns a list of { name, ok }. Uses fake REAPER functions (SelfTest.with_reaper).
 
 local ToolbarSource = {}
 
@@ -95,14 +95,12 @@ end
 -- Settings --------------------------------------------------------------------------
 
 --- Floating toolbar number of a mode, or nil.
-function ToolbarSource.get_assignment(mode, api)
-  api = api or reaper
-  return tonumber(api.GetExtState(ToolbarSource.SECTION, ToolbarSource.KEY_PREFIX .. mode))
+function ToolbarSource.get_assignment(mode)
+  return tonumber(reaper.GetExtState(ToolbarSource.SECTION, ToolbarSource.KEY_PREFIX .. mode))
 end
 
-function ToolbarSource.set_assignment(mode, number, api)
-  api = api or reaper
-  api.SetExtState(ToolbarSource.SECTION, ToolbarSource.KEY_PREFIX .. mode, number and tostring(number) or "", true)
+function ToolbarSource.set_assignment(mode, number)
+  reaper.SetExtState(ToolbarSource.SECTION, ToolbarSource.KEY_PREFIX .. mode, number and tostring(number) or "", true)
 end
 
 -- Settings dialog ---------------------------------------------------------------------
@@ -112,8 +110,8 @@ ToolbarSource.DIALOG_TITLE = "SiSt-Live toolbar settings (empty = none)"
 ToolbarSource.DIALOG_CAPTIONS = "SHOW toolbar (1-32),EDIT toolbar (1-32)"
 
 --- The dialog's field texts from the stored settings.
-function ToolbarSource.dialog_texts(api)
-  local show, edit = ToolbarSource.get_assignment("show", api), ToolbarSource.get_assignment("edit", api)
+function ToolbarSource.dialog_texts()
+  local show, edit = ToolbarSource.get_assignment("show"), ToolbarSource.get_assignment("edit")
   return { show and tostring(show) or "", edit and tostring(edit) or "" }
 end
 
@@ -131,48 +129,46 @@ function ToolbarSource.parse_dialog(texts)
   return values
 end
 
-function ToolbarSource.store_dialog(values, api)
-  ToolbarSource.set_assignment("show", values[1] or nil, api)
-  ToolbarSource.set_assignment("edit", values[2] or nil, api)
+function ToolbarSource.store_dialog(values)
+  ToolbarSource.set_assignment("show", values[1] or nil)
+  ToolbarSource.set_assignment("edit", values[2] or nil)
 end
 
 --- Shows the dialog until the input is valid or cancelled. Returns true if settings were stored.
-function ToolbarSource.configure(api)
-  api = api or reaper
-  local texts = ToolbarSource.dialog_texts(api)
+function ToolbarSource.configure()
+  local texts = ToolbarSource.dialog_texts()
   while true do
-    local ok, result = api.GetUserInputs(ToolbarSource.DIALOG_TITLE, 2, ToolbarSource.DIALOG_CAPTIONS .. ",extrawidth=60",
+    local ok, result = reaper.GetUserInputs(ToolbarSource.DIALOG_TITLE, 2, ToolbarSource.DIALOG_CAPTIONS .. ",extrawidth=60",
       table.concat(texts, ","))
     if not ok then return false end
     texts = {}
     for part in (result .. ","):gmatch("(.-),") do texts[#texts + 1] = part end
     local values, errors = ToolbarSource.parse_dialog(texts)
     if values then
-      ToolbarSource.store_dialog(values, api)
+      ToolbarSource.store_dialog(values)
       return true
     end
-    api.MB("Please fix:\n\n" .. table.concat(errors, "\n"), "SiSt-Live toolbar settings", 0)
+    reaper.MB("Please fix:\n\n" .. table.concat(errors, "\n"), "SiSt-Live toolbar settings", 0)
   end
 end
 
 -- Loading -----------------------------------------------------------------------------
 
-function ToolbarSource.ini_path(api)
-  return api.GetResourcePath() .. package.config:sub(1, 1) .. ToolbarSource.INI_FILE
+function ToolbarSource.ini_path()
+  return reaper.GetResourcePath() .. package.config:sub(1, 1) .. ToolbarSource.INI_FILE
 end
 
 --- Reads the toolbar of a mode. Returns a toolbar, or nil + a message to show instead.
 --- ini_path: optional, another menu file (tests).
 --- toolbar = { number, title, buttons = { { cmd (number), label } or { separator = true }, ... },
 ---             missing = { "text", ... } (buttons whose action doesn't exist: shown disabled) }
-function ToolbarSource.load(mode, api, ini_path)
-  api = api or reaper
-  local number = ToolbarSource.get_assignment(mode, api)
+function ToolbarSource.load(mode, ini_path)
+  local number = ToolbarSource.get_assignment(mode)
   if not number then
     return nil, ("No toolbar set for %s mode."):format(mode:upper())
   end
 
-  local f = io.open(ini_path or ToolbarSource.ini_path(api), "rb")
+  local f = io.open(ini_path or ToolbarSource.ini_path(), "rb")
   local text = f and f:read("a")
   if f then f:close() end
   local section = ToolbarSource.section_name(number)
@@ -186,13 +182,13 @@ function ToolbarSource.load(mode, api, ini_path)
     if item.separator then
       toolbar.buttons[#toolbar.buttons + 1] = { separator = true }
     else
-      local cmd = tonumber(item.cmd) or api.NamedCommandLookup(item.cmd)
+      local cmd = tonumber(item.cmd) or reaper.NamedCommandLookup(item.cmd)
       if not cmd or cmd == 0 then
         toolbar.missing[#toolbar.missing + 1] = item.cmd
         toolbar.buttons[#toolbar.buttons + 1] = { cmd = nil, label = ToolbarSource.button_label(item.text, item.cmd) }
       else
         toolbar.buttons[#toolbar.buttons + 1] = { cmd = cmd,
-          label = ToolbarSource.button_label(item.text, api.kbd_getTextFromCmd(cmd, 0)) }
+          label = ToolbarSource.button_label(item.text, reaper.kbd_getTextFromCmd(cmd, 0)) }
       end
     end
   end
@@ -201,21 +197,20 @@ end
 
 -- Diagnostics & self test --------------------------------------------------------------
 
-function ToolbarSource.diagnostics(api)
-  api = api or reaper
+function ToolbarSource.diagnostics()
   local rows = {}
   for _, mode in ipairs({ "show", "edit" }) do
-    local n = ToolbarSource.get_assignment(mode, api)
+    local n = ToolbarSource.get_assignment(mode)
     local value = n and ToolbarSource.section_name(n) or "(none)"
     if n then
-      local tb, problem = ToolbarSource.load(mode, api)
+      local tb, problem = ToolbarSource.load(mode)
       value = value .. (tb and (": %d buttons%s"):format(#tb.buttons,
         #tb.missing > 0 and (", missing actions: " .. table.concat(tb.missing, ", ")) or "")
         or (": " .. problem:gsub("\n", " ")))
     end
     rows[#rows + 1] = { mode .. " toolbar", value }
   end
-  rows[#rows + 1] = { "menu file", ToolbarSource.ini_path(api) }
+  rows[#rows + 1] = { "menu file", ToolbarSource.ini_path() }
   return rows
 end
 
@@ -251,28 +246,26 @@ function ToolbarSource.self_test()
   -- loading with a fake REAPER and a temporary menu file in the resource folder (removed again)
   local sep = package.config:sub(1, 1)
   local tmp = reaper.GetResourcePath() .. sep .. "SiSt-Live_toolbartest_" .. os.time() .. ".ini"
-  local ext = {}
-  local api = {
-    GetExtState = function(s, k) return ext[s .. "/" .. k] or "" end,
-    SetExtState = function(s, k, v) ext[s .. "/" .. k] = v end,
+  local with_reaper = require("SelfTest").with_reaper
+  local fakes = {
     GetResourcePath = function() return "unused" end,
     NamedCommandLookup = function(name) return name == "_RS1234" and 55000 or 0 end,
     kbd_getTextFromCmd = function(cmd)
       return ({ [1016] = "Transport: Stop", [40044] = "Transport: Play/stop" })[cmd] or ""
     end,
   }
-  local none, msg = ToolbarSource.load("show", api)
+  local none, msg = with_reaper(fakes, ToolbarSource.load, "show")
   check("load: no toolbar set gives a message", none == nil and msg:find("No toolbar set", 1, true) ~= nil)
 
-  ToolbarSource.set_assignment("show", 3, api)
-  local missing_file, msg2 = ToolbarSource.load("show", api, tmp)
+  with_reaper(fakes, ToolbarSource.set_assignment, "show", 3)
+  local missing_file, msg2 = with_reaper(fakes, ToolbarSource.load, "show", tmp)
   check("load: no menu file gives a message", missing_file == nil and msg2:find("not customized", 1, true) ~= nil)
 
   local f = io.open(tmp, "wb")
   if f then
     f:write(ini:gsub("_RS1234 My script", "_RS1234 My script\r\nitem_3=_SWS_GONE Gone"))
     f:close()
-    local loaded = ToolbarSource.load("show", api, tmp)
+    local loaded = with_reaper(fakes, ToolbarSource.load, "show", tmp)
     check("load: text equal to the action name is shortened", loaded and loaded.buttons[1].label == "Play/stop")
     check("load: missing action is listed and has no command", loaded and loaded.missing[1] == "_SWS_GONE"
       and loaded.buttons[4].cmd == nil and loaded.buttons[4].label == "Gone")

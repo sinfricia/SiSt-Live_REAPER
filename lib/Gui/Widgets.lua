@@ -186,7 +186,7 @@ function Widgets.button(win, label, x, y, w, h, opts)
   if opts.repeat_every and not opts.disabled then
     win.widget_timers = win.widget_timers or {}
     clicked = Widgets.repeat_fire(win.widget_timers, opts.id or label, held, win.mouse.left_pressed,
-      win.api.time_precise(), opts.repeat_every)
+      reaper.time_precise(), opts.repeat_every)
   end
   local alpha = opts.disabled and Widgets.DISABLED_ALPHA or 1
 
@@ -220,7 +220,7 @@ function Widgets.hold_button(win, label, x, y, w, h, opts)
   local st = win.widget_holds[key] or {}
   win.widget_holds[key] = st
   local over, held = Widgets.button_state(win.mouse, x, y, w, h, opts.disabled)
-  local progress, fired = Widgets.hold_step(st, held and over, win.api.time_precise(), opts.hold or Widgets.HOLD_TIME)
+  local progress, fired = Widgets.hold_step(st, held and over, reaper.time_precise(), opts.hold or Widgets.HOLD_TIME)
 
   local alpha = opts.disabled and Widgets.DISABLED_ALPHA or 1
   local face = Theme.color(opts.face or "button")

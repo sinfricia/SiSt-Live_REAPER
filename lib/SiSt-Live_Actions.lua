@@ -5,14 +5,14 @@
 --
 -- 1. REAPER's own (native) actions. Their command IDs practically never change, their names sometimes
 --    do (a REAPER update rewords an action). So the ID is trusted and the name is NOT compared:
---      Actions.require_native(cmd, api)  before running: fails only if REAPER has no action with that ID
---      Actions.check_native(list, api)   for "DEBUG Run Self-Test": every ID with its current name, so
+--      Actions.require_native(cmd)       before running: fails only if REAPER has no action with that ID
+--      Actions.check_native(list)        for "DEBUG Run Self-Test": every ID with its current name, so
 --                                        after a REAPER update you can see at a glance what each ID is.
 --                                        Only a missing action counts as failed.
 --
 -- 2. SiSt-Live's own scripts. Their command IDs are given by REAPER when a script is added to the action
 --    list, so they differ per installation. They are looked up by the script's file:
---      Actions.script_command(id, api)   command ID of a script in Actions.SCRIPTS, e.g. "mode"
+--      Actions.script_command(id)        command ID of a script in Actions.SCRIPTS, e.g. "mode"
 --    The files are where the SiSt-Live package installs them, below <resource path>/Scripts/SiSt-Live.
 --    A script that is in the action list is found in reaper-kb.ini (read only) and its named ID turned into
 --    the command ID. Only a script that isn't there yet is added with reaper.AddRemoveReaScript: adding makes
@@ -20,7 +20,7 @@
 --    the rest of the script run.
 --    Adding a script: one line in Actions.SCRIPTS.
 --
--- Self test: Actions.self_test() returns a list of { name, ok }. Uses a fake REAPER api.
+-- Self test: Actions.self_test() returns a list of { name, ok }. Uses fake REAPER functions (SelfTest.with_reaper).
 
 local Actions = {}
 
@@ -39,17 +39,16 @@ Actions.SCRIPT_ORDER = { "setlist", "status", "toolbar", "mode", "debug" } -- fo
 -- Native actions ---------------------------------------------------------------------
 
 --- Current name of a native action, or nil if REAPER has no action with that ID.
-function Actions.native_name(cmd, api)
-  api = api or reaper
-  local name = api.kbd_getTextFromCmd(cmd, 0)
+function Actions.native_name(cmd)
+  local name = reaper.kbd_getTextFromCmd(cmd, 0)
   if name == nil or name == "" then return nil end
   return name
 end
 
 --- Use before running a native action. Returns its name; throws a clean error if it doesn't exist.
 --- what: short description for the error ("Toggle fullscreen").
-function Actions.require_native(cmd, api, what)
-  local name = Actions.native_name(cmd, api)
+function Actions.require_native(cmd, what)
+  local name = Actions.native_name(cmd)
   if not name then
     error(("REAPER has no action %d%s (run DEBUG Run Self-Test)"):format(cmd,
       what and (" (" .. what .. ")") or ""), 0)
@@ -59,11 +58,10 @@ end
 
 --- Live check for "DEBUG Run Self-Test". list: { { cmd = 40346, what = "Toggle fullscreen" }, ... }.
 --- Returns { name, ok } per action: name shows the ID, what it is for and REAPER's current name.
-function Actions.check_native(list, api)
-  api = api or reaper
+function Actions.check_native(list)
   local results = {}
   for _, a in ipairs(list) do
-    local name = Actions.native_name(a.cmd, api)
+    local name = Actions.native_name(a.cmd)
     results[#results + 1] = {
       name = ("%d (%s) = %s"):format(a.cmd, a.what or "?", name or "NO SUCH ACTION"),
       ok = name ~= nil,
@@ -81,11 +79,10 @@ function Actions.join_path(resource_path, file, sep)
   return (table.concat(parts, "/"):gsub("[/\\]+", sep))
 end
 
-function Actions.script_path(id, api)
-  api = api or reaper
+function Actions.script_path(id)
   local file = Actions.SCRIPTS[id]
   if not file then return nil end
-  return Actions.join_path(api.GetResourcePath(), file, package.config:sub(1, 1))
+  return Actions.join_path(reaper.GetResourcePath(), file, package.config:sub(1, 1))
 end
 
 --- Pure. Named ID ("_RS...") of the script at `path` (full path) in the main section of reaper-kb.ini, or nil.
@@ -105,45 +102,47 @@ function Actions.find_registered(kb_text, resource_path, path)
   return nil
 end
 
-local function read_kb(api)
-  local f = io.open(api.GetResourcePath() .. package.config:sub(1, 1) .. "reaper-kb.ini", "rb")
+local function read_kb()
+  local f = io.open(reaper.GetResourcePath() .. package.config:sub(1, 1) .. "reaper-kb.ini", "rb")
   if not f then return nil end
   local text = f:read("a")
   f:close()
   return text
 end
 
-local cache = {} -- path -> command ID (only for the real REAPER api)
+-- path -> command ID, one cache per `reaper` table: a test swaps in its own fake reaper, so it never sees the
+-- real IDs and never leaves fake ones behind (weak keys: a fake's cache goes with the fake)
+local caches = setmetatable({}, { __mode = "k" })
 
 --- Command ID of a script by its file, relative to the package folder ("Transport/x.lua"), or nil + reason.
 --- Finds it in the action list; adds it only if it isn't there yet (see the top of this file).
-function Actions.file_command(file, api)
-  api = api or reaper
-  local path = Actions.join_path(api.GetResourcePath(), file, package.config:sub(1, 1))
-  if api == reaper and cache[path] then return cache[path] end
-  if not api.file_exists(path) then return nil, "not installed: " .. path end
-  local named = Actions.find_registered(read_kb(api), api.GetResourcePath(), path)
-  local cmd = named and api.NamedCommandLookup(named) or 0
-  if type(cmd) ~= "number" or cmd <= 0 then cmd = api.AddRemoveReaScript(true, 0, path, true) end
+function Actions.file_command(file)
+  local path = Actions.join_path(reaper.GetResourcePath(), file, package.config:sub(1, 1))
+  local cache = caches[reaper] or {}
+  caches[reaper] = cache
+  if cache[path] then return cache[path] end
+  if not reaper.file_exists(path) then return nil, "not installed: " .. path end
+  local named = Actions.find_registered(read_kb(), reaper.GetResourcePath(), path)
+  local cmd = named and reaper.NamedCommandLookup(named) or 0
+  if type(cmd) ~= "number" or cmd <= 0 then cmd = reaper.AddRemoveReaScript(true, 0, path, true) end
   if type(cmd) ~= "number" or cmd <= 0 then return nil, "could not get an action for " .. path end
-  if api == reaper then cache[path] = cmd end
+  cache[path] = cmd
   return cmd
 end
 
 --- Command ID of a SiSt-Live script in Actions.SCRIPTS, or nil + reason.
-function Actions.script_command(id, api)
+function Actions.script_command(id)
   local file = Actions.SCRIPTS[id]
   if not file then return nil, "unknown script '" .. tostring(id) .. "'" end
-  return Actions.file_command(file, api)
+  return Actions.file_command(file)
 end
 
 -- Diagnostics & self test ------------------------------------------------------------------
 
-function Actions.diagnostics(api)
-  api = api or reaper
+function Actions.diagnostics()
   local rows = {}
   for _, id in ipairs(Actions.SCRIPT_ORDER) do
-    local cmd, err = Actions.script_command(id, api)
+    local cmd, err = Actions.script_command(id)
     rows[#rows + 1] = { "script " .. id, cmd and ("action %d"):format(cmd) or err }
   end
   return rows
@@ -154,27 +153,29 @@ function Actions.self_test()
   local function check(name, cond) results[#results + 1] = { name = name, ok = cond and true or false } end
 
   local names = { [40346] = "View: Toggle fullscreen (renamed in a REAPER update)" }
-  local api = {
+  local fakes = {
     kbd_getTextFromCmd = function(cmd) return names[cmd] or "" end,
     GetResourcePath = function() return "R" end,
     file_exists = function(p) return p:find("Status Display", 1, true) == nil end, -- status not installed
     AddRemoveReaScript = function(_, _, path) return path:find("Toggle Edit", 1, true) and 55926 or 1234 end,
   }
 
-  -- native
-  check("native: existing action, whatever its name", Actions.native_name(40346, api) ~= nil
-    and Actions.require_native(40346, api) == names[40346])
-  local ok, err = pcall(Actions.require_native, 99999, api, "Something")
-  check("native: missing action fails with the ID", not ok and tostring(err):find("99999", 1, true) ~= nil
-    and tostring(err):find("Something", 1, true) ~= nil)
-  local rows = Actions.check_native({ { cmd = 40346, what = "fullscreen" }, { cmd = 99999, what = "gone" } }, api)
-  check("native check: a renamed action passes, a missing one fails", rows[1].ok and not rows[2].ok
-    and rows[1].name:find("renamed", 1, true) ~= nil and rows[2].name:find("NO SUCH ACTION", 1, true) ~= nil)
+  require("SelfTest").with_reaper(fakes, function()
+    -- native
+    check("native: existing action, whatever its name", Actions.native_name(40346) ~= nil
+      and Actions.require_native(40346) == names[40346])
+    local ok, err = pcall(Actions.require_native, 99999, "Something")
+    check("native: missing action fails with the ID", not ok and tostring(err):find("99999", 1, true) ~= nil
+      and tostring(err):find("Something", 1, true) ~= nil)
+    local rows = Actions.check_native({ { cmd = 40346, what = "fullscreen" }, { cmd = 99999, what = "gone" } })
+    check("native check: a renamed action passes, a missing one fails", rows[1].ok and not rows[2].ok
+      and rows[1].name:find("renamed", 1, true) ~= nil and rows[2].name:find("NO SUCH ACTION", 1, true) ~= nil)
 
-  -- scripts
-  local none, why = Actions.script_command("status", api)
-  check("script_command: not installed", none == nil and why:find("not installed", 1, true) ~= nil)
-  check("script_command: unknown id", select(2, Actions.script_command("nope", api)):find("unknown", 1, true) ~= nil)
+    -- scripts
+    local none, why = Actions.script_command("status")
+    check("script_command: not installed", none == nil and why:find("not installed", 1, true) ~= nil)
+    check("script_command: unknown id", select(2, Actions.script_command("nope")):find("unknown", 1, true) ~= nil)
+  end)
 
   -- finding a script in reaper-kb.ini (registering instead would make REAPER rewrite the file on every run)
   local kb = table.concat({

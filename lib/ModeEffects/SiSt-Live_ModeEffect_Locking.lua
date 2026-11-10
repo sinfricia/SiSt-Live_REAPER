@@ -56,18 +56,18 @@ function Locking.steps(on)
   return on and Locking.ON_STEPS or Locking.OFF_STEPS
 end
 
-function Locking.check_actions(api)
+function Locking.check_actions()
   local list = {}
   for _, steps in ipairs({ Locking.ON_STEPS, Locking.OFF_STEPS }) do
     for _, a in ipairs(steps) do list[#list + 1] = a end
   end
-  return Actions.check_native(list, api)
+  return Actions.check_native(list)
 end
 
-local function open_projects(api)
+local function open_projects()
   local projects = {}
   while true do
-    local proj = api.EnumProjects(#projects)
+    local proj = reaper.EnumProjects(#projects)
     if not proj then break end
     projects[#projects + 1] = proj
   end
@@ -76,36 +76,34 @@ end
 
 -- Assignments -----------------------------------------------------------
 --- true (on), false (off) or nil (none).
-function Locking.get_assignment(mode, api)
-  api = api or reaper
-  local v = api.GetExtState(Locking.SECTION, Locking.KEY_PREFIX .. mode)
+function Locking.get_assignment(mode)
+  local v = reaper.GetExtState(Locking.SECTION, Locking.KEY_PREFIX .. mode)
   if v == "on" then return true end
   if v == "off" then return false end
   return nil
 end
 
-function Locking.set_assignment(mode, value, api)
-  api = api or reaper
+function Locking.set_assignment(mode, value)
   local v = value == true and "on" or (value == false and "off" or "")
-  api.SetExtState(Locking.SECTION, Locking.KEY_PREFIX .. mode, v, true) -- persistent
+  reaper.SetExtState(Locking.SECTION, Locking.KEY_PREFIX .. mode, v, true) -- persistent
 end
 
 -- Effect ----------------------------------------------------------------
-function Locking.apply(mode, api)
-  local want = Locking.get_assignment(mode, api)
+function Locking.apply(mode)
+  local want = Locking.get_assignment(mode)
   if want == nil then
     return "skipped", ("no locking setting for %s mode"):format(mode)
   end
 
   local steps = Locking.steps(want)
   for _, a in ipairs(steps) do -- check that every action exists before running any
-    Actions.require_native(a.cmd, api, a.what)
+    Actions.require_native(a.cmd, a.what)
   end
 
-  local projects = open_projects(api)
+  local projects = open_projects()
   for _, proj in ipairs(projects) do
     for _, a in ipairs(steps) do
-      api.Main_OnCommandEx(a.cmd, 0, proj)
+      reaper.Main_OnCommandEx(a.cmd, 0, proj)
     end
   end
 
@@ -126,7 +124,7 @@ end
 Locking.settings = {
   {
     label  = "locking",
-    get    = function(mode, api) return Locking.get_assignment(mode, api) end,
+    get    = function(mode) return Locking.get_assignment(mode) end,
     format = function(v) return v == nil and "" or (v and "on" or "off") end,
     parse  = function(text)
       local v, err = Locking.parse(text)
@@ -134,52 +132,50 @@ Locking.settings = {
       if v == "none" then return true, nil end
       return true, v
     end,
-    set    = function(mode, v, api) Locking.set_assignment(mode, v, api) end,
+    set    = function(mode, v) Locking.set_assignment(mode, v) end,
   },
 }
 
 -- Diagnostics & self-test -----------------------------------------------
-function Locking.diagnostics(api)
-  api = api or reaper
+function Locking.diagnostics()
   local rows = {}
   for _, mode in ipairs({ "show", "edit" }) do
-    local v = Locking.get_assignment(mode, api)
+    local v = Locking.get_assignment(mode)
     rows[#rows + 1] = { mode .. " locking", v == nil and "(none)" or (v and "on" or "off") }
   end
-  local state = api.GetToggleCommandState(Locking.CMD_TOGGLE)
+  local state = reaper.GetToggleCommandState(Locking.CMD_TOGGLE)
   rows[#rows + 1] = { "locking (active tab)", state == 1 and "on" or (state == 0 and "off" or "(not reported)") }
   return rows
 end
 
---- Built-in self-test. Uses a fake REAPER API: never changes the real locking.
+--- Built-in self-test. Uses fake REAPER functions: never changes the real locking.
 function Locking.self_test()
+  local with_reaper = require("SelfTest").with_reaper
   local results = {}
   local function check(name, cond) results[#results + 1] = { name = name, ok = cond and true or false } end
 
   local function fake(opts)
     opts = opts or {}
-    local ext, runs, names = {}, {}, {}
+    local runs, names = {}, {}
     for _, list in ipairs({ Locking.ON_STEPS, Locking.OFF_STEPS }) do
       for _, a in ipairs(list) do names[a.cmd] = a.what end
     end
     if opts.names then for k, v in pairs(opts.names) do names[k] = v end end
     local projects = opts.projects or { "p1", "p2", "p3" }
-    local api = {
-      GetExtState = function(s, k) return ext[s .. "/" .. k] or "" end,
-      SetExtState = function(s, k, v) ext[s .. "/" .. k] = v end,
+    local fakes = {
       kbd_getTextFromCmd = function(cmd) return names[cmd] or "" end,
       EnumProjects = function(i) return projects[i + 1] end,
       Main_OnCommandEx = function(cmd, _, proj) runs[#runs + 1] = proj .. ":" .. cmd end,
     }
-    return api, runs
+    return fakes, runs
   end
 
-  local api, runs = fake()
-  check("apply: nothing assigned -> skipped", (Locking.apply("show", api)) == "skipped" and #runs == 0)
+  local fakes, runs = fake()
+  check("apply: nothing assigned -> skipped", (with_reaper(fakes, Locking.apply, "show")) == "skipped" and #runs == 0)
 
-  Locking.set_assignment("show", true, api)
-  Locking.set_assignment("edit", false, api)
-  local result = Locking.apply("show", api)
+  with_reaper(fakes, Locking.set_assignment, "show", true)
+  with_reaper(fakes, Locking.set_assignment, "edit", false)
+  local result = with_reaper(fakes, Locking.apply, "show")
   local per_project = #Locking.ON_STEPS
   check("apply on: every step in every project", result == "ok" and #runs == 3 * per_project
     and runs[1] == "p1:40595" and runs[per_project + 1] == "p2:40595")
@@ -190,25 +186,25 @@ function Locking.self_test()
     return true
   end)())
 
-  local api2, runs2 = fake()
-  Locking.set_assignment("edit", false, api2)
-  Locking.apply("edit", api2)
+  local fakes2, runs2 = fake()
+  with_reaper(fakes2, Locking.set_assignment, "edit", false)
+  with_reaper(fakes2, Locking.apply, "edit")
   check("apply off: only disable, in every project", table.concat(runs2, ",") == "p1:40570,p2:40570,p3:40570")
 
   local renamed, renamed_runs = fake({ names = { [40575] = "Locking: Clear full item lock mode (renamed)" } })
-  Locking.set_assignment("show", true, renamed)
+  with_reaper(renamed, Locking.set_assignment, "show", true)
   check("apply: a renamed action still runs (the IDs are trusted)",
-    (Locking.apply("show", renamed)) == "ok" and #renamed_runs == 3 * per_project)
+    (with_reaper(renamed, Locking.apply, "show")) == "ok" and #renamed_runs == 3 * per_project)
   local missing, missing_runs = fake({ names = { [40575] = "" } })
-  Locking.set_assignment("show", true, missing)
+  with_reaper(missing, Locking.set_assignment, "show", true)
   check("apply: a missing action fails before anything runs",
-    not pcall(Locking.apply, "show", missing) and #missing_runs == 0)
+    not pcall(with_reaper, missing, Locking.apply, "show") and #missing_runs == 0)
 
   local all_ok = true
-  for _, r in ipairs(Locking.check_actions(fake())) do all_ok = all_ok and r.ok end
+  for _, r in ipairs(with_reaper(fake(), Locking.check_actions)) do all_ok = all_ok and r.ok end
   check("live check passes when every action exists", all_ok)
   local missing_found = false
-  for _, r in ipairs(Locking.check_actions(missing)) do if not r.ok then missing_found = true end end
+  for _, r in ipairs(with_reaper(missing, Locking.check_actions)) do if not r.ok then missing_found = true end end
   check("live check fails for a missing action", missing_found)
 
   return results

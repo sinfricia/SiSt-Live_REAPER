@@ -71,82 +71,80 @@ end
 
 -- Assignments -------------------------------------------------------------
 --- "open", "restore" or nil (none). A mode that was never configured gets its default.
-function Windows.get_assignment(mode, api)
-  api = api or reaper
-  if not api.HasExtState(Windows.SECTION, Windows.KEY_PREFIX .. mode) then return Windows.DEFAULTS[mode] end
-  local v = api.GetExtState(Windows.SECTION, Windows.KEY_PREFIX .. mode)
+function Windows.get_assignment(mode)
+  if not reaper.HasExtState(Windows.SECTION, Windows.KEY_PREFIX .. mode) then return Windows.DEFAULTS[mode] end
+  local v = reaper.GetExtState(Windows.SECTION, Windows.KEY_PREFIX .. mode)
   if v == Windows.OPEN or v == Windows.RESTORE then return v end
   return nil
 end
 
 --- value: "open", "restore" or nil for none (stored as "", so the default no longer applies).
-function Windows.set_assignment(mode, value, api)
-  api = api or reaper
-  api.SetExtState(Windows.SECTION, Windows.KEY_PREFIX .. mode, value or "", true) -- persistent
+function Windows.set_assignment(mode, value)
+  reaper.SetExtState(Windows.SECTION, Windows.KEY_PREFIX .. mode, value or "", true) -- persistent
 end
 
 -- Windows -----------------------------------------------------------------
 --- Command ID of a window's script, or nil + reason.
-function Windows.command(w, api)
-  return Actions.script_command(w.id, api)
+function Windows.command(w)
+  return Actions.script_command(w.id)
 end
 
 --- true if the window is open (its action's toggle state is on).
-function Windows.is_open(cmd, api)
-  return api.GetToggleCommandStateEx(0, cmd) == 1
+function Windows.is_open(cmd)
+  return reaper.GetToggleCommandStateEx(0, cmd) == 1
 end
 
-local function get_opened(api)
-  return Windows.decode_ids(api.GetExtState(Windows.SECTION, Windows.KEY_OPENED))
+local function get_opened()
+  return Windows.decode_ids(reaper.GetExtState(Windows.SECTION, Windows.KEY_OPENED))
 end
 
-local function set_opened(set, api)
-  api.SetExtState(Windows.SECTION, Windows.KEY_OPENED, Windows.encode_ids(set), false) -- not persisted
+local function set_opened(set)
+  reaper.SetExtState(Windows.SECTION, Windows.KEY_OPENED, Windows.encode_ids(set), false) -- not persisted
 end
 
-local function open_all(api)
-  local opened, done, problems = get_opened(api), {}, {}
+local function open_all()
+  local opened, done, problems = get_opened(), {}, {}
   for _, w in ipairs(Windows.WINDOWS) do
-    local cmd, err = Windows.command(w, api)
+    local cmd, err = Windows.command(w)
     if not cmd then
       problems[#problems + 1] = w.label .. " " .. err
-    elseif not Windows.is_open(cmd, api) then
-      api.Main_OnCommand(cmd, 0)
+    elseif not Windows.is_open(cmd) then
+      reaper.Main_OnCommand(cmd, 0)
       opened[w.id] = true
       done[#done + 1] = w.label
     end
   end
-  set_opened(opened, api)
+  set_opened(opened)
   return done, problems
 end
 
-local function restore_all(api)
-  local opened, done, problems = get_opened(api), {}, {}
+local function restore_all()
+  local opened, done, problems = get_opened(), {}, {}
   for _, w in ipairs(Windows.WINDOWS) do
     if opened[w.id] then
-      local cmd, err = Windows.command(w, api)
+      local cmd, err = Windows.command(w)
       if not cmd then
         problems[#problems + 1] = w.label .. " " .. err
       else
-        if Windows.is_open(cmd, api) then
-          api.Main_OnCommand(cmd, 0) -- running the action of an open window closes it
+        if Windows.is_open(cmd) then
+          reaper.Main_OnCommand(cmd, 0) -- running the action of an open window closes it
           done[#done + 1] = w.label
         end
         opened[w.id] = nil -- closed now, or by hand before: either way no longer ours
       end
     end
   end
-  set_opened(opened, api)
+  set_opened(opened)
   return done, problems
 end
 
 -- Effect ------------------------------------------------------------------
-function Windows.apply(mode, api)
-  local what = Windows.get_assignment(mode, api)
+function Windows.apply(mode)
+  local what = Windows.get_assignment(mode)
   if not what then return "skipped", ("no windows setting for %s mode"):format(mode) end
 
   local done, problems
-  if what == Windows.OPEN then done, problems = open_all(api) else done, problems = restore_all(api) end
+  if what == Windows.OPEN then done, problems = open_all() else done, problems = restore_all() end
 
   local verb = what == Windows.OPEN and "opened" or "closed"
   if #problems > 0 then
@@ -164,7 +162,7 @@ end
 Windows.settings = {
   {
     label  = "windows",
-    get    = function(mode, api) return Windows.get_assignment(mode, api) end,
+    get    = function(mode) return Windows.get_assignment(mode) end,
     format = function(v) return v or "" end,
     parse  = function(text)
       local v, err = Windows.parse(text)
@@ -172,41 +170,39 @@ Windows.settings = {
       if v == "none" then return true, nil end
       return true, v
     end,
-    set    = function(mode, v, api) Windows.set_assignment(mode, v, api) end,
+    set    = function(mode, v) Windows.set_assignment(mode, v) end,
   },
 }
 
 -- Diagnostics & self-test -------------------------------------------------
 --- Live check: every window's script is installed. Registers nothing (only checks the files).
-function Windows.check_actions(api)
-  api = api or reaper
+function Windows.check_actions()
   local results = {}
   for _, w in ipairs(Windows.WINDOWS) do
-    local path = Actions.script_path(w.id, api) or ("(unknown script " .. w.id .. ")")
-    results[#results + 1] = { name = w.label .. " script at " .. path, ok = api.file_exists(path) }
+    local path = Actions.script_path(w.id) or ("(unknown script " .. w.id .. ")")
+    results[#results + 1] = { name = w.label .. " script at " .. path, ok = reaper.file_exists(path) }
   end
   return results
 end
 
-function Windows.diagnostics(api)
-  api = api or reaper
+function Windows.diagnostics()
   local rows = {}
   for _, mode in ipairs({ "show", "edit" }) do
-    local configured = api.HasExtState(Windows.SECTION, Windows.KEY_PREFIX .. mode)
+    local configured = reaper.HasExtState(Windows.SECTION, Windows.KEY_PREFIX .. mode)
     rows[#rows + 1] = { mode .. " windows",
-      (Windows.get_assignment(mode, api) or "(none)") .. (configured and "" or " (default)") }
+      (Windows.get_assignment(mode) or "(none)") .. (configured and "" or " (default)") }
   end
   for _, w in ipairs(Windows.WINDOWS) do
-    local cmd, err = Windows.command(w, api)
-    rows[#rows + 1] = { w.id, cmd and ("action %d, %s"):format(cmd, Windows.is_open(cmd, api) and "open" or "closed")
+    local cmd, err = Windows.command(w)
+    rows[#rows + 1] = { w.id, cmd and ("action %d, %s"):format(cmd, Windows.is_open(cmd) and "open" or "closed")
       or err }
   end
-  local opened = api.GetExtState(Windows.SECTION, Windows.KEY_OPENED)
+  local opened = reaper.GetExtState(Windows.SECTION, Windows.KEY_OPENED)
   rows[#rows + 1] = { "opened by mode", opened ~= "" and opened or "(none)" }
   return rows
 end
 
--- Uses a fake REAPER API: never opens or closes a real window.
+-- Uses fake REAPER functions: never opens or closes a real window.
 local run_self_test -- defined below
 
 --- Built-in self-test. Restores the real window list even if a test crashes.
@@ -219,6 +215,7 @@ function Windows.self_test()
 end
 
 run_self_test = function()
+  local with_reaper = require("SelfTest").with_reaper
   local results = {}
   local function check(name, cond) results[#results + 1] = { name = name, ok = cond and true or false } end
 
@@ -232,18 +229,14 @@ run_self_test = function()
   local sep = package.config:sub(1, 1)
   local function fake(opts)
     opts = opts or {}
-    local ext, runs, open = {}, {}, {}
+    local runs, open = {}, {}
     local cmds, files = {}, {}
     for i, w in ipairs(Windows.WINDOWS) do
       local path = Actions.join_path("R", Actions.SCRIPTS[w.id], sep)
       if not (opts.missing and opts.missing[w.id]) then files[path] = true end
       cmds[path] = 1000 + i
     end
-    local api
-    api = {
-      GetExtState = function(s, k) return ext[s .. "/" .. k] or "" end,
-      SetExtState = function(s, k, v) ext[s .. "/" .. k] = v end,
-      HasExtState = function(s, k) return ext[s .. "/" .. k] ~= nil end,
+    local fakes = {
       GetResourcePath = function() return "R" end,
       file_exists = function(p) return files[p] == true end,
       AddRemoveReaScript = function(add, section, path) return cmds[path] or 0 end,
@@ -253,7 +246,7 @@ run_self_test = function()
         open[cmd] = not open[cmd]
       end,
     }
-    return api, runs, open
+    return fakes, runs, open
   end
 
   -- pure helpers
@@ -265,49 +258,52 @@ run_self_test = function()
     and Windows.parse("restore") == "restore" and Windows.parse("") == "none" and Windows.parse("x") == nil)
 
   -- defaults and settings
-  local api, runs, open = fake()
+  local fakes, runs, open = fake()
   check("never configured: show opens, edit restores",
-    Windows.get_assignment("show", api) == "open" and Windows.get_assignment("edit", api) == "restore")
-  Windows.set_assignment("show", nil, api)
-  check("empty setting turns the default off", Windows.get_assignment("show", api) == nil
-    and (Windows.apply("show", api)) == "skipped" and #runs == 0)
-  Windows.set_assignment("show", "open", api)
+    with_reaper(fakes, Windows.get_assignment, "show") == "open"
+    and with_reaper(fakes, Windows.get_assignment, "edit") == "restore")
+  with_reaper(fakes, Windows.set_assignment, "show", nil)
+  check("empty setting turns the default off", with_reaper(fakes, Windows.get_assignment, "show") == nil
+    and (with_reaper(fakes, Windows.apply, "show")) == "skipped" and #runs == 0)
+  with_reaper(fakes, Windows.set_assignment, "show", "open")
 
   -- show: open both, remember them
-  Windows.apply("show", api)
-  check("show twice: nothing more opened (idempotent)", (Windows.apply("show", api)) == "skipped" and #runs == 2)
+  with_reaper(fakes, Windows.apply, "show")
+  check("show twice: nothing more opened (idempotent)",
+    (with_reaper(fakes, Windows.apply, "show")) == "skipped" and #runs == 2)
 
   -- edit: close what show opened
-  Windows.apply("edit", api)
-  check("edit twice: nothing to close", (Windows.apply("edit", api)) == "skipped" and #runs == 4)
+  with_reaper(fakes, Windows.apply, "edit")
+  check("edit twice: nothing to close", (with_reaper(fakes, Windows.apply, "edit")) == "skipped" and #runs == 4)
 
   -- a window that was already open stays open
-  api, runs, open = fake()
+  fakes, runs, open = fake()
   open[1001] = true -- setlist was open before the show
-  Windows.apply("show", api)
+  with_reaper(fakes, Windows.apply, "show")
   check("show: only the closed window is opened", #runs == 1 and runs[1] == 1002)
-  Windows.apply("edit", api)
+  with_reaper(fakes, Windows.apply, "edit")
   check("edit: the window that was open before stays open", open[1001] and not open[1002] and #runs == 2)
 
   -- closed by hand during the show: not reopened or toggled by edit
-  api, runs, open = fake()
-  Windows.apply("show", api)
+  fakes, runs, open = fake()
+  with_reaper(fakes, Windows.apply, "show")
   open[1002] = false -- user closed the status display
-  Windows.apply("edit", api)
+  with_reaper(fakes, Windows.apply, "edit")
   check("edit: a window closed by hand is not toggled open again", not open[1002] and not open[1001] and #runs == 3)
 
   -- restart: nothing remembered, nothing closed
-  api, runs, open = fake()
+  fakes, runs, open = fake()
   open[1001] = true
-  check("edit after a restart: nothing closed", (Windows.apply("edit", api)) == "skipped" and open[1001] and #runs == 0)
+  check("edit after a restart: nothing closed",
+    (with_reaper(fakes, Windows.apply, "edit")) == "skipped" and open[1001] and #runs == 0)
 
   -- missing script: the other window still opens, the effect fails with a clear message
-  api, runs, open = fake({ missing = { status = true } })
-  local ok, err = pcall(Windows.apply, "show", api)
+  fakes, runs, open = fake({ missing = { status = true } })
+  local ok, err = pcall(with_reaper, fakes, Windows.apply, "show")
   check("missing script: fails, names it, opens the others",
     not ok and tostring(err):find("Status Display not installed", 1, true) ~= nil and open[1001] and #runs == 1)
   check("live check reports the missing script",
-    Windows.check_actions(api)[1].ok and not Windows.check_actions(api)[2].ok)
+    with_reaper(fakes, Windows.check_actions)[1].ok and not with_reaper(fakes, Windows.check_actions)[2].ok)
 
   Windows.WINDOWS = real_windows
 

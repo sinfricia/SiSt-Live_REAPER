@@ -17,14 +17,14 @@
 --
 -- Effect contract:
 --   Effect.name               short id, e.g. "theme". Used for status keys and log lines.
---   Effect.apply(mode, api)   api is the reaper table (or a fake one in tests). Returns
+--   Effect.apply(mode)        calls reaper.X directly (tests swap in fakes). Returns
 --                               "ok", message       REAPER was changed
 --                               "skipped", message  nothing to do (already in that state, not configured)
 --                             or throws an error (use error(msg, 0) for a clean message): failed.
 --   Effect.settings           optional: list of settings shown in "SiSt-Live: Configure modes"
 --                             (contract in SiSt-Live_SettingsDialog.lua)
---   Effect.check_actions(api) optional: live check of native command IDs, list of { name, ok }
---   Effect.diagnostics(api)   optional: { label, value } rows
+--   Effect.check_actions()    optional: live check of native command IDs, list of { name, ok }
+--   Effect.diagnostics()      optional: { label, value } rows
 --   Effect.self_test()        optional: list of { name, ok }
 --
 -- Status: every run stores one status per effect in ExtState (not persisted). Any script, e.g. a
@@ -109,7 +109,7 @@ end
 
 -- Running ---------------------------------------------------------------
 -- Returns result, message, traceback (traceback only on errors).
-local function run_one(effect, mode, api)
+local function run_one(effect, mode)
   if effect.load_error then
     return ModeEffects.FAILED, "could not load: " .. effect.load_error
   end
@@ -118,7 +118,7 @@ local function run_one(effect, mode, api)
   local ok, result, message = xpcall(effect.apply, function(err)
     trace = debug.traceback(tostring(err), 2)
     return err
-  end, mode, api)
+  end, mode)
 
   if not ok then return ModeEffects.FAILED, first_line(result), trace end
   if result ~= ModeEffects.OK and result ~= ModeEffects.SKIPPED then
@@ -128,14 +128,13 @@ local function run_one(effect, mode, api)
 end
 
 --- Makes REAPER match `mode`: runs every effect, stores its status and logs it.
---- opts.api: reaper table to use (default: reaper). opts.effects: effect list (default: MODULES).
+--- opts.effects: effect list (default: MODULES).
 --- opts.except: { [effect name] = true } effects that are not run (status "skipped" with opts.except_reason),
 --- e.g. locking at REAPER startup.
 --- Returns results ({ name, result, mode, time, message } per effect, in run order) and the
 --- number of failures. Throws only for an invalid mode (a programming error).
 function ModeEffects.apply_all(mode, opts)
   opts = opts or {}
-  local api = opts.api or reaper
   if not is_valid_mode(mode) then
     error(("ModeEffects.apply_all: invalid mode %s"):format(tostring(mode)), 2)
   end
@@ -149,7 +148,7 @@ function ModeEffects.apply_all(mode, opts)
     if opts.except and opts.except[effect.name] then
       result, message = ModeEffects.SKIPPED, opts.except_reason or "left as it is"
     else
-      result, message, trace = run_one(effect, mode, api)
+      result, message, trace = run_one(effect, mode)
     end
     local status = { name = effect.name, result = result, mode = mode, time = now, message = message }
     results[#results + 1] = status
@@ -161,11 +160,11 @@ function ModeEffects.apply_all(mode, opts)
       log:debug("%s: %s - %s", effect.name, result, message)
     end
 
-    api.SetExtState(ModeEffects.SECTION, ModeEffects.KEY_STATUS_PREFIX .. effect.name,
+    reaper.SetExtState(ModeEffects.SECTION, ModeEffects.KEY_STATUS_PREFIX .. effect.name,
       ModeEffects.encode_status(status), false)
   end
 
-  api.SetExtState(ModeEffects.SECTION, ModeEffects.KEY_LAST_RUN,
+  reaper.SetExtState(ModeEffects.SECTION, ModeEffects.KEY_LAST_RUN,
     ("%s|%d|%d|%d"):format(mode, now, #results - failed, failed), false)
   log:debug("applied %s mode: %d effects, %d failed", mode, #results, failed)
 
@@ -190,11 +189,11 @@ ModeEffects.DIALOG_TITLE = "SiSt-Live: mode effects"
 --- What every place that switches or re-applies the mode calls (Toggle Edit-Show Mode, Apply current mode, the
 --- Status Display's mode and retry buttons, Configure modes): runs the effects, then shows a dialog if any failed.
 --- The user just triggered it, so the dialog is not a background dialog. Returns what apply_all returns.
---- opts: passed on to apply_all; opts.api.MB is used for the dialog (default: reaper).
+--- opts: passed on to apply_all.
 function ModeEffects.apply_and_report(mode, opts)
   local results, failed = ModeEffects.apply_all(mode, opts)
   local msg = ModeEffects.failure_message(mode, results)
-  if msg then ((opts and opts.api) or reaper).MB(msg, ModeEffects.DIALOG_TITLE, 0) end
+  if msg then reaper.MB(msg, ModeEffects.DIALOG_TITLE, 0) end
   return results, failed
 end
 
@@ -207,17 +206,15 @@ function ModeEffects.names()
 end
 
 --- Last stored status of one effect, or nil if it hasn't run in this REAPER session.
-function ModeEffects.get_status(name, api)
-  api = api or reaper
-  return ModeEffects.decode_status(api.GetExtState(ModeEffects.SECTION, ModeEffects.KEY_STATUS_PREFIX .. name))
+function ModeEffects.get_status(name)
+  return ModeEffects.decode_status(reaper.GetExtState(ModeEffects.SECTION, ModeEffects.KEY_STATUS_PREFIX .. name))
 end
 
 --- Summary of the last run: { mode, time, ok_count, failed_count }, or nil.
 --- ok_count counts every effect that did not fail (changed or skipped).
-function ModeEffects.get_last_run(api)
-  api = api or reaper
+function ModeEffects.get_last_run()
   local mode, time, ok_count, failed_count =
-      api.GetExtState(ModeEffects.SECTION, ModeEffects.KEY_LAST_RUN):match("^([^|]*)|(%d+)|(%d+)|(%d+)$")
+      reaper.GetExtState(ModeEffects.SECTION, ModeEffects.KEY_LAST_RUN):match("^([^|]*)|(%d+)|(%d+)|(%d+)$")
   if not mode then return nil end
   return { mode = mode, time = tonumber(time), ok_count = tonumber(ok_count), failed_count = tonumber(failed_count) }
 end
@@ -237,18 +234,15 @@ function ModeEffects.diagnostics()
   return rows
 end
 
---- Built-in self-test. Uses fake effects and a fake ExtState: touches nothing in REAPER.
+--- Built-in self-test. Uses fake effects and fake REAPER functions: touches nothing in REAPER.
 function ModeEffects.self_test()
   local results = {}
   local function check(name, cond)
     results[#results + 1] = { name = name, ok = cond and true or false }
   end
 
-  local ext = {}
-  local api = {
-    GetExtState = function(s, k) return ext[s .. "/" .. k] or "" end,
-    SetExtState = function(s, k, v) ext[s .. "/" .. k] = v end,
-  }
+  local with_reaper = require("SelfTest").with_reaper
+  local fakes = { time_precise = function() return 0 end } -- the log reads the clock; ExtState is built in
 
   -- status encoding
   local s = { result = "failed", mode = "show", time = 1700000000, message = "a|b\nsecond line" }
@@ -287,8 +281,8 @@ function ModeEffects.self_test()
   }
 
   Log.set_sink(function() end) -- the failures below are expected: keep the console quiet
-  local res, failed = ModeEffects.apply_all(Mode.EDIT, { api = api, effects = effects })
-  local threw = not pcall(ModeEffects.apply_all, "nope", { api = api, effects = {} })
+  local res, failed = with_reaper(fakes, ModeEffects.apply_all, Mode.EDIT, { effects = effects })
+  local threw = not pcall(with_reaper, fakes, ModeEffects.apply_all, "nope", { effects = {} })
   Log.set_sink(nil)
 
   check("all effects run, in order, even after a failure",
@@ -302,7 +296,7 @@ function ModeEffects.self_test()
   -- except (REAPER startup leaves locking alone): the effect must not run, but gets a status
   local ran = false
   local some = { { name = "locking", apply = function() ran = true; return "ok", "" end } }
-  local res2 = ModeEffects.apply_all(Mode.EDIT, { api = api, effects = some, except = { locking = true },
+  local res2 = with_reaper(fakes, ModeEffects.apply_all, Mode.EDIT, { effects = some, except = { locking = true },
     except_reason = "not at startup" })
   check("except: effect not run, reported as skipped with the reason",
     not ran and res2[1].result == "skipped" and res2[1].message == "not at startup")
