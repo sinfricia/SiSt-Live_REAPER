@@ -80,6 +80,7 @@
 --   [nomain] ../lib/Gui/Window.lua
 --   [nomain] ../lib/Gui/Widgets.lua
 --   [nomain] ../lib/Gui/TextField.lua
+--   [nomain] ../lib/Gui/Zoom.lua
 -- @about
 --   # SiSt-Live
 --   REAPER as a playback machine for live shows, with an edit mode for preparing and a show mode

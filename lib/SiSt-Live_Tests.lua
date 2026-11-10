@@ -34,6 +34,7 @@ local GuiTheme       = require("Gui.Theme")
 local Window         = require("Gui.Window")
 local Widgets        = require("Gui.Widgets")
 local TextField      = require("Gui.TextField")
+local Zoom           = require("Gui.Zoom")
 
 -- The config reference check reads several files: run it once, use the report twice (live check + diagnostics)
 local config_report = nil
@@ -75,6 +76,7 @@ local components = {
   { name = "Gui Window", file = "lib/Gui/Window.lua", self_test = Window.self_test },
   { name = "Gui Widgets", file = "lib/Gui/Widgets.lua", self_test = Widgets.self_test },
   { name = "Gui TextField", file = "lib/Gui/TextField.lua", self_test = TextField.self_test },
+  { name = "Gui Zoom", file = "lib/Gui/Zoom.lua", self_test = Zoom.self_test },
   { name = "SelfTest", file = "lib/SelfTest.lua", self_test = SelfTest.self_test },
   -- Every named action ID used by custom actions, shortcuts, toolbars/menus, mouse modifiers and SWS cycle/startup
   -- actions must exist. Diagnostics: scripts in the action list whose file is missing but that nothing uses.

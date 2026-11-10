@@ -3,6 +3,17 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-10 - Step 3: Gui Zoom
+- New lib/Gui/Zoom.lua: clamp / scale / scaled (10% per level, range -5 to 15 or its own), Ctrl + mouse wheel, and the
+  ready-made "Zoom" submenu (Zoom in, Zoom out, Reset zoom). Status Display and Toolbar use it and lost their copies. The
+  right-click menus of both now show one "Zoom" submenu instead of three entries (visible change, Sina agreed).
+- `Window.build_menu` supports submenus (`{ label, submenu = { items } }`, `>` / `<` in the gfx.showmenu string, entries
+  numbered in menu order). Not supported: submenus inside submenus; the last entry of a submenu must be a normal item.
+- The Setlist keeps its own zoom (different range and sizes; no behaviour change possible without the 4a rework).
+- popup_menu (menu at the mouse without a window) dropped: its only users are the live test and a SiSt-Local script.
+  The Setlist's right-click menus move to Window.build_menu in step 4a.
+- Self-test: 451 passed (52 scenarios, 418 checks, 33 live checks). Live test: 98 passed.
+
 ## 2026-11-10 - Step 3: Window.parse_state without load()
 - `Window.parse_state` reads the stored window text ("{dockState=769.0,wx=1063.0,...}") with a text pattern instead of
   running it as Lua code (`load`). Only the allowed number keys are kept; a value that is not a number (a string, a

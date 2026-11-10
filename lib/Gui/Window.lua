@@ -27,7 +27,8 @@ More options:
 Window menu: win:show_context_menu(extra_items) shows Dock window, Save as default position and
 Return to default position, followed by the component's own items. The SiSt-Live rule: right-click
 on content (e.g. a setlist entry) opens the content's menu, right-click anywhere else this one.
-Items: { label = "Zoom in", action = fn, disabled = bool, checked = bool } or { separator = true }.
+Items: { label = "Zoom in", action = fn, disabled = bool, checked = bool }, { separator = true } or
+{ label = "Zoom", submenu = { items } } (see Gui/Zoom.lua for the ready-made zoom submenu).
 
 As a toolbar action: the window is a toggle. Starting the action again closes the window and
 the toolbar button is lit while the window is open (needs REAPER 7: set_action_options).
@@ -184,18 +185,27 @@ function Window.placement_matches(target, actual)
   return Window.same_placement(target, actual)
 end
 
---- Menu items -> gfx.showmenu string and the actions in menu order (separators don't count,
---- greyed out items do, as gfx.showmenu numbers them).
+--- Menu items -> gfx.showmenu string and the actions in menu order (separators and submenu headings don't
+--- count, greyed out items do, as gfx.showmenu numbers them). A submenu item is { label = "Zoom", submenu = { items } }:
+--- its last entry must be a normal item (gfx.showmenu closes the submenu there). Submenus inside submenus are not
+--- supported.
 function Window.build_menu(items)
   local parts, actions = {}, {}
-  for _, item in ipairs(items) do
-    if item.separator then
-      parts[#parts + 1] = ""
-    else
-      parts[#parts + 1] = (item.disabled and "#" or "") .. (item.checked and "!" or "") .. item.label
-      actions[#actions + 1] = (not item.disabled) and item.action or false
+  local function add(list, closing)
+    for i, item in ipairs(list) do
+      if item.separator then
+        parts[#parts + 1] = ""
+      elseif item.submenu then
+        parts[#parts + 1] = ">" .. item.label
+        add(item.submenu, "<")
+      else
+        local last = (i == #list) and closing or ""
+        parts[#parts + 1] = last .. (item.disabled and "#" or "") .. (item.checked and "!" or "") .. item.label
+        actions[#actions + 1] = (not item.disabled) and item.action or false
+      end
     end
   end
+  add(items, "")
   return table.concat(parts, "|"), actions
 end
 
@@ -719,6 +729,16 @@ function Window.self_test()
     })
     check("build_menu: actions numbered like gfx.showmenu, disabled has none",
       actions[1] == "a" and actions[2] == "b" and actions[3] == false and #actions == 3)
+    local sub_menu, sub_actions = Window.build_menu({
+      { label = "A", action = "a" },
+      { label = "Zoom", submenu = { { label = "In", action = "in" }, { label = "Out", action = "out" } } },
+      { separator = true },
+      { label = "B", action = "b" },
+    })
+    check("build_menu: a submenu is opened with > and closed on its last entry with <",
+      sub_menu == "A|>Zoom|In|<Out||B")
+    check("build_menu: submenu entries are numbered in menu order, the heading does not count",
+      #sub_actions == 4 and sub_actions[2] == "in" and sub_actions[3] == "out" and sub_actions[4] == "b")
 
     local events = {}
     ext["H/WindowState"] = "{dockState=0,wx=5,wy=5,ww=500,wh=400}"

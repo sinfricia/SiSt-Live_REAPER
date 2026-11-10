@@ -34,7 +34,6 @@ local SCRIPT_NAME = "SiSt-Live_Toolbar" -- ExtState section (window position, zo
 local WINDOW_TITLE = "SiSt-Live Toolbar"
 
 local REFRESH_INTERVAL = 0.1 -- seconds between reads of the mode and the toggle states
-local MIN_ZOOM, MAX_ZOOM = -5, 15
 local MIN_TEXT_SCALE = 0.6   -- labels shrink down to this before they are cut off
 
 -- Sizes in pixels. The buttons size themselves to the window (see ToolbarWindow.fit_layout).
@@ -54,6 +53,7 @@ local SIZE = {
 -- Libraries (part of the package: Setup and the self-test check that they are all there)
 package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "") .. "../lib/?.lua;" .. package.path
 local Theme, Window, Widgets = require("Gui.Theme"), require("Gui.Window"), require("Gui.Widgets")
+local Zoom = require("Gui.Zoom")
 local ToolbarSource = require("SiSt-Live_ToolbarSource")
 local Log, Mode = require("SiSt-Live_Log"), require("SiSt-Live_Mode")
 local log = Log.get("Toolbar")
@@ -71,15 +71,6 @@ end
 --------------------------------------------------------------------------------
 
 local ToolbarWindow = {}
-
-function ToolbarWindow.clamp_zoom(level)
-  return math.max(MIN_ZOOM, math.min(MAX_ZOOM, math.floor(level or 0)))
-end
-
---- Base size scaled by the zoom level (10% per step), rounded to whole pixels
-function ToolbarWindow.scaled(base, level)
-  return math.floor(base * (1 + ToolbarWindow.clamp_zoom(level) * 0.1) + 0.5)
-end
 
 --- Places ALL buttons in the window (w x h), as big as possible. items: toolbar buttons ({ separator =
 --- true } or a button). s: { pad, gap, separator, min_ratio, max_ratio }.
@@ -272,7 +263,6 @@ local function main()
   win:set_mode(current_mode()) -- open where the window was in this mode
   reload(current_mode())
 
-  local function zoom_to(level) win.state.zoomLevel = ToolbarWindow.clamp_zoom(level) end
   local function open_settings()
     if ToolbarSource.configure() then
       debug_log("toolbar settings stored")
@@ -297,22 +287,19 @@ local function main()
       end
     end
 
-    local m = win.mouse
-    if m.wheel ~= 0 and m.ctrl then zoom_to(win.state.zoomLevel + (m.wheel > 0 and 1 or -1)) end
-    if m.right_released then
+    Zoom.wheel(win)
+    if win.mouse.right_released then
       win:show_context_menu({
         { label = "Toolbar settings...", action = open_settings },
         { label = "Reload toolbar", action = function() reload(current_mode()) end },
         { separator = true },
-        { label = "Zoom in", action = function() zoom_to(win.state.zoomLevel + 1) end },
-        { label = "Zoom out", action = function() zoom_to(win.state.zoomLevel - 1) end },
-        { label = "Reset zoom", action = function() zoom_to(0) end },
+        Zoom.menu_item(win),
       })
     end
 
     gfx.clear = Theme.clear_color()
     local zoom = win.state.zoomLevel
-    local function px(base) return ToolbarWindow.scaled(base, zoom) end
+    local function px(base) return Zoom.scaled(base, zoom) end
 
     if not toolbar then
       -- One line per row (gfx.drawstr can't wrap), then a button to the settings
@@ -344,7 +331,7 @@ local function main()
 
     for _, r in ipairs(rects) do
       local b = r.item
-      local text_size = math.max(SIZE.min_text, math.floor(r.h * SIZE.text_ratio * (1 + zoom * 0.1)))
+      local text_size = math.max(SIZE.min_text, math.floor(r.h * SIZE.text_ratio * Zoom.scale(zoom)))
       local label, size = ToolbarWindow.fit_label(b.label, r.w - 2 * s.pad, text_size, measure)
       local clicked = Widgets.button(win, label, r.x, r.y, r.w, r.h,
         { size = size, disabled = b.cmd == nil, toggle = b.cmd and toggles[b.cmd] }) -- true on / false off / nil no toggle

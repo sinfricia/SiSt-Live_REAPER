@@ -34,7 +34,6 @@ local SCRIPT_NAME = "SiSt-Live_Status" -- ExtState section (window position, zoo
 local WINDOW_TITLE = "SiSt-Live Status Display"
 
 local REFRESH_INTERVAL = 0.2 -- seconds between reads of the mode and effect status
-local MIN_ZOOM, MAX_ZOOM = -5, 15
 
 -- Base sizes at zoom level 0, in pixels
 local SIZE = {
@@ -56,6 +55,7 @@ local MODE_BUTTON = {
 -- Libraries (part of the package: Setup and the self-test check that they are all there)
 package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "") .. "../lib/?.lua;" .. package.path
 local Theme, Window, Widgets = require("Gui.Theme"), require("Gui.Window"), require("Gui.Widgets")
+local Zoom = require("Gui.Zoom")
 local Log, Mode, ModeEffects = require("SiSt-Live_Log"), require("SiSt-Live_Mode"), require("SiSt-Live_ModeEffects")
 local log = Log.get("StatusDisplay")
 local lib_problems = {} -- (problems found while running, e.g. effects that can't be listed)
@@ -73,19 +73,6 @@ end
 --------------------------------------------------------------------------------
 
 local Status = {}
-
-function Status.clamp_zoom(level)
-  return math.max(MIN_ZOOM, math.min(MAX_ZOOM, math.floor(level or 0)))
-end
-
-function Status.zoom_scale(level)
-  return 1 + Status.clamp_zoom(level) * 0.1
-end
-
---- Base size scaled by the zoom level, rounded to whole pixels
-function Status.scaled(base, level)
-  return math.floor(base * Status.zoom_scale(level) + 0.5)
-end
 
 --- Turns the raw state into what the window shows.
 --- input fields (all optional):
@@ -248,7 +235,7 @@ end
 --- Draws the model. Returns the action that was clicked: "retry", "show", "edit" or nil.
 local function draw(win, model)
   local zoom = win.state.zoomLevel
-  local function px(base) return Status.scaled(base, zoom) end
+  local function px(base) return Zoom.scaled(base, zoom) end
   local pad, text_size, line_h = px(SIZE.pad), px(SIZE.text), px(SIZE.line_h)
   local w = gfx.w - 2 * pad
 
@@ -305,7 +292,6 @@ end
 
 -- Right-click anywhere: the shared window menu, the debug switch and zoom (no content menus here)
 local function show_context_menu(win)
-  local function zoom_to(level) win.state.zoomLevel = Status.clamp_zoom(level) end
   local debug_on = Log.is_debug()
   win:show_context_menu({
     { label = "Debug logging", checked = debug_on,
@@ -314,9 +300,7 @@ local function show_context_menu(win)
         reaper.ShowConsoleMsg("SiSt-Live debug logging: " .. (on and "ON" or "OFF") .. "\n")
       end },
     { separator = true },
-    { label = "Zoom in", action = function() zoom_to(win.state.zoomLevel + 1) end },
-    { label = "Zoom out", action = function() zoom_to(win.state.zoomLevel - 1) end },
-    { label = "Reset zoom", action = function() zoom_to(0) end },
+    Zoom.menu_item(win),
   })
 end
 
@@ -365,11 +349,8 @@ local function main()
   win:run(function()
     if reaper.time_precise() - last_refresh >= REFRESH_INTERVAL then refresh_model() end
 
-    local m = win.mouse
-    if m.wheel ~= 0 and m.ctrl then
-      win.state.zoomLevel = Status.clamp_zoom(win.state.zoomLevel + (m.wheel > 0 and 1 or -1))
-    end
-    if m.right_released then show_context_menu(win) end
+    Zoom.wheel(win)
+    if win.mouse.right_released then show_context_menu(win) end
 
     local action = draw(win, model)
     if action == "retry" then
