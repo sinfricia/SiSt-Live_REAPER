@@ -3,6 +3,15 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-10 - Step 3: Window.parse_state without load()
+- `Window.parse_state` reads the stored window text ("{dockState=769.0,wx=1063.0,...}") with a text pattern instead of
+  running it as Lua code (`load`). Only the allowed number keys are kept; a value that is not a number (a string, a
+  call) is ignored and nothing is ever run; text without braces gives nil. It was the only place that ran stored text.
+  Other structured ExtState / file values use their own pattern parsers (ModeEffects status, Windows ids, test
+  registry, the Setlist autosave file, the mouse state file). New tests with real stored values, odd numbers and a
+  save-then-load round trip.
+- Self-test: 439 passed (51 scenarios, 406 checks, 33 live checks). Live test: 98 passed.
+
 ## 2026-11-10 - Step 3: Window debug scaffolding and Log cache removed
 - Window: `size_suffix`, `remembered_size` and `client_w/h` are gone (they only added the docker size, "(420x300)", to
   debug log lines). The log lines now say "docker 3" or "floating 200,150 320x170".

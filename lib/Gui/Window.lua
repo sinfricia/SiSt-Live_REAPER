@@ -99,20 +99,21 @@ local function is_finite_number(v)
   return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
 end
 
---- Stored string -> table with only the whitelisted number keys. nil for empty or corrupt input.
---- Never runs code with access to REAPER or the Lua libraries (empty environment).
+--- Stored string "{name=number,name=number,...}" -> table with only the whitelisted number keys. nil for empty
+--- input or text that is not wrapped in braces. Entries that are not name=number (a string, a call, ...) are
+--- ignored. Nothing is ever run as code.
 function Window.parse_state(str, keys)
-  if not str or str == "" then return nil end
+  if not str then return nil end
+  local body = str:match("^%s*{(.*)}%s*$")
+  if not body then return nil end
 
-  local chunk = load("return " .. str, "windowstate", "t", {})
-  if not chunk then return nil end
-
-  local ok, state = pcall(chunk)
-  if not ok or type(state) ~= "table" then return nil end
+  local wanted = {}
+  for _, key in ipairs(keys) do wanted[key] = true end
 
   local result = {}
-  for _, key in ipairs(keys) do
-    if is_finite_number(state[key]) then result[key] = state[key] end
+  for name, value in body:gmatch("([%a_][%w_]*)%s*=%s*([^,%s]+)") do
+    local number = tonumber(value)
+    if wanted[name] and is_finite_number(number) then result[name] = number end
   end
   return result
 end
@@ -561,16 +562,31 @@ function Window.self_test()
   -- parsing
   check("parse: empty string (first start) gives nil", Window.parse_state("", keys) == nil)
   check("parse: syntax error gives nil", Window.parse_state("{{{ broken", keys) == nil)
-  check("parse: code can't reach the Lua libraries", Window.parse_state("{wx=os.exit()}", keys) == nil)
+  check("parse: code is never run, such a value is ignored", (Window.parse_state("{wx=os.exit()}", keys) or {}).wx == nil)
+  check("parse: text without braces gives nil", Window.parse_state("wx=5", keys) == nil
+    and Window.parse_state("{wx=5", keys) == nil)
   local p = Window.parse_state("{wx=10,zoomLevel=\"bad\",foo=1}", keys)
   check("parse: only whitelisted numbers are kept", p and p.wx == 10 and p.zoomLevel == nil and p.foo == nil)
   check("parse: Setlist format is read", (Window.parse_state("{dockState=0,wx=5,}", { "wx" }) or {}).wx == 5)
+
+  -- real stored values (reaper-extstate.ini, 2026-11-10) and odd numbers
+  local real = Window.parse_state("{dockState=769.0,wx=1063.0,wy=240.0,ww=637.0,wh=520.0,zoomLevel=0,scrollOffset=0}",
+    { "dockState", "wx", "wy", "ww", "wh", "zoomLevel", "scrollOffset" })
+  check("parse: a real Setlist value is read completely", real and real.dockState == 769 and real.wx == 1063
+    and real.wy == 240 and real.ww == 637 and real.wh == 520 and real.zoomLevel == 0 and real.scrollOffset == 0)
+  local odd = Window.parse_state("{wx=-1920.5,wy=1e+3,ww=0x10,zoomLevel=inf, foo = 7 , bar=\"x,y\"}",
+    { "wx", "wy", "ww", "zoomLevel", "foo" })
+  check("parse: negative, exponent, spaces; inf is dropped", odd and odd.wx == -1920.5 and odd.wy == 1000
+    and odd.ww == 16 and odd.zoomLevel == nil and odd.foo == 7)
+  check("parse: empty braces give an empty table", next(Window.parse_state("{}", keys)) == nil)
 
   -- serializing
   local s = Window.serialize_state({ wx = -5, zoomLevel = 2, other = 9 }, keys)
   check("serialize: whitelisted keys in order", s == "{wx=-5,zoomLevel=2}")
   check("serialize: infinite / NaN values are left out",
     Window.serialize_state({ wx = math.huge, zoomLevel = 0 / 0 }, keys) == "{}")
+  local round = Window.parse_state(Window.serialize_state({ wx = -5.25, zoomLevel = 2 }, keys), keys)
+  check("serialize then parse gives the same values", round and round.wx == -5.25 and round.zoomLevel == 2)
 
   -- placement helpers
   check("is_docked_state", Window.is_docked_state(1) and Window.is_docked_state(257.0)

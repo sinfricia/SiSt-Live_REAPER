@@ -17,31 +17,30 @@ In this order (decided 2026-11-10): decisions first, core cleanups before the th
 test and the DEBUG actions last. Done so far: editor setup (nothing to do in the repo), static analysis (dropped),
 show protection decision (the mouse mode effect, see completed tasks).
 
-1. Window.parse_state: pattern parser instead of load(), tested against real stored values.
-2. Gui: Zoom (repeated in Setlist, Status Display, Toolbar); popup_menu (menu at the mouse without a window, built
+1. Gui: Zoom (repeated in Setlist, Status Display, Toolbar); popup_menu (menu at the mouse without a window, built
    on Window.build_menu; the live test uses it).
-3. Action IDs (see design decisions): lookup by file name (verify the API first; test SWS CF_EnumerateActions as
+2. Action IDs (see design decisions): lookup by file name (verify the API first; test SWS CF_EnumerateActions as
    the lookup, its script names are "Script: <file>.lua", with reaper-kb.ini as the fallback, today's way; Sina
    wants that tested only at this step), per-package declaration table, one on-demand check in Self-Test; remove
    Actions.require_native from the Screenset, Fullscreen and KeySection effects; the self-test then reports the native
    actions as one line per group ("10 window set actions ok"), not one line per action (Sina, 2026-11-10); split Actions into
-   general part + SiSt-Live's table. Script registration moves to Setup (belongs with item 7).
-4. Per-mode setting descriptions (on/off, number with range, choice, custom with "take current"), storage per
+   general part + SiSt-Live's table. Script registration moves to Setup (belongs with item 6).
+3. Per-mode setting descriptions (on/off, number with range, choice, custom with "take current"), storage per
    mode once; keep the Windows effect's "never set = default" vs "empty = none"; the text dialog becomes one
    renderer, usable by the future configuration window.
-5. Save current look for a mode (2026-11-10; builds on 4): one action/button "Save current state as SHOW (EDIT)
+4. Save current look for a mode (2026-11-10; builds on 3): one action/button "Save current state as SHOW (EDIT)
    mode" takes the current theme, TCP / MCP / transport layouts and screenset (saves the window set into the
    mode's slot) into the current mode's settings, built on "take current". Later also a button in the
    configuration window. NO autosave of theme/layouts/screenset (a window closed by accident on stage would
    become the new show look); SiSt-Live window positions keep autosaving as today.
-6. Logging in one go: make shared candidates general (Theme.configure: show/edit accents; Log.configure:
+5. Logging in one go: make shared candidates general (Theme.configure: show/edit accents; Log.configure:
    show-mode console rule, file, section); global debug switch for all packages, SiSt-Live's mode sets a global
    "quiet console" flag that Log respects. (The VS Code debugger helper was dropped, 2026-11-10: see design
    decisions, "Editor".)
-7. Setup as the entry point for checks, in this order: Status Display / Toolbar debug-on-open test runs switch to
+6. Setup as the entry point for checks, in this order: Status Display / Toolbar debug-on-open test runs switch to
     SelfTest; Setup becomes the entry point for checks (installation, tests, action markers) and registers the
-    scripts in the action list (from 3); then remove the DEBUG actions one by one (approval for each).
-8. After 3: simplify the live test. Action IDs by file name instead of 8 literal IDs; general helpers (relative
+    scripts in the action list (from 2); then remove the DEBUG actions one by one (approval for each).
+7. After 2: simplify the live test. Action IDs by file name instead of 8 literal IDs; general helpers (relative
     paths, file lists, folder picker, close all projects) into the libraries; one FX name each for Tone Generator
     / ReaSynth; split into a short main file + LiveTest/Loopback.lua, Show.lua, Looper.lua. The melodies stay.
 
