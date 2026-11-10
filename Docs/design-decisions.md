@@ -228,7 +228,7 @@ only ever run on demand; lookups only where unavoidable.
 
 - A window is named after what it IS (a noun), never after a mode: "Show"/"Edit" only ever mean the mode.
 - One noun everywhere: folder `<Noun>/`, file `SiSt-Live_<Noun>.lua`, window title "SiSt-Live <Noun>", ExtState
-  section `SiSt-Live_<Noun>`, log component `<Noun>`, script-list id. (Setlist and Status Display ExtState
-  sections don't follow it yet: decision in roadmap step 3.)
+  section `SiSt-Live_<Noun>`, log component `<Noun>`, script-list id. (The sections are SiSt-Live_Setlist,
+  SiSt-Live_Status and SiSt-Live_Toolbar; the Setlist's was "Sist-Live_Setlist" until 2026-11-10.)
 - A library serving one component is named `<Noun><Role>`, e.g. lib/SiSt-Live_ToolbarSource.lua.
 - SiSt-Local scripts: `SiSt_<what it does>.lua`.

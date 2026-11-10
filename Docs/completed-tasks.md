@@ -3,6 +3,12 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-10 - Step 3: ExtState section rename
+- Only one section broke the naming rule: the Setlist's "Sist-Live_Setlist" is now "SiSt-Live_Setlist" (Setlist and live
+  test). The Status Display ("SiSt-Live_Status") and Toolbar ("SiSt-Live_Toolbar") already followed it. No migration
+  code (it would stay in the Setlist forever for four keys): the saved window state was moved by hand in
+  reaper-extstate.ini with REAPER closed (backup first). The setlist autosave was not part of it.
+
 ## 2026-11-10 - Step 3: show protection (mouse mode effect), editor, static analysis
 - New mode effect "mouse" (lib/ModeEffects/SiSt-Live_ModeEffect_Mouse.lua). Show mode: saves the current
   assignments of the blocked contexts to Data/SiSt-Live/mouse-edit-state.txt, then sets every key combination to "No

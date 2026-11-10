@@ -57,7 +57,7 @@ function PrintEntry(entry)
    end
 end
 
-local scriptName = "Sist-Live_Setlist" -- ExtState section (kept from earlier versions: saved state stays)
+local scriptName = "SiSt-Live_Setlist" -- ExtState section (renamed from "Sist-Live_Setlist" on 2026-11-10)
 local WINDOW_TITLE = "SiSt-Live Setlist"
 
 --------------------------

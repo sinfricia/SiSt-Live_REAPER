@@ -66,7 +66,7 @@ local NEW_TAB      = 40859 -- File: New project tab
 local CLOSE_ALL    = 40886 -- File: Close all projects
 
 -- The Setlist's test mode (see Setlist.lua): its autosave is neither read nor written while set (not persisted)
-local SETLIST_SECTION, SETLIST_TEST_MODE = "Sist-Live_Setlist", "TestMode"
+local SETLIST_SECTION, SETLIST_TEST_MODE = "SiSt-Live_Setlist", "TestMode"
 
 local TOLERANCE   = 0.05 -- s, edit cursor position
 local PLAY_WINDOW = 3    -- s, "plays from X": play position at most this far after X
