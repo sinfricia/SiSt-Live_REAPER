@@ -25,8 +25,7 @@
 --   position" stores a position you can always return to ("Return to default position"). A mode that
 --   has no saved position yet uses its default.
 --
---   Needs REAPER 7. Uses the Mode, ModeEffects and Log libraries of the package: if one is missing,
---   the window opens anyway and shows what is missing.
+--   Needs REAPER 7. Uses the Mode, ModeEffects and Log libraries of the package.
 --
 --   Debugging: when SiSt-Live debug logging is on ("DEBUG Toggle Logging") while the window opens,
 --   the self tests run and the theme colors are logged (which REAPER theme key each color came from).
@@ -54,11 +53,12 @@ local MODE_BUTTON = {
   text = 15,
 }
 
--- Libraries, loaded in main(). Gui is required, the others are optional.
-local Theme, Window, Widgets
-local Log, Mode, ModeEffects
-local log = nil
-local lib_problems = {}
+-- Libraries (part of the package: Setup and the self-test check that they are all there)
+package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "") .. "../lib/?.lua;" .. package.path
+local Theme, Window, Widgets = require("Gui.Theme"), require("Gui.Window"), require("Gui.Widgets")
+local Log, Mode, ModeEffects = require("SiSt-Live_Log"), require("SiSt-Live_Mode"), require("SiSt-Live_ModeEffects")
+local log = Log.get("StatusDisplay")
+local lib_problems = {} -- (problems found while running, e.g. effects that can't be listed)
 
 local function first_line(v)
   return (tostring(v):match("^[^\r\n]*"))
@@ -166,48 +166,6 @@ function Status.self_test()
   check("failures: retry offered", m.can_retry and m.has_errors)
 
   return results
-end
-
---------------------------------------------------------------------------------
--- Loading
---------------------------------------------------------------------------------
-
-local function add_lib_path()
-  local _, script_path = reaper.get_action_context()
-  local dir = (script_path or ""):match("^(.*[/\\])") or ""
-  package.path = dir .. "../lib/?.lua;" .. package.path
-end
-
--- The Gui library is part of the SiSt-Live package: without it nothing can be drawn.
-local function load_gui()
-  local ok, err = pcall(function()
-    Theme = require("Gui.Theme")
-    Window = require("Gui.Window")
-    Widgets = require("Gui.Widgets")
-  end)
-  if not ok then
-    reaper.MB("The Gui library (lib/Gui) could not be loaded:\n\n" .. tostring(err) ..
-      "\n\nReinstall the package 'SiSt-Live' in ReaPack.", "SiSt-Live Status Display", 0)
-  end
-  return ok
-end
-
--- The other libraries are optional: a missing one is shown in the window instead.
-local function load_optional(module)
-  local ok, result = pcall(require, module)
-  if ok then return result end
-  lib_problems[#lib_problems + 1] = module .. " not loaded: " .. first_line(result)
-  return nil
-end
-
-local function load_optional_libs()
-  Log = load_optional("SiSt-Live_Log")
-  Mode = load_optional("SiSt-Live_Mode")
-  ModeEffects = load_optional("SiSt-Live_ModeEffects")
-  if Log then log = Log.get("StatusDisplay") end
-  if not (Mode and ModeEffects) then
-    lib_problems[#lib_problems + 1] = "Reinstall the package 'SiSt-Live' in ReaPack"
-  end
 end
 
 --------------------------------------------------------------------------------
@@ -372,9 +330,6 @@ end
 --------------------------------------------------------------------------------
 
 local function main()
-  add_lib_path()
-  if not load_gui() then return end
-  load_optional_libs()
 
   -- Test-only switch (see lib/SelfTest.lua): hand over the tests instead of opening the window
   if rawget(_G, "SELFTEST_COLLECT") then

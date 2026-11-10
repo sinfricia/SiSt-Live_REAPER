@@ -16,9 +16,7 @@
 -- typed (e.g. a space you didn't type), the log shows which key produced it.
 -- The self test result of the widget is shown at the top.
 
-local _, script_path = reaper.get_action_context()
-local script_dir = script_path:match("^(.*[/\\])") or ""
-package.path = script_dir .. "../lib/?.lua;" .. package.path
+package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "") .. "../lib/?.lua;" .. package.path
 
 local Theme = require("Gui.Theme")
 local Window = require("Gui.Window")

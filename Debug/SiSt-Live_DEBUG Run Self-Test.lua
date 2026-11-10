@@ -7,9 +7,8 @@
 -- checks only read the real REAPER, e.g. that every native command ID the mode effects use still exists: run this
 -- after every REAPER update. Also registers SiSt-Live's test list for "Run all self-tests".
 
-local _, script_path = reaper.get_action_context()
-local script_dir = script_path:match("^(.*[/\\])") or ""
-package.path = script_dir .. "../lib/?.lua;" .. package.path
+package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "") .. "../lib/?.lua;" .. package.path
+local script_dir = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or ""
 
 local SelfTest = require("SelfTest")
 

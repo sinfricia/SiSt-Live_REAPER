@@ -3,6 +3,21 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-10 - Step 3: loader (module path)
+- Every script that uses the libraries starts with ONE line that puts lib/ on the module path (measured: each
+  script run has its own Lua state and REAPER's default path only covers the config folder, so Setup or
+  __startup.lua can't do it for the others). No loader file, no file check and no test registration at script
+  start (a half-synced config is a risk of Sina's kDrive setup, not of the product); Setup and the self-test check
+  the files. Design decisions: "Module path", "Working on several machines".
+- Setlist: the 3-folder lib search is gone (only ../lib, like all scripts) and a missing library no longer leaves it
+  running in show mode only. Status Display and Toolbar lost their "optional library" fallbacks. Test removed:
+  GetSharedLibSearchDirs.
+- "DEBUG Run Self-Test" and Setup register the test list (as before).
+- New rule (CLAUDE.md): self-test while working, live test once right before the commit.
+- Still open from the loader item: some now-unneeded `if Mode then` / `if Log then` guards (go with the mode-effects
+  message step).
+- Self-test: 431 passed (51 scenarios, 383 checks, 48 live checks). Live test: 98 passed.
+
 ## 2026-11-10 - Step 3a: tests Claude can run
 - Self-test no longer writes config files: Actions.file_command / find_registered read reaper-kb.ini (read only);
   AddRemoveReaScript only for a script that is missing from the action list (it made REAPER rewrite

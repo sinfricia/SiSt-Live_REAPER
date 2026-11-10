@@ -12,8 +12,7 @@
 local startup = (...) == "startup"
 
 -- Own folder from this file (not get_action_context: run from __startup.lua, that is __startup.lua's path)
-local script_dir = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or ""
-package.path = script_dir .. "../lib/?.lua;" .. package.path
+package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "") .. "../lib/?.lua;" .. package.path
 
 local Mode        = require("SiSt-Live_Mode")
 local Log         = require("SiSt-Live_Log")

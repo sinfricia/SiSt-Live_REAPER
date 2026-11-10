@@ -5,7 +5,7 @@ What's still to do. Reasons and rules: Docs/design-decisions.md. Finished work: 
 
 ## Status
 
-- Done: step -1, step 0, step 1, step 1b, step 2, step 2b, step 3a.
+- Done: step -1, step 0, step 1, step 1b, step 2, step 2b, step 3a, step 3 loader (module path line).
 - Next: the rest of step 3, then step 4.
 - Bug fix 2026-11-10: Start Show "No" now switches recording off (see completed tasks).
 
@@ -13,10 +13,8 @@ What's still to do. Reasons and rules: Docs/design-decisions.md. Finished work: 
 
 ### Rest of step 3
 
-- One loader line per script, replacing the "optional library" fallbacks and the Setlist's 3-folder lib search;
-  a broken install gets one clear message. The loader auto-registers the test list.
 - Mode effects can't load or run: one uniform message (log + dialog in show mode) for every place that switches
-  the mode (via the loader / Mode library); then remove the special dialog from the toggle action.
+  the mode (via the Mode library); then remove the special dialog from the toggle action.
 - Gui: Zoom (repeated in Setlist, Status Display, Toolbar); popup_menu (menu at the mouse without a window, built
   on Window.build_menu; the live test uses it).
 - Action IDs (see design decisions): lookup by file name (verify the API first; test SWS CF_EnumerateActions as the

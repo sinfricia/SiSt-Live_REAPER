@@ -2,9 +2,7 @@
 -- Toggles SiSt-Live debug logging. Toolbar button: lit = debug ON.
 -- Output appears in the REAPER console (View > ReaScript console output).
 
-local _, script_path = reaper.get_action_context()
-local script_dir = script_path:match("^(.*[/\\])") or ""
-package.path = script_dir .. "../lib/?.lua;" .. package.path
+package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "") .. "../lib/?.lua;" .. package.path
 
 local Log = require("SiSt-Live_Log")
 

@@ -19,21 +19,20 @@
 --   default position). The window remembers its position per edit/show mode: put it where you want it in
 --   each mode once. "Save as default position" stores a position you can always go back to.
 --
---   Libraries (lib folder, looked up next to this script, one folder up (Scripts/SiSt-Live/lib) and in
---   <resource path>/Scripts/SiSt-Live/lib):
---   - lib/Gui (required): window, theme colors, buttons.
---   - lib/SiSt-Live_Mode.lua (optional): the edit/show mode. Without it the script runs in show mode.
---   Both are installed with the package "SiSt-Live".
+--   Libraries: the lib folder of the package (Scripts/SiSt-Live/lib), put on the module path by the first line below.
+--   Setup and the self-test check that all of them are there.
 --
 --   Edit/show mode: the list follows the current project in both modes, except when you click a project in the
 --   list in edit mode. Switching to show mode also jumps to it. Show mode locks all editing of the setlist
 --   (Queue Project still works). An arrow at the list edge points to the current project when it is out of view.
 
+package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "") .. "../lib/?.lua;" .. package.path
+
 -- Shared SiSt-Live libraries, loaded in LoadSharedLibs().
--- Gui (required): without it the script doesn't start.
+-- Gui: window, theme colors, buttons.
 local Theme, Window, Widgets = nil, nil, nil -- lib/Gui/Theme.lua, Window.lua, Widgets.lua
 local win = nil                              -- the Window object (created in Init)
--- Mode (optional): nil if it could not be loaded. The script then runs without the mode switch (show mode).
+-- Mode: the shared edit/show mode.
 local Mode = nil     -- lib/SiSt-Live_Mode.lua
 local pollMode = nil -- returned by Mode.watch(); call once per frame to pick up mode changes
 -- Log (shared logging): loaded first in LoadSharedLibs(). Until then, or if it can't be loaded, `log` is a
@@ -87,9 +86,6 @@ local ENTRY = { PROJECT = "project", TEXT = "text", MISSING = "missing" }
 -- Operating modes, set from the shared SiSt-Live Mode library. Switching to SHOW jumps to the current project.
 -- Following the current project on project changes happens in both modes.
 local MODE = { SHOW = "show", EDIT = "edit" }
-
--- Shared SiSt-Live libraries (owned by other packages, not by this script)
-local SHARED_LIB_PROBE = "Gui/Theme.lua" -- a folder containing this file is taken as the lib folder
 
 local TITLE_TEXT = "REAPER SETLIST"
 
@@ -419,104 +415,28 @@ function CheckDependencies()
    return false
 end
 
--- Pure function. Folders that may contain the shared SiSt-Live libraries, most likely first.
--- scriptPath: full path of this script (nil if unknown). resourcePath: REAPER resource folder. sep: path separator.
-function GetSharedLibSearchDirs(scriptPath, resourcePath, sep)
-   sep = sep or "/"
-   local dirs = {}
-
-   local scriptDir = scriptPath and scriptPath:match("^(.*[\\/])")
-   if scriptDir then
-      dirs[#dirs + 1] = scriptDir .. "lib" .. sep                -- lib next to this script
-      dirs[#dirs + 1] = scriptDir .. ".." .. sep .. "lib" .. sep -- Scripts/SiSt-Live/<folder>/ -> Scripts/SiSt-Live/lib
-   end
-
-   if resourcePath and resourcePath ~= "" then
-      dirs[#dirs + 1] = resourcePath .. sep .. "Scripts" .. sep .. "SiSt-Live" .. sep .. "lib" .. sep
-   end
-
-   return dirs
-end
-
--- Returns the first search folder that contains the shared libraries, plus the list of folders searched.
-function FindSharedLibDir()
-   local _, scriptPath = reaper.get_action_context()
-   local dirs = GetSharedLibSearchDirs(scriptPath, reaper.GetResourcePath(), package.config:sub(1, 1))
-   for _, dir in ipairs(dirs) do
-      if reaper.file_exists(dir .. SHARED_LIB_PROBE) then return dir, dirs end
-   end
-   return nil, dirs
-end
-
-function WarnSharedLibsUnavailable(details)
-   reaper.MB(details .. "\n\nThe setlist keeps working, but without the edit/show mode switch (always show mode).\n" ..
-      "Reinstall the package 'SiSt-Live' in ReaPack to get the Mode library.",
-      "SiSt-Live: Mode library not available", 0)
-end
-
-function ShowGuiLibMissing(details)
-   reaper.MB(details .. "\n\nThe setlist can't start without lib/Gui.\n" ..
-      "Reinstall the package 'SiSt-Live' in ReaPack to get it.",
-      "SiSt-Live: Gui library not available", 0)
-end
-
--- Loads the shared libraries.
--- Gui (required): on failure an error is shown and false is returned: the script must not start.
--- Mode (optional, loads its own Log and Button helpers): on failure one warning, the list stays in show mode.
--- Must be called during the first run of the script (not from a deferred function): get_action_context.
+-- Requires the shared libraries (the path is set at the top of this file).
 -- Returns true if the script can run.
 function LoadSharedLibs()
-   local dir, searched = FindSharedLibDir()
-   if not dir then
-      ShowGuiLibMissing("Couldn't find " .. SHARED_LIB_PROBE .. " in:\n\n" .. table.concat(searched, "\n"))
-      return false
-   end
 
-   if not package.path:find(dir, 1, true) then
-      package.path = dir .. "?.lua;" .. package.path
-   end
+   -- Log first, so everything after it is logged
+   Log = require("SiSt-Live_Log")
+   log = Log.get("Setlist")
 
-   -- Log first, so everything after it is logged. Optional: without it the stand-in logger stays.
-   local logOk, logLib = pcall(require, "SiSt-Live_Log")
-   if logOk then
-      Log = logLib
-      log = Log.get("Setlist")
-   else
-      log:warn("Log library could not be loaded, debug logging is off: %s", tostring(logLib))
-   end
+   Theme = require("Gui.Theme")
+   Window = require("Gui.Window")
+   Widgets = require("Gui.Widgets")
 
-   local guiOk, guiErr = pcall(function()
-      Theme = require("Gui.Theme")
-      Window = require("Gui.Window")
-      Widgets = require("Gui.Widgets")
-   end)
-   if not guiOk then
-      ShowGuiLibMissing("Loading lib/Gui from\n" .. dir .. "\nfailed:\n\n" .. tostring(guiErr))
-      return false
-   end
+   Mode = require("SiSt-Live_Mode")
+   pollMode = Mode.watch(OnSharedModeChanged) -- calls OnSharedModeChanged once right away
 
-   local ok, err = pcall(function()
-      Mode = require("SiSt-Live_Mode")
-      pollMode = Mode.watch(OnSharedModeChanged) -- calls OnSharedModeChanged once right away
-   end)
-
-   if not ok then
-      Mode, pollMode = nil, nil
-      SetListMode(MODE.SHOW)
-      WarnSharedLibsUnavailable("Loading the Mode library from\n" .. dir .. "\nfailed:\n\n" .. tostring(err))
-      return true -- the Gui library is there: the script runs without the mode switch
-   end
-
-   log:info("shared libraries loaded from %s - list mode: %s", dir, gui.mode)
+   log:info("shared libraries loaded - list mode: %s", gui.mode)
    return true
 end
 
 -- One line for the self test report.
 function DescribeSharedLibState()
-   local guiState = (Log and "Log library: loaded. " or "Log library: NOT loaded. ") ..
-       (Window and "Gui library: loaded. " or "Gui library: NOT loaded. ")
-   if not Mode then return guiState .. "Mode library: NOT loaded (mode switch inactive, always show mode)" end
-   return guiState .. "Mode library: loaded. Shared mode: " .. tostring(Mode.get()) .. ", list mode: " .. tostring(gui.mode)
+   return "Shared mode: " .. tostring(Mode.get()) .. ", list mode: " .. tostring(gui.mode)
 end
 
 -- True if the given modifier key (MOD.CTRL, MOD.SHIFT, MOD.ALT) is currently held.
@@ -2950,18 +2870,6 @@ end)
 
 DefineTest("MenuItem / MenuTitle", function(t)
    t.eq(MenuTitle("Song", true), "#Song  (locked in show mode)", "title while locked")
-end)
-
-DefineTest("GetSharedLibSearchDirs", function(t)
-   t.eq(GetSharedLibSearchDirs("C:\\R\\Scripts\\SiSt-Live\\Setlist\\SiSt-Live_Setlist.lua", "C:\\R", "\\"), {
-      "C:\\R\\Scripts\\SiSt-Live\\Setlist\\lib\\",
-      "C:\\R\\Scripts\\SiSt-Live\\Setlist\\..\\lib\\",
-      "C:\\R\\Scripts\\SiSt-Live\\lib\\",
-   }, "windows layout")
-   t.eq(GetSharedLibSearchDirs("/r/Scripts/x/a.lua", "", "/"), { "/r/Scripts/x/lib/", "/r/Scripts/x/../lib/" },
-      "no resource path")
-   t.eq(GetSharedLibSearchDirs(nil, "/r", "/"), { "/r/Scripts/SiSt-Live/lib/" }, "script path unknown")
-   t.eq(GetSharedLibSearchDirs("noSeparator.lua", nil, "/"), {}, "nothing usable")
 end)
 
 DefineTest("ToListMode", function(t)

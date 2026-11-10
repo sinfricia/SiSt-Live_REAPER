@@ -41,8 +41,7 @@
 -- Temporary home: not part of the package (not in Setup's @provides). Moves with the other checks in step 3.
 
 -- Own folder from this file (not get_action_context: the unattended runner loads this file, that is its path)
-local script_dir = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or ""
-package.path = script_dir .. "../lib/?.lua;" .. package.path
+package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "") .. "../lib/?.lua;" .. package.path
 
 local SelfTest    = require("SelfTest")
 local Mode        = require("SiSt-Live_Mode")

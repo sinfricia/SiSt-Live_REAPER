@@ -51,11 +51,13 @@ local SIZE = {
   settings_h = 28,
 }
 
--- Libraries, loaded in main(). Gui and ToolbarSource are required, the others optional.
-local Theme, Window, Widgets, ToolbarSource
-local Log, Mode
-local log = nil
-local lib_problems = {}
+-- Libraries (part of the package: Setup and the self-test check that they are all there)
+package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "") .. "../lib/?.lua;" .. package.path
+local Theme, Window, Widgets = require("Gui.Theme"), require("Gui.Window"), require("Gui.Widgets")
+local ToolbarSource = require("SiSt-Live_ToolbarSource")
+local Log, Mode = require("SiSt-Live_Log"), require("SiSt-Live_Mode")
+local log = Log.get("Toolbar")
+local lib_problems = {} -- (problems found while running)
 
 local function first_line(v)
   return (tostring(v):match("^[^\r\n]*"))
@@ -204,38 +206,6 @@ function ToolbarWindow.self_test()
   return results
 end
 
---------------------------------------------------------------------------------
--- Loading
---------------------------------------------------------------------------------
-
-local function add_lib_path()
-  local _, script_path = reaper.get_action_context()
-  local dir = (script_path or ""):match("^(.*[/\\])") or ""
-  package.path = dir .. "../lib/?.lua;" .. package.path
-end
-
--- Gui and ToolbarSource are part of the SiSt-Live package: without them there is nothing to show.
-local function load_required()
-  local ok, err = pcall(function()
-    Theme = require("Gui.Theme")
-    Window = require("Gui.Window")
-    Widgets = require("Gui.Widgets")
-    ToolbarSource = require("SiSt-Live_ToolbarSource")
-  end)
-  if not ok then
-    reaper.MB("A SiSt-Live library could not be loaded:\n\n" .. tostring(err) ..
-      "\n\nReinstall the package 'SiSt-Live' in ReaPack.", WINDOW_TITLE, 0)
-  end
-  return ok
-end
-
-local function load_optional()
-  local ok_log, l = pcall(require, "SiSt-Live_Log")
-  if ok_log then Log = l; log = Log.get("Toolbar") end
-  local ok_mode, m = pcall(require, "SiSt-Live_Mode")
-  if ok_mode then Mode = m else lib_problems[#lib_problems + 1] = "Mode library not loaded: " .. first_line(m) end
-end
-
 local function run_self_tests(out)
   local passed, failed = 0, 0
   local suites = { { "Toolbar window", ToolbarWindow.self_test }, { "ToolbarSource", ToolbarSource.self_test },
@@ -264,9 +234,6 @@ local function current_mode()
 end
 
 local function main()
-  add_lib_path()
-  if not load_required() then return end
-  load_optional()
 
   -- Test-only switch (see lib/SelfTest.lua): hand over the tests instead of opening the window
   if rawget(_G, "SELFTEST_COLLECT") then

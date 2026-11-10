@@ -36,3 +36,5 @@ Self-Test.lua"` (runs in the open REAPER; its window jumps). Never start tests w
 Live test the same way with `Debug/SiSt-Live_DEBUG Run Live Test unattended.lua` (show workflow only, no loopbacks,
 no questions; refused if foreign projects are open). Report: Data/SiSt Libraries/Live test report.txt; wait for one
 newer than the start time (a run takes about 1 minute).
+While working, run the self-test after changes. Run the live test only once, right before a commit, after Sina has
+agreed to commit.

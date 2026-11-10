@@ -5,9 +5,7 @@
 --
 -- Temporary home: not part of the package (not in Setup's @provides). Moves to SiSt Libraries later.
 
-local _, script_path = reaper.get_action_context()
-local script_dir = script_path:match("^(.*[/\\])") or ""
-package.path = script_dir .. "../lib/?.lua;" .. package.path
+package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "") .. "../lib/?.lua;" .. package.path
 
 require("SelfTest").run_registered()
 

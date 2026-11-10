@@ -19,9 +19,7 @@
 --   "SiSt-Live: Apply current mode" re-applies everything without switching. To start REAPER with
 --   the right theme, call it from Scripts/__startup.lua.
 
-local _, script_path = reaper.get_action_context()
-local script_dir = script_path:match("^(.*[/\\])") or ""
-package.path = script_dir .. "../lib/?.lua;" .. package.path
+package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "") .. "../lib/?.lua;" .. package.path
 
 local Mode = require("SiSt-Live_Mode")
 local Log  = require("SiSt-Live_Log")

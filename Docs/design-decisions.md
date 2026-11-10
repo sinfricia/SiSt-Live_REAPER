@@ -38,6 +38,11 @@ reasons, not copies of those rules (2026-11-10, see "Where rules live" below).
   unattended live test runner with "unattended"). No globals, and no ExtState for a value that only lives for one
   call. Such a script finds its own folder with `debug.getinfo(1, "S").source`, not with `get_action_context`,
   because that returns the path of the script that loaded it.
+- Module path (2026-11-10, measured): every script run has its own fresh Lua state, and REAPER's default path only
+  covers the config folder, so no startup script or Setup can set it for other scripts. Each script that uses the
+  libraries starts with ONE line: `package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "") ..
+  "../lib/?.lua;" .. package.path` (debug.getinfo, not get_action_context: see "Passing something..."). No loader
+  file. Requiring by full path ("Scripts.SiSt-Live.lib...") was rejected: longer names that depend on the folder.
 - A REAPER install used for development never subscribes to its own ReaPack repo (ReaPack would overwrite the
   working copy). Working copies mirror ReaPack's folder layout (Scripts/<index name>/<category>/...).
 - Delivery: Claude writes directly into the repo and says what changed; no files sent in the chat. Since
@@ -75,6 +80,9 @@ at a time. The main install also lives in kDrive but is only used on one machine
   the real backup: if kDrive ever breaks .git, clone again. Moving .git out of kDrive or excluding it from sync
   would make kDrive and git both carry the same changes: messier than the risk (2026-10-26). kDrive conflict copies are named `<name>_conflict_<date>_<time>_<random>`.
 - (Earlier suspicion that kDrive puts back older versions: most likely the staging-path issue above.)
+- A half-synced config (kDrive) is a risk of Sina's own setup, not of the product: ReaPack installs complete
+  packages. So scripts do not check for missing library files when they start, and nothing is registered at script
+  start; Setup and the self-test check the files (2026-11-10).
 - Deliberately NOT done: per-machine saved state (too complex), moving .git out of kDrive, computer name in the
   log or reports (not relevant, 2026-10-20).
 
