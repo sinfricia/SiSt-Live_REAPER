@@ -333,7 +333,7 @@ function SelfTest.run_suites(suites, title, opts)
   both(("=== %s ==="):format(title or "Self-test"))
   both(("%s | REAPER %s | %s"):format(os.date("%Y-%m-%d %H:%M:%S"), reaper.GetAppVersion(), _VERSION))
 
-  local total_p, total_f, total_w = 0, 0, 0
+  local total_p, total_f, total_w, live_p = 0, 0, 0, 0 -- live_p: passed rows that are live checks
   for _, suite in ipairs(suites) do
     both("")
     both("##### " .. suite.name)
@@ -345,6 +345,9 @@ function SelfTest.run_suites(suites, title, opts)
       local rows = SelfTest.run_component(c)
       local p, f, w = SelfTest.count(rows)
       total_p, total_f, total_w = total_p + p, total_f + f, total_w + w
+      for _, r in ipairs(rows) do
+        if r.kind == "live" and not r.warn and r.ok then live_p = live_p + 1 end
+      end
 
       local summary = ("[%s] %d passed"):format(c.name, p)
       if f > 0 then summary = summary .. (", %d FAILED"):format(f) end
@@ -361,7 +364,10 @@ function SelfTest.run_suites(suites, title, opts)
   end
 
   both("")
-  both(("Result: %d passed, %d failed, %d warning%s"):format(total_p, total_f, total_w, total_w == 1 and "" or "s"))
+  -- Live checks look at this machine's config (keyboard effect, locking, screenset, windows), so their number
+  -- differs between machines and configs; it is shown apart from the tests.
+  both(("Result: %d passed (%d tests, %d live checks), %d failed, %d warning%s"):format(
+    total_p, total_p - live_p, live_p, total_f, total_w, total_w == 1 and "" or "s"))
   local path = write_report(full, opts and opts.report_file)
   console[#console + 1] = path and ("Full report: " .. path) or "Full report could not be written."
   reaper.ShowConsoleMsg(table.concat(console, "\n") .. "\n")
