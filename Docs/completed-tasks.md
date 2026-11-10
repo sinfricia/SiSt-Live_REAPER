@@ -3,6 +3,23 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-10 - Step 3: Simplify the live test (step 3 complete)
+- Split: Debug/SiSt-Live_DEBUG Run Live Test.lua (1,224 -> 254 lines: menu, test folder, closing projects,
+  unattended mode, the scenario) + Debug/LiveTest/Show.lua (show workflow, recordings), Looper.lua (Region Looper),
+  Loopback.lua (audio + MIDI loopbacks, melodies unchanged), Helpers.lua (shared helpers and the routing / songs
+  state). Tests and behaviour unchanged.
+- No literal action IDs: Start Song, Play or record and Toggle playback mode by file name; the three Project End
+  Handler custom actions by name with the new general `Actions.find_custom(name)` (tested; missing / ambiguous
+  reported). Native IDs (Stop, Play, New tab, Close tab, Close all) stay numbers.
+- Shared code: the live test's file listings use `SelfTest.list_files` (now always a fresh listing, so new
+  recordings are never missed); its relative path helper became `SelfTest.relative_path` (tested). The folder
+  picker and "close all projects" stay in the live test: no second user (shared-code rule; roadmap text said to
+  move them).
+- One FX name each, from this config's FX lists: "JS: Tone Generator", "ReaSynth (Cockos)".
+- Roadmap: "Project End Handlers as scripts" (Sina, 2026-11-10), incl. updating every action marker.
+- Self-test: 466 passed (53 scenarios, 457 checks, 9 live checks). Live test: 98 passed; loopback test (menu, run by
+  Sina): passed.
+
 ## 2026-11-10 - Step 3: Setup as the entry point for checks
 - The debug-on-open test runners of the Status Display, Toolbar and Setup are gone (their tests run in the
   self-test anyway). With debug on, the Status Display still logs its theme colors.

@@ -5,22 +5,10 @@ What's still to do. Reasons and rules: Docs/design-decisions.md. Finished work: 
 
 ## Status
 
-- Done: step -1, step 0, step 1, step 1b, step 2, step 2b, step 3a, step 3 loader (module path line), step 3 mode-effects message (Mode.apply), step 3 mouse mode effect (show protection), step 3 save current look, step 3 logging in one go, step 3 Setup as the entry point for checks.
-- Next: the rest of step 3, then step 4.
+- Done: step -1, step 0, step 1, step 1b, step 2, step 2b, step 3a, step 3 (2026-11-10, last part: simplify the
+  live test; see completed tasks).
+- Next: step 4.
 - Bug fix 2026-11-10: Start Show "No" now switches recording off (see completed tasks).
-
-## Step 3: Simplify and prepare generalization (behaviour unchanged)
-
-### Rest of step 3
-
-In this order (decided 2026-11-10): decisions first, core cleanups before the things that build on them, the live
-test and the DEBUG actions last. Done so far: editor setup (nothing to do in the repo), static analysis (dropped),
-show protection decision (the mouse mode effect, see completed tasks), save current look, logging in one go, Setup as the entry point for checks (see completed tasks).
-
-1. Simplify the live test (the Action ID lookup by file name is done). Action IDs by file name instead of 8 literal IDs; general helpers (relative
-    paths, file lists, folder picker, close all projects) into the libraries; one FX name each for Tone Generator
-    / ReaSynth; split into a short main file + LiveTest/Loopback.lua, Show.lua, Looper.lua. The melodies stay.
-
 
 ## Step 4: Setlist
 
@@ -141,6 +129,10 @@ After step 6: what Setup installs depends on the package split. Ends with the cl
   background script runs readable markers during playback, or (b) a tool keeps a readable label next to the ID
   and repairs the ID by file name (markers stay native). Leaning (b): native markers keep working if a script
   fails. Fits the action-marker check (Batch Project Tools).
+- Project End Handlers as scripts (Sina, 2026-11-10): the three custom actions ("SiSt-Live_Project End Handler",
+  "- NO STOP", "- move to previous project") become scripts. Every action marker that calls them (`!_ee13...` etc.
+  in the song projects) must be updated to the new IDs, so this needs a marker rewrite over all projects (with the
+  readable action markers tool / action-marker check) and the MIDI shortcuts (ch 16 notes 4 and 5) re-pointed.
 - Shortcuts review (config work, any time, together with Sina): transport shortcuts in edit mode, MIDI editor;
   close to REAPER defaults where sensible. Pairs with the show-protection decision (step 3) and with version
   control for the config files.

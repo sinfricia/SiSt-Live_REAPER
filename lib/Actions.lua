@@ -16,6 +16,7 @@
 --    A lookup only looks: it reads the action list (reaper.kbd_enumerateActions: about 4 ms for all ~7000 actions;
 --    a script action is named "Script: <file name>"), nothing is added, no file is written. Results are remembered
 --    for the rest of the script run.
+--      Actions.find_custom(name)          a custom action by its name (no "Custom: "), same results as find_script
 --      Actions.register(path)             adds a script (full path) to the action list. Call it only for a script
 --                                         that is missing: adding makes REAPER rewrite reaper-kb.ini.
 --
@@ -89,6 +90,26 @@ function Actions.find_script(file_name)
   return found[1]
 end
 
+--- Command ID of the custom action with this name ("SiSt-Live_Project End Handler", without "Custom: "), or nil +
+--- reason + kind ("missing" / "ambiguous"). A custom action's named ID is 32 hex digits (a script's starts with "RS").
+--- Not remembered: only the live test uses it, a few times per run.
+function Actions.find_custom(name)
+  local found = {}
+  local i = 0
+  while true do
+    local cmd, text = reaper.kbd_enumerateActions(0, i)
+    if not cmd or cmd == 0 then break end
+    if text and text:match("^[^:]+:%s(.+)$") == name
+        and (reaper.ReverseNamedCommandLookup(cmd) or ""):match("^%x+$") then
+      found[#found + 1] = cmd
+    end
+    i = i + 1
+  end
+  if #found == 0 then return nil, "no custom action named " .. name, "missing" end
+  if #found > 1 then return nil, "more than one custom action is named " .. name, "ambiguous" end
+  return found[1]
+end
+
 --- Adds a script (full path) to the action list. Returns its command ID, or nil + reason.
 function Actions.register(path)
   local cmd = reaper.AddRemoveReaScript(true, 0, path, true)
@@ -152,6 +173,12 @@ function Actions.self_test()
     check("find_script: two script actions with one file name are ambiguous",
       twice == nil and kind2 == "ambiguous" and why2:find("more than one", 1, true) ~= nil)
     check("lookup only looks: nothing was added", #added == 0)
+
+    -- custom actions: looked up by name
+    check("find_custom: found by name, the script with the same name is not it",
+      Actions.find_custom("SiSt-Live_Toggle Edit-Show Mode.lua") == 55919)
+    local nc, _, nkind = Actions.find_custom("SiSt-Live_Setlist.lua") -- only a script has this name
+    check("find_custom: a script is not a custom action", nc == nil and nkind == "missing")
 
     -- registering
     local new = Actions.register("R/Scripts/SiSt-Live/Transport/SiSt-Live_Start Show.lua")

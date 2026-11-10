@@ -140,6 +140,21 @@ function SelfTest.relative_to(path, base)
   return nil
 end
 
+--- Pure. Path of `to` seen from the folder `from`, with ".." where needed ("../Tests/x"), "." for the same folder,
+--- or nil on different drives. Case ignored. E.g. a test folder stored relative to the REAPER config.
+function SelfTest.relative_path(from, to)
+  local a, b = {}, {}
+  for part in SelfTest.normalize(from):gmatch("[^/]+") do a[#a + 1] = part end
+  for part in SelfTest.normalize(to):gmatch("[^/]+") do b[#b + 1] = part end
+  if not a[1] or not b[1] or a[1]:lower() ~= b[1]:lower() then return nil end
+  local same = 0
+  while a[same + 1] and b[same + 1] and a[same + 1]:lower() == b[same + 1]:lower() do same = same + 1 end
+  local parts = {}
+  for _ = same + 1, #a do parts[#parts + 1] = ".." end
+  for i = same + 1, #b do parts[#parts + 1] = b[i] end
+  return #parts == 0 and "." or table.concat(parts, "/")
+end
+
 local function is_absolute(path)
   return path:match("^%a:/") ~= nil or path:sub(1, 1) == "/"
 end
@@ -286,10 +301,13 @@ end
 
 -- Coverage ------------------------------------------------------------------------------------
 
---- All files below dir (recursive) with the given extension, as relative paths with "/". Sorted.
+--- All files below dir (recursive) with the given extension (nil: all files), as relative paths with "/". Sorted.
+--- Always a fresh listing (REAPER caches folder listings; new files, e.g. recordings, would be missed).
 function SelfTest.list_files(dir, ext)
   local out = {}
   local function walk(abs, rel)
+    reaper.EnumerateFiles(abs, -1)
+    reaper.EnumerateSubdirectories(abs, -1)
     local i = 0
     while true do
       local f = reaper.EnumerateFiles(abs, i)
@@ -641,6 +659,9 @@ function SelfTest.self_test()
   check("relative_to: inside, case ignored", SelfTest.relative_to("C:/R/Scripts/x.lua", "c:\\r") == "Scripts/x.lua")
   check("relative_to: outside, or only a name prefix", SelfTest.relative_to("D:/x.lua", "C:/R") == nil
     and SelfTest.relative_to("C:/Rx/a.lua", "C:/R") == nil)
+  check("relative_path: up and down with '..', same folder '.', other drive nil",
+    SelfTest.relative_path("L:/kDrive/REAPER/Config", "l:\\kDrive\\Tests\\Live") == "../../Tests/Live"
+    and SelfTest.relative_path("C:/R", "C:/R") == "." and SelfTest.relative_path("C:/R", "D:/R") == nil)
 
   check("registry: empty and garbage", #SelfTest.decode_registry("") == 0 and #SelfTest.decode_registry("nonsense|x=y") == 1)
 
