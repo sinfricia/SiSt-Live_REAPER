@@ -5,7 +5,7 @@ What's still to do. Reasons and rules: Docs/design-decisions.md. Finished work: 
 
 ## Status
 
-- Done: step -1, step 0, step 1, step 1b, step 2, step 2b, step 3a, step 3 loader (module path line), step 3 mode-effects message (Mode.apply), step 3 mouse mode effect (show protection).
+- Done: step -1, step 0, step 1, step 1b, step 2, step 2b, step 3a, step 3 loader (module path line), step 3 mode-effects message (Mode.apply), step 3 mouse mode effect (show protection), step 3 save current look.
 - Next: the rest of step 3, then step 4.
 - Bug fix 2026-11-10: Start Show "No" now switches recording off (see completed tasks).
 
@@ -15,22 +15,16 @@ What's still to do. Reasons and rules: Docs/design-decisions.md. Finished work: 
 
 In this order (decided 2026-11-10): decisions first, core cleanups before the things that build on them, the live
 test and the DEBUG actions last. Done so far: editor setup (nothing to do in the repo), static analysis (dropped),
-show protection decision (the mouse mode effect, see completed tasks).
+show protection decision (the mouse mode effect, see completed tasks), save current look (see completed tasks).
 
-1. Save current look for a mode (2026-11-10): one action/button "Save current state as SHOW (EDIT)
-   mode" takes the current theme, TCP / MCP / transport layouts and screenset (saves the window set into the
-   mode's slot) into the current mode's settings, built on a "take current" function in each of those effects
-   (theme file in use, layouts, screenset slot; no setting descriptions needed). Later also a button in the
-   configuration window. NO autosave of theme/layouts/screenset (a window closed by accident on stage would
-   become the new show look); SiSt-Live window positions keep autosaving as today.
-2. Logging in one go: make shared candidates general (Theme.configure: show/edit accents; Log.configure:
+1. Logging in one go: make shared candidates general (Theme.configure: show/edit accents; Log.configure:
    show-mode console rule, file, section); global debug switch for all packages, SiSt-Live's mode sets a global
    "quiet console" flag that Log respects. (The VS Code debugger helper was dropped, 2026-11-10: see design
    decisions, "Editor".)
-3. Setup as the entry point for checks, in this order: Status Display / Toolbar debug-on-open test runs switch to
+2. Setup as the entry point for checks, in this order: Status Display / Toolbar debug-on-open test runs switch to
     SelfTest; Setup becomes the entry point for checks (installation, tests, action markers), and checks the
     required extensions (one API function each, e.g. APIExists); then remove the DEBUG actions one by one (approval for each).
-4. Simplify the live test (the Action ID lookup by file name is done). Action IDs by file name instead of 8 literal IDs; general helpers (relative
+3. Simplify the live test (the Action ID lookup by file name is done). Action IDs by file name instead of 8 literal IDs; general helpers (relative
     paths, file lists, folder picker, close all projects) into the libraries; one FX name each for Tone Generator
     / ReaSynth; split into a short main file + LiveTest/Loopback.lua, Show.lua, Looper.lua. The melodies stay.
 
@@ -135,7 +129,9 @@ After step 6: what Setup installs depends on the package split. Ends with the cl
   (decided 2026-11-10 to build them together with this window, not before: nothing needs them earlier) declare each
   setting as data (on/off, number with range, choice, custom with "take current"), storage per mode once with the
   same ExtState keys and text formats as today; keep the Windows effect's "never set = default" vs "empty = none". Needs a checkbox widget (also for
-  the live test's test selection).
+  the live test's test selection). "Take current" buttons and a "Save current look" button use the effects'
+  take_current functions (built 2026-11-10).
+- Toolbar button for "Save current look for current mode" (Sina, 2026-11-10: later; reaper-menu.ini, REAPER closed).
 - Workflows (home: Batch Project Tools, 2026-11-10; after 6c and the configuration window): general operations
   with parameters, run through BatchProjects on chosen projects: rename tracks, add tracks, change existing tracks
   (inserts / FX, automation); the functions in Project Management/SiSt-Live_Workflows.lua are the starting list.

@@ -52,6 +52,7 @@
 --   [main] ../Modes/SiSt-Live_Toggle Edit-Show Mode.lua
 --   [main] ../Modes/SiSt-Live_Apply current mode.lua
 --   [main] ../Modes/SiSt-Live_Configure modes.lua
+--   [main] ../Modes/SiSt-Live_Save current look for current mode.lua
 --   [main] ../Modes/SiSt-Live_Lock mouse cursor to arrow in arrange view.lua
 --   [main] ../Setlist/SiSt-Live_Setlist.lua
 --   [main] ../Status Display/SiSt-Live_Status Display.lua

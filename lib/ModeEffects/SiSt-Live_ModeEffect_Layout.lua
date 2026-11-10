@@ -8,6 +8,7 @@
 -- Set in "SiSt-Live: Configure modes": choose the layouts in Options > Layouts, then type "current"
 -- into the layouts field of the mode. That stores the current layout of every section in
 -- Layout.SECTIONS. The field can also be edited by hand. An empty layout means "theme default".
+-- "SiSt-Live: Save current look for current mode" stores the same (Layout.take_current).
 --
 -- Layout names only exist within a theme, so this effect must run after the theme effect. It also
 -- runs after the screenset effect, so its layouts win over anything a window set brings along
@@ -158,6 +159,21 @@ function Layout.format_setting(map)
   return table.concat(parts, ", ")
 end
 
+-- Take current ----------------------------------------------------------
+--- "Save current look" (contract in SiSt-Live_ModeEffects.lua): the active layouts of every managed section
+--- become the mode's layouts.
+function Layout.take_current(mode)
+  local now = Layout.capture()
+  local old = Layout.get_assignment(mode)
+  if old and Layout.encode(old) == Layout.encode(now) then
+    return nil, "unchanged: " .. Layout.format_setting(now)
+  end
+  return {
+    text = ("layouts: %s -> %s"):format(old and Layout.format_setting(old) or "(none)", Layout.format_setting(now)),
+    save = function() Layout.set_assignment(mode, now) end,
+  }
+end
+
 function Layout.parse_setting(text)
   local s = (text or ""):match("^%s*(.-)%s*$")
   if s == "" then return true, nil end
@@ -297,6 +313,19 @@ function Layout.self_test()
     okp and mp.tcp == "B150%" and mp.trans == "150%" and mp.mcp == nil)
   check("setting: unknown section / missing '=' rejected",
     not with_reaper(sfakes, Layout.parse_setting, "foo=1") and not with_reaper(sfakes, Layout.parse_setting, "tcp"))
+
+  -- take current
+  local tfakes = fake({ current = { tcp = "B", trans = "150%", mcp = "" } })
+  local item = with_reaper(tfakes, Layout.take_current, "show")
+  local before = with_reaper(tfakes, Layout.get_assignment, "show")
+  if item then with_reaper(tfakes, item.save) end
+  local after = with_reaper(tfakes, Layout.get_assignment, "show")
+  check("take current: nothing stored before saving, then every managed section is stored",
+    item ~= nil and item.text == "layouts: (none) -> tcp=B, trans=150%, mcp=" and before == nil
+    and after and after.tcp == "B" and after.trans == "150%" and after.mcp == "")
+  local none, why = with_reaper(tfakes, Layout.take_current, "show")
+  check("take current: same layouts already stored -> nothing to save",
+    none == nil and tostring(why):find("unchanged", 1, true) ~= nil)
 
   return results
 end

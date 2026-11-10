@@ -2,7 +2,8 @@
 -- SiSt-Live mode effect: loads the REAPER color theme assigned to the mode.
 --
 -- Set in "SiSt-Live: Configure modes": load a theme in REAPER the usual way, then type "current"
--- into the theme field of the mode (or type a file name). The file can have any name.
+-- into the theme field of the mode (or type a file name), or run "SiSt-Live: Save current look for
+-- current mode" (Theme.take_current). The file can have any name.
 --
 -- The assignment is stored in ExtState (persistent, so it travels with a portable install).
 -- Themes inside <resource path>/ColorThemes are stored relative to that folder, so the assignment
@@ -94,6 +95,31 @@ function Theme.apply(mode)
   return "ok", "loaded " .. file_name(ref)
 end
 
+-- Take current ----------------------------------------------------------
+--- The theme loaded in REAPER right now, as it would be stored.
+--- Returns ref, note (only for a theme outside ColorThemes), or nil, error message.
+function Theme.current_ref()
+  local current = reaper.GetLastColorThemeFile()
+  if current == "" or not reaper.file_exists(current) then
+    return nil, "REAPER has no theme file loaded right now"
+  end
+  local ref, portable = Theme.make_ref(current, reaper.GetResourcePath())
+  return ref, (not portable) and ("theme %s is outside ColorThemes: full path stored, it won't move with the REAPER folder"):format(ref) or nil
+end
+
+--- "Save current look" (contract in SiSt-Live_ModeEffects.lua): the loaded theme becomes the mode's theme.
+function Theme.take_current(mode)
+  local ref, note = Theme.current_ref()
+  if not ref then error(note, 0) end
+  local old = Theme.get_assignment(mode)
+  if Theme.same_path(old, ref) then return nil, "unchanged: " .. file_name(ref) end
+  return {
+    text = ("theme: %s -> %s"):format(old ~= "" and old or "(none)", ref),
+    note = note,
+    save = function() Theme.set_assignment(mode, ref) end,
+  }
+end
+
 -- Settings --------------------------------------------------------------
 -- Field text: theme file (relative to ColorThemes, or a full path), "current" = the theme loaded in
 -- REAPER right now, empty = none.
@@ -103,12 +129,9 @@ function Theme.parse_setting(text)
   local resource = reaper.GetResourcePath()
 
   if s:lower() == "current" then
-    local current = reaper.GetLastColorThemeFile()
-    if current == "" or not reaper.file_exists(current) then
-      return false, "theme: REAPER has no theme file loaded right now"
-    end
-    local ref, portable = Theme.make_ref(current, resource)
-    return true, ref, (not portable) and ("theme %s is outside ColorThemes: full path stored, it won't move with the REAPER folder"):format(ref) or nil
+    local ref, note = Theme.current_ref()
+    if not ref then return false, "theme: " .. note end
+    return true, ref, note
   end
 
   local ref = Theme.make_ref(s, resource) -- a full path inside ColorThemes becomes relative
@@ -227,6 +250,22 @@ function Theme.self_test()
   local sfakes = fake({ files = { show_full }, current = show_full })
   check("setting: missing file rejected", not with_reaper(sfakes, Theme.parse_setting, "Nope.ReaperTheme"))
   check("setting: 'current' without a loaded theme rejected", not with_reaper(fake({ current = "" }), Theme.parse_setting, "current"))
+
+  -- take current
+  local tfakes = fake({ files = { show_full }, current = show_full })
+  local item = with_reaper(tfakes, Theme.take_current, "show")
+  local before = with_reaper(tfakes, Theme.get_assignment, "show")
+  if item then with_reaper(tfakes, item.save) end
+  check("take current: nothing stored before saving, then the loaded theme is stored relative",
+    item ~= nil and item.text == "theme: (none) -> Show.ReaperTheme" and before == ""
+    and with_reaper(tfakes, Theme.get_assignment, "show") == "Show.ReaperTheme")
+  local none, why = with_reaper(tfakes, Theme.take_current, "show")
+  check("take current: same theme already stored -> nothing to save",
+    none == nil and tostring(why):find("unchanged", 1, true) ~= nil)
+  local outside_file = "D:\\Themes\\X.ReaperTheme"
+  local item2 = with_reaper(fake({ files = { outside_file }, current = outside_file }), Theme.take_current, "edit")
+  check("take current: theme outside ColorThemes comes with a note", item2 ~= nil and item2.note ~= nil)
+  check("take current: no theme loaded fails", not pcall(with_reaper, fake({ current = "" }), Theme.take_current, "show"))
 
   return results
 end

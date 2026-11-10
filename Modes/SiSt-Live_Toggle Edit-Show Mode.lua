@@ -16,6 +16,7 @@
 --     the ones that show mode opened). Never configured: show = open, edit = restore
 --   An empty field leaves that part of REAPER alone. Set both modes, otherwise switching back
 --   doesn't restore anything.
+--   "SiSt-Live: Save current look for current mode" takes theme, layouts and screenset from REAPER in one go.
 --   "SiSt-Live: Apply current mode" re-applies everything without switching. To start REAPER with
 --   the right theme, call it from Scripts/__startup.lua.
 

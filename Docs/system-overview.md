@@ -36,6 +36,8 @@ For developers. The operator documentation is a separate project. Plan: roadmap.
 - Edit / Show. Show = safe for stage: theme, layouts, screenset, keyboard section SHOW, fullscreen, mouse modifiers (item, envelope and
   time selection mouse actions off, plain arrow cursor in the arrange view, restored from a saved file on return),
   windows (Setlist, Status Display, Toolbar). REAPER always starts in edit mode (__startup.lua).
+- Settings per mode: "Configure modes" (text dialog), or "Save current look for current mode" (takes theme, layouts
+  and screenset from REAPER after one confirmation). The look is never autosaved.
 
 ## Components
 - Setlist (song order = project tab order, autosave), Status Display (mode + problems), Toolbar (copy of a

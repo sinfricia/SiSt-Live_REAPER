@@ -8,7 +8,8 @@
 --
 -- The screenset itself is saved in REAPER as usual (Screensets window, or the
 -- "Screenset: Save window set #NN" actions). This effect only stores WHICH slot belongs to a mode:
--- enter the number in "SiSt-Live: Configure modes".
+-- enter the number in "SiSt-Live: Configure modes". "SiSt-Live: Save current look for current mode"
+-- saves the current windows into the mode's slot (Screenset.take_current); it needs a slot set first.
 --
 -- Native command IDs never change, so they are constants and trusted (names sometimes change).
 -- Screenset.check_actions() checks all of them, in one line, for "DEBUG Run Self-Test".
@@ -24,8 +25,9 @@ local Screenset = { name = "screenset" }
 Screenset.SECTION    = "SiSt-Live"
 Screenset.KEY_PREFIX = "screenset_" -- + mode, e.g. "screenset_show". Value: slot number, "" = none
 
--- "Screenset: Load window set #01" ... "#10"
+-- "Screenset: Load window set #01" ... "#10", "Screenset: Save window set #01" ... "#10"
 Screenset.FIRST_LOAD_CMD = 40454
+Screenset.FIRST_SAVE_CMD = 40474
 Screenset.SLOTS          = 10
 
 -- Actions ---------------------------------------------------------------
@@ -35,13 +37,22 @@ function Screenset.command(slot)
   return Screenset.FIRST_LOAD_CMD + slot - 1
 end
 
---- Live check: one line for all window set actions. Fails for a missing action. Runs nothing.
+--- Command ID of the save action for a slot, or nil if there is no such slot.
+function Screenset.save_command(slot)
+  local load = Screenset.command(slot)
+  return load and (Screenset.FIRST_SAVE_CMD + slot - 1) or nil
+end
+
+--- Live check: one line for the load actions, one for the save actions. Fails for a missing action. Runs nothing.
 function Screenset.check_actions()
-  local list = {}
+  local load, save = {}, {}
   for slot = 1, Screenset.SLOTS do
-    list[#list + 1] = { cmd = Screenset.command(slot), what = ("load window set #%02d"):format(slot) }
+    load[#load + 1] = { cmd = Screenset.command(slot), what = ("load window set #%02d"):format(slot) }
+    save[#save + 1] = { cmd = Screenset.save_command(slot), what = ("save window set #%02d"):format(slot) }
   end
-  return Actions.check_native("window sets", list)
+  local rows = Actions.check_native("window sets (load)", load)
+  for _, row in ipairs(Actions.check_native("window sets (save)", save)) do rows[#rows + 1] = row end
+  return rows
 end
 
 --- Pure. Parses the number typed into the settings dialog.
@@ -82,6 +93,22 @@ function Screenset.apply(mode)
   return "ok", ("loaded screenset #%02d"):format(slot)
 end
 
+-- Take current ----------------------------------------------------------
+--- "Save current look" (contract in SiSt-Live_ModeEffects.lua): saves the current windows and dockers into the
+--- mode's slot. Without a slot nothing is saved: picking one here could overwrite a window set used elsewhere.
+function Screenset.take_current(mode)
+  local slot = Screenset.get_assignment(mode)
+  if not slot then
+    return nil, ("no slot set for %s mode: set one in Configure modes first"):format(mode:upper())
+  end
+  local cmd = Screenset.save_command(slot)
+  if not cmd then error(("screenset #%d does not exist"):format(slot), 0) end
+  return {
+    text = ("screenset #%02d: overwritten with the current windows and dockers"):format(slot),
+    save = function() reaper.Main_OnCommand(cmd, 0) end,
+  }
+end
+
 -- Settings --------------------------------------------------------------
 -- Field text: screenset number 1-10, empty = none.
 Screenset.settings = {
@@ -116,7 +143,10 @@ function Screenset.self_test()
 
   local function fake(first_cmd)
     local runs, names = {}, {}
-    for i = 1, 10 do names[first_cmd + i - 1] = ("Screenset: Load window set #%02d"):format(i) end
+    for i = 1, 10 do
+      names[first_cmd + i - 1] = ("Screenset: Load window set #%02d"):format(i)
+      names[first_cmd + 20 + i - 1] = ("Screenset: Save window set #%02d"):format(i)
+    end
     local fakes = {
       kbd_getTextFromCmd = function(cmd) return names[cmd] or "" end,
       Main_OnCommand = function(cmd) runs[#runs + 1] = cmd end,
@@ -147,11 +177,26 @@ function Screenset.self_test()
     (with_reaper(renamed, Screenset.apply, "show")) == "ok" and renamed_runs[1] == 40455)
 
   local rows = with_reaper(fake(Screenset.FIRST_LOAD_CMD), Screenset.check_actions)
-  check("live check: one line for the 10 actions, passes when every action exists",
-    #rows == 1 and rows[1].ok and rows[1].name == "window sets: 10 actions exist")
+  check("live check: one line each for the 10 load and 10 save actions, passes when every action exists",
+    #rows == 2 and rows[1].ok and rows[2].ok and rows[1].name == "window sets (load): 10 actions exist"
+    and rows[2].name == "window sets (save): 10 actions exist")
   local bad = with_reaper(missing, Screenset.check_actions)
-  check("live check fails for missing actions and counts them", #bad == 1 and not bad[1].ok
+  check("live check fails for missing actions and counts them", #bad == 2 and not bad[1].ok
     and bad[1].name:find("10 of 10 actions MISSING", 1, true) ~= nil)
+
+  -- take current
+  check("save command ids: 40474 for #01, none for slot 11",
+    Screenset.save_command(1) == 40474 and Screenset.save_command(10) == 40483 and Screenset.save_command(11) == nil)
+  local tfakes, truns = fake(Screenset.FIRST_LOAD_CMD)
+  local none, why = with_reaper(tfakes, Screenset.take_current, "show")
+  check("take current: no slot set -> nothing to save, says where to set one",
+    none == nil and tostring(why):find("Configure modes", 1, true) ~= nil and #truns == 0)
+  with_reaper(tfakes, Screenset.set_assignment, "show", 3)
+  local item = with_reaper(tfakes, Screenset.take_current, "show")
+  local ran_before = #truns
+  if item then with_reaper(tfakes, item.save) end
+  check("take current: saves into the mode's slot only after confirming",
+    item ~= nil and ran_before == 0 and #truns == 1 and truns[1] == 40476)
 
   return results
 end

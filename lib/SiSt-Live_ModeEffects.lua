@@ -23,6 +23,12 @@
 --                             or throws an error (use error(msg, 0) for a clean message): failed.
 --   Effect.settings           optional: list of settings shown in "SiSt-Live: Configure modes"
 --                             (contract in SiSt-Live_SettingsDialog.lua)
+--   Effect.take_current(mode) optional: what "SiSt-Live: Save current look for current mode" stores. Only looks,
+--                             changes nothing. Returns
+--                               { text, note?, save }  text: one line for the confirmation, note: optional
+--                                                      warning, save(): stores it (called only after Yes)
+--                               nil, reason            nothing to save (unchanged, not set up)
+--                             or throws an error: shown as a problem, the other effects still count.
 --   Effect.check_actions()    optional: live check of native command IDs, ONE { name, ok } line per group
 --   Effect.diagnostics()      optional: { label, value } rows
 --   Effect.self_test()        optional: list of { name, ok }
@@ -186,6 +192,73 @@ end
 
 -- Places that switch or re-apply the mode call Mode.apply (it shows the dialogs), not apply_all.
 
+-- Save current look -----------------------------------------------------
+--- Asks every effect that has take_current what it would store for `mode`. Stores nothing.
+--- effects: effect list (default: MODULES).
+--- Returns items ({ name, text, note, save }), skipped ({ name, reason }), problems ({ name, message }), each in
+--- run order.
+function ModeEffects.take_current(mode, effects)
+  effects = effects or ModeEffects.load()
+  local items, skipped, problems = {}, {}, {}
+  for _, effect in ipairs(effects) do
+    if type(effect.take_current) == "function" then
+      local ok, item, reason = pcall(effect.take_current, mode)
+      if not ok then
+        problems[#problems + 1] = { name = effect.name, message = first_line(item) }
+      elseif type(item) == "table" and type(item.text) == "string" and type(item.save) == "function" then
+        items[#items + 1] = { name = effect.name, text = item.text, note = item.note, save = item.save }
+      elseif item == nil then
+        skipped[#skipped + 1] = { name = effect.name, reason = tostring(reason or "nothing to save") }
+      else
+        problems[#problems + 1] = { name = effect.name, message = "take_current does not follow the effect contract" }
+      end
+    end
+  end
+  return items, skipped, problems
+end
+
+--- Text for the confirmation (pure). mode: "show" / "edit"; lists as returned by take_current.
+function ModeEffects.describe_take(mode, items, skipped, problems)
+  local lines = {}
+  if #items > 0 then
+    lines[#lines + 1] = ("Save the current look as %s mode?"):format(mode:upper())
+    lines[#lines + 1] = ""
+    for _, item in ipairs(items) do lines[#lines + 1] = item.text end
+  else
+    lines[#lines + 1] = ("Nothing to save for %s mode."):format(mode:upper())
+  end
+  local notes = {}
+  for _, item in ipairs(items) do if item.note then notes[#notes + 1] = "Note: " .. item.note end end
+  if #notes > 0 then lines[#lines + 1] = ""; for _, n in ipairs(notes) do lines[#lines + 1] = n end end
+  if #skipped > 0 then
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "Left as it is:"
+    for _, s in ipairs(skipped) do lines[#lines + 1] = ("%s: %s"):format(s.name, s.reason) end
+  end
+  if #problems > 0 then
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "Problems (not saved):"
+    for _, p in ipairs(problems) do lines[#lines + 1] = ("%s: %s"):format(p.name, p.message) end
+  end
+  return table.concat(lines, "\n")
+end
+
+--- Calls save() of every item, in order. A failing save doesn't stop the others.
+--- Returns the list of failures ({ name, message }).
+function ModeEffects.save_taken(items)
+  local failures = {}
+  for _, item in ipairs(items) do
+    local ok, err = pcall(item.save)
+    if ok then
+      log:info("saved current look: %s", item.text)
+    else
+      failures[#failures + 1] = { name = item.name, message = first_line(err) }
+      log:warn("saving current look failed: %s: %s", item.name, tostring(err))
+    end
+  end
+  return failures
+end
+
 -- Reading the status (for status displays) ------------------------------
 --- Names of all registered effects, in run order.
 function ModeEffects.names()
@@ -289,6 +362,39 @@ function ModeEffects.self_test()
     except_reason = "not at startup" })
   check("except: effect not run, reported as skipped with the reason",
     not ran and res2[1].result == "skipped" and res2[1].message == "not at startup")
+
+  -- save current look
+  local saved = {}
+  local take_effects = {
+    { name = "none",     apply = function() return "ok", "" end }, -- no take_current: left out
+    { name = "changes",  apply = function() return "ok", "" end,
+      take_current = function(mode) return { text = "a -> b (" .. mode .. ")", note = "careful",
+        save = function() saved[#saved + 1] = "changes" end } end },
+    { name = "same",     apply = function() return "ok", "" end, take_current = function() return nil, "unchanged" end },
+    { name = "throws",   apply = function() return "ok", "" end, take_current = function() error("boom", 0) end },
+    { name = "fails",    apply = function() return "ok", "" end,
+      take_current = function() return { text = "x", save = function() error("disk full", 0) end } end },
+  }
+  local items, skipped, problems = ModeEffects.take_current(Mode.SHOW, take_effects)
+  check("take current: effects without it are left out, nothing is saved yet",
+    #items == 2 and items[1].name == "changes" and items[1].text == "a -> b (show)" and #saved == 0)
+  check("take current: unchanged is skipped with its reason, an error is a problem",
+    #skipped == 1 and skipped[1].reason == "unchanged" and #problems == 1 and problems[1].message == "boom")
+  local text = ModeEffects.describe_take(Mode.SHOW, items, skipped, problems)
+  check("describe: question, lines, note, skipped and problems",
+    text:find("as SHOW mode?", 1, true) and text:find("a -> b (show)", 1, true) and text:find("Note: careful", 1, true)
+    and text:find("same: unchanged", 1, true) and text:find("throws: boom", 1, true) and true or false)
+  check("describe: nothing to save", ModeEffects.describe_take(Mode.EDIT, {}, {}, {}) == "Nothing to save for EDIT mode.")
+  Log.set_sink(function() end) -- the failing save is expected
+  local failures = with_reaper(fakes, ModeEffects.save_taken, items)
+  Log.set_sink(nil)
+  check("save: every item saved in order, a failing one doesn't stop the others",
+    #saved == 1 and #failures == 1 and failures[1].name == "fails" and failures[1].message == "disk full")
+  check("registry: the theme, screenset and layout effects can save the current look", (function()
+    local have = {}
+    for _, e in ipairs(ModeEffects.load()) do if type(e.take_current) == "function" then have[e.name] = true end end
+    return have.theme and have.screenset and have.layout or false
+  end)())
 
   return results
 end

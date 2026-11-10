@@ -3,6 +3,20 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-10 - Step 3: Save current look for a mode
+- New action "SiSt-Live: Save current look for current mode" (Modes/): one confirmation lists what it stores for the
+  current mode (theme: old -> new, layouts: old -> new, "screenset #NN: overwritten with the current windows and
+  dockers"), plus what is left as it is and problems. Yes stores, No changes nothing; nothing is re-applied. No
+  autosave of the look (a window closed by accident on stage would become the show look).
+- Effect contract: optional `take_current(mode)` looks only and returns `{ text, note?, save }` or `nil, reason`;
+  errors become problem lines. Theme (loaded theme file, same rules as "current"), Layout (tcp, trans, mcp),
+  Screenset (runs "Screenset: Save window set #NN", IDs 40474-40483, into the mode's slot; no slot set -> left alone
+  with "set one in Configure modes first", Sina, 2026-11-10). `ModeEffects.take_current` / `describe_take` /
+  `save_taken` collect, describe and save. Typing "current" for the theme uses the same `Theme.current_ref`.
+- The screenset action check is now two lines: "window sets (load)" and "window sets (save)".
+- Not done (Sina: later): toolbar button. The configuration window will call the same functions.
+- Self-test: 455 passed (53 scenarios, 446 checks, 9 live checks). Live test: 98 passed.
+
 ## 2026-11-10 - Step 3: Action IDs, part 2 (native actions, split)
 - `Actions.require_native` is gone: the Screenset, Fullscreen and KeySection effects run their native action by its
   fixed ID without checking first (Sina, 2026-11-10: native IDs are trusted; a vanished one is rare). The self-test
