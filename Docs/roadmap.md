@@ -1,13 +1,14 @@
 # SiSt-Live roadmap
 
-What's still to do, in order. Reasons and rules: Docs/design-decisions.md. Finished work:
+What's still to do. Order of the steps (2026-11-10): 3, 7, 4, 5, 6, 8 (numbers kept so older references stay
+valid). Reasons and rules: Docs/design-decisions.md. Finished work:
 Docs/completed-tasks.md.
 
 ## Status
 
 - Done: step -1, step 0, step 1, step 1b, step 2, step 2b.
+- Next: step 3 (starting with 3a), then step 7.
 - Bug fix 2026-11-10: Start Show "No" now switches recording off (see completed tasks).
-- Next: step 3.
 
 ## Step 1b: Live test extensions - DONE 2026-10-25 (see completed tasks)
 
@@ -43,6 +44,11 @@ Docs/completed-tasks.md.
 
 ## Step 3: Simplify and prepare generalization (behaviour unchanged)
 
+### 3a first: tests Claude can run (2026-11-10)
+Every step ends with "self-test + live test green". When Claude can start both and read the reports
+(`reaper.exe -nonewinst <script>`, step 2b; edit mode only, the REAPER window jumps), every later step gets faster
+and safer.
+- Live test: unattended mode (no questions, results in a report file next to the self-test report).
 - Tests: strict fakes SelfTest.with_reaper / with_gfx (an unfaked call fails; built-in ExtState and clock); api.X
   -> reaper.X module by module with unchanged assertions; then trim tests by the rule "what deserves a test";
   ActionReferenceChecks.check() switches to with_reaper.
@@ -51,6 +57,9 @@ Docs/completed-tasks.md.
 - Self-test must not write config files: today it registers its scripts (AddRemoveReaScript with commit) on every
   run, and that makes REAPER rewrite reaper-kb.ini (confirmed 2026-10-26). Look the actions up first; register only
   when missing.
+
+### Rest of step 3
+
 - One loader line per script, replacing the "optional library" fallbacks and the Setlist's 3-folder lib search;
   a broken install gets one clear message. The loader auto-registers the test list.
 - Mode effects can't load or run: one uniform message (log + dialog in show mode) for every place that switches
@@ -76,6 +85,11 @@ Docs/completed-tasks.md.
 - Per-mode setting descriptions (on/off, number with range, choice, custom with "take current"), storage per mode
   once; keep the Windows effect's "never set = default" vs "empty = none"; the text dialog becomes one renderer,
   usable by the future configuration window.
+- Save current look for a mode (2026-11-10): one action/button "Save current state as SHOW (EDIT) mode" takes the
+  current theme, TCP / MCP / transport layouts and screenset (saves the window set into the mode's slot) into the
+  current mode's settings, built on "take current". Later also a button in the configuration window. NO autosave
+  of theme/layouts/screenset (a window closed by accident on stage would become the new show look); SiSt-Live
+  window positions keep autosaving as today.
 - Remove Window debug scaffolding (size_suffix, remembered_size, client_w/h) and the Log debug-flag cache.
 - Window.parse_state: pattern parser instead of load(), tested against real stored values.
 - Make shared candidates general: Theme.configure (show/edit accents), Log.configure (show-mode console rule,
@@ -98,6 +112,34 @@ Docs/completed-tasks.md.
   Looper.lua. The melodies stay.
 - DECISION: rename ExtState sections to the naming rule (Sist-Live_Setlist, SiSt-Live_Status) with a one-time
   migration, or leave them?
+
+## Step 7: Setlist (comes right after step 3)
+
+### 7a: rework (behaviour unchanged except the conflict resolver)
+First, so every feature below is built once on the new structure.
+
+- Redesign the conflict resolver (Sina, 2026-10-25). There should never be a reason to close the Setlist because of a
+  conflict: Cancel must not close it (today it does). Dialogs stay, also in show mode.
+- First tests recording the current behaviour of the project-tab check (incl. the wrong-removal case).
+- Split into data (parse/serialize/autosave), sync (pure, tested) and view; use win.mouse.
+- Right-click menus use Window.build_menu.
+- Project length: test again whether reaper.GetProjectLength is reliable now (the code says it wasn't; API may
+  have changed) and decide on a fallback for projects without an end marker.
+- The live test loads the test setlist through the Setlist's own loading code.
+
+### 7b-7f: features (each its own commit, decided 2026-11-10)
+- 7b No locking in show mode: everything works in show mode; destructive actions (remove entry, reset, load
+  setlist) ask for confirmation while in show mode.
+- 7c Autosave: no question and no automatic load at start (loading also asks to open the previous projects).
+  The Setlist starts from the open projects; "Restore last setlist" in the menu brings the previous session's
+  list back (and offers to open missing projects). The previous session's autosave must survive the first change
+  of the new session (own file until the next session). "Reset setlist" in the menu. All launch modifiers removed
+  (Shift = autosave, Ctrl = window state -> "Return to default position", Alt = self-tests -> step 3 self-test).
+- 7d Text entries edited in place in the list, no popup (lib/Gui TextField, built for this).
+- 7e Multi-selection of entries (move / remove several).
+- 7f Indicators per project: loop, no stop at end, no end (manual next), with tooltips. One shared "what does
+  this project do at its end" scan (LOOP regions, which Project End Handler the end marker calls), also used by
+  the action-marker check.
 
 ## Step 4: General repo and SiSt-Local
 
@@ -136,49 +178,76 @@ Docs/completed-tasks.md.
 - Duplicates (Stop all / ignore Routing, Play / Play-stop, delete top / bottom lane) -> shared function + thin
   action files that KEEP THEIR FILE NAMES.
 - Region Looper (both versions) into Setup's @provides.
+- Routing project not found by name (2026-11-10): a flag in the project's own ExtState (saved in the .rpp, no
+  paths, no naming rule), set with a toggle action that shows its state for the current project. Must be clearly
+  visible: "ROUTING" badge on its Setlist entry, shown in the Status Display. The name check stays as a fallback
+  for existing projects. Everything also works without a routing project (Start Show then starts/records none).
+  Lives in the shared helper that replaces FindProjectByName.
 
-## Step 7: Setlist
+## Step 8: Setup and installation (2026-11-10)
 
-- Redesign the conflict resolver (Sina, 2026-10-25). There should never be a reason to close the Setlist because of a
-  conflict: Cancel must not close it (today it does). Dialogs stay, also in show mode.
-- First tests recording the current behaviour of the project-tab check (incl. the wrong-removal case).
-- Split into data (parse/serialize/autosave), sync (pure, tested) and view; use win.mouse.
-- Right-click menus use Window.build_menu.
-- Project length: test again whether reaper.GetProjectLength is reliable now (the code says it wasn't; API may
-  have changed) and decide on a fallback for projects without an end marker.
-- The live test loads the test setlist through the Setlist's own loading code.
+After step 5: what Setup installs depends on the package split. Ends with the clean-install test, then 1.0.
+- Setup checks the minimum REAPER version and the required extensions (SWS, js_ReaScriptAPI, ReaImGui).
+- Setup adds the needed ReaPack repositories and installs what's missing. Verify first: ReaPack's scripting API
+  can add/sync repositories; can it install single packages or only whole repositories?
+- ReaPack itself: a script can't install it (nothing runs without it). The portable config ships it; for a fresh
+  REAPER one manual step. Look at a startup-step download only if that's not enough (not before 1.0).
+- Required devices (generalized WING detection): a setting with name patterns (e.g. "WING" MIDI in/out). Both
+  problems happen today: (1) device not enabled in the preferences -> check and say exactly what to enable
+  (enabling needs reaper.ini + restart; automatic only if the check isn't enough); (2) the routing project points
+  at the wrong device (MIDI ports are stored by device number, which differs per machine) -> a "fix routing"
+  action re-points the routing project's hardware MIDI ins/outs to the device matching the pattern.
+- Clean-install test: fresh portable REAPER -> ReaPack -> Setup -> self-test.
+- SiSt-Live 1.0: rebuild index.xml, remove old entries.
 
-## Later / ideas
+## To be implemented (planned, no fixed slot yet)
 
+- Review the Status Display (2026-11-10): kept as it is for now (mode, mode switch, failed mode effects, missing
+  libraries). Probably becomes a show health monitor (play/rec mode, devices, routing project running, disk space,
+  problems from all components); decide what to show after step 8, when we know what Setup checks. Includes the
+  old item "reporting channel to the Status Display; possibly run the checks at startup".
+- Setlist: link text entries to projects (2026-11-10): a linked text entry moves with its project when
+  reordering; an unlinked one keeps its place in the list.
 - Configuration window (setting descriptions + Gui), replacing the text dialog. Needs a checkbox widget (also for
   the live test's test selection).
-- Project export workflow: more control over which track template gets imported (today
-  Rendering/SiSt-Live_Import IVS_export track template.lua), easier batch rendering. Likely builds on 5c.
-- SiSt-Live_Workflows: rework so repetitive tasks can be applied to many projects very easily. Overlaps with 5c:
-  decide then whether it becomes part of Batch Project Tools.
+- Workflows (home: Batch Project Tools, 2026-11-10; after 5c and the configuration window): general operations
+  with parameters, run through BatchProjects on chosen projects: rename tracks, add tracks, change existing tracks
+  (inserts / FX, automation); the functions in Project Management/SiSt-Live_Workflows.lua are the starting list.
+  Invivas specifics (IVS_* templates, track names) only as saved presets, not code. GUI: pick operation, fill in
+  parameters, pick projects, run. Absorbs the project export workflow (track template import, today
+  Rendering/SiSt-Live_Import IVS_export track template.lua; easier batch rendering).
+- Readable action markers (2026-11-10; after the action lookup by file name, step 3): today a marker must be
+  `!<command ID>`, unreadable `_RS...` for scripts and broken when a script moves. Design decided then: (a)
+  background script runs readable markers during playback, or (b) a tool keeps a readable label next to the ID
+  and repairs the ID by file name (markers stay native). Leaning (b): native markers keep working if a script
+  fails. Fits the action-marker check (Batch Project Tools).
+- Shortcuts review (config work, any time, together with Sina): transport shortcuts in edit mode, MIDI editor;
+  close to REAPER defaults where sensible. Pairs with the show-protection decision (step 3) and with version
+  control for the config files.
 - Debug logging per component: debug output only for chosen components (logger names already exist); the switch
   stores "all" or a list. After step 3/5a.
 - Better problem messages than reaper.MB (copyable, formatted): short MB + details in console/log, or a small
   Gui message window. Never a modal dialog in show mode from background code.
-- Reporting channel to the Status Display; possibly run the checks at startup and show
-  problems there.
 - Web interface (WIP), incl. its bugs: Save open project info uses project.name instead of projName
   (OpenProjects always empty); Remote - Select project with empty ExtState.
-- SiSt-Live 1.0: rebuild index.xml, remove old entries.
-- Before 1.0: clean-install test (fresh portable REAPER -> ReaPack -> Setup -> self-test).
-- Setup checks the minimum REAPER version and the required extensions (SWS, js_ReaScriptAPI, ReaImGui).
+
+## Ideas (not decided whether we do them)
+
+- Show control: setlist entries that send MIDI (later OSC), can be triggered by MIDI, and run REAPER actions;
+  linkable to projects like text entries. Start MIDI only. Not before step 7 is done.
 - TO BE DISCUSSED: how the config is distributed (whole portable install, config file, ReaPack), and whether the
   config files (reaper-kb.ini etc.) get version control (today config changes leave no history).
 
 ## Open decisions (at their step)
 
 - 3: static analysis? (to be discussed)
-- Later: config distribution and version control for the config files (to be discussed)
-
 - 3: rename ExtState sections (with migration)?
+- 3: show protection (preferred: mouse-modifier effect + SHOW keyboard; is locking still needed?).
 - 4: index name + categories, working copy, SiSt-Local packaging, may SiSt-Local use the SiSt Libraries?
 - 5a: namespace for the shared modules?
 - 5c: Batch Project Tools design.
-- 3: show protection (preferred: mouse-modifier effect + SHOW keyboard; is locking still needed?).
 - 5d: Toolbar package name.
 - 6: Start Song start condition (preferred: playhead before =START instead of the "SONG ANNOUNCEMENT" region).
+- 8: can ReaPack's API install single packages?
+- Later: readable action markers design (a or b); what the Status Display shows; config distribution and version
+  control for the config files.
