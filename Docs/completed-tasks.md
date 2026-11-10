@@ -3,6 +3,25 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-10 - Step 3a: tests Claude can run
+- Self-test no longer writes config files: Actions.file_command / find_registered read reaper-kb.ini (read only);
+  AddRemoveReaScript only for a script that is missing from the action list (it made REAPER rewrite
+  reaper-kb.ini on every run). Claude starts the self-test and the live test itself (`reaper.exe -nonewinst`),
+  never while a show runs.
+- Unattended live test: Debug/SiSt-Live_DEBUG Run Live Test unattended.lua (not in the action list or package).
+  Show workflow only, no loopbacks, no questions, never closes projects (refuses and says why), test projects stay
+  open. It loads the live test with loadfile and passes "unattended" as the argument. A refused live test start
+  (also the manual one) is now written to Live test report.txt, not only the console.
+- Report: "N passed (M tests, K live checks)". The live checks depend on the machine's config (keyboard effect,
+  locking, screenset, windows), which probably explains 729 -> 728 (not proven).
+- Strict fakes: SelfTest.with_reaper / with_gfx (an unfaked call fails, ExtState built in, real clock passes
+  through, the real global always comes back). The `api` parameter is gone from 15 lib modules; code calls
+  reaper.X / gfx.X directly. Actions caches command IDs per reaper table. ActionReferenceChecks.check() asks
+  REAPER itself.
+- Tests trimmed by "what deserves a test": 682 -> 387 tests (the Setlist's own tests wait for step 4a). The Setlist
+  no longer re-runs the Gui library's tests.
+- Self-test: 435 passed (387 tests, 48 live checks). Live test: 98 passed (show workflow only).
+
 ## 2026-11-10 - Roadmap steps renumbered
 - Roadmap steps renumbered to match the order of work: Setlist 7->4, General repo 4->5, Extract
   packages 5->6 (5a-5d -> 6a-6d), Older scripts 6->7.

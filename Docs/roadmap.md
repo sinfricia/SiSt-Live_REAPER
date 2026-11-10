@@ -5,25 +5,11 @@ What's still to do. Reasons and rules: Docs/design-decisions.md. Finished work: 
 
 ## Status
 
-- Done: step -1, step 0, step 1, step 1b, step 2, step 2b.
-- Next: step 3 (starting with 3a), then step 4.
+- Done: step -1, step 0, step 1, step 1b, step 2, step 2b, step 3a.
+- Next: the rest of step 3, then step 4.
 - Bug fix 2026-11-10: Start Show "No" now switches recording off (see completed tasks).
 
 ## Step 3: Simplify and prepare generalization (behaviour unchanged)
-
-### 3a first: tests Claude can run (2026-11-10)
-Every step ends with "self-test + live test green". When Claude can start both and read the reports
-(`reaper.exe -nonewinst <script>`, see completed tasks step 2b; edit mode only, the REAPER window jumps), every later step gets faster
-and safer.
-- Live test: unattended mode (no questions, results in a report file next to the self-test report).
-- Tests: strict fakes SelfTest.with_reaper / with_gfx (an unfaked call fails; built-in ExtState and clock); api.X
-  -> reaper.X module by module with unchanged assertions; then trim tests by the rule "what deserves a test";
-  ActionReferenceChecks.check() switches to with_reaper.
-- Self-test count: 729 passed on 2026-10-26 (15:03 run, report overwritten), 728 since (0 failed both times).
-  No code change explains it; check while reworking the tests.
-- Self-test must not write config files: today it registers its scripts (AddRemoveReaScript with commit) on every
-  run, and that makes REAPER rewrite reaper-kb.ini (confirmed 2026-10-26). Look the actions up first; register only
-  when missing.
 
 ### Rest of step 3
 
@@ -33,7 +19,9 @@ and safer.
   the mode (via the loader / Mode library); then remove the special dialog from the toggle action.
 - Gui: Zoom (repeated in Setlist, Status Display, Toolbar); popup_menu (menu at the mouse without a window, built
   on Window.build_menu; the live test uses it).
-- Action IDs (see design decisions): lookup by file name (verify the API first), per-package declaration table,
+- Action IDs (see design decisions): lookup by file name (verify the API first; test SWS CF_EnumerateActions as the
+  lookup, its script names are "Script: <file>.lua", with reaper-kb.ini as the fallback, today's way; Sina wants
+  that tested only at this step), per-package declaration table,
   one on-demand check in Self-Test; remove Actions.require_native from the Screenset, Fullscreen, KeySection
   and Locking effects; script registration moves to Setup; split Actions into general part + SiSt-Live's table.
 - Per-project mode effects with ownership (2026-10-25; only if still needed after the show protection decision): a

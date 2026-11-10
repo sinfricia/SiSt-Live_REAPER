@@ -95,10 +95,10 @@ only ever run on demand; lookups only where unavoidable.
   the tools and makes no distinction between packages. Calling other packages' scripts is for windows/toggles;
   logic is called as library functions.
 - Lookup by FILE NAME (not path): survives moves and different repo/category names; prefixes keep names unique;
-  duplicates fail clearly. Verify first how to enumerate the action list (SWS CF_EnumerateActions, or
-  reaper-kb.ini as fallback).
-- Looked-up IDs are cached in memory for the script run only, never stored (command numbers change between
-  sessions; a stored name ID is exactly the _RS problem).
+  duplicates fail clearly. Today (step 3a) the lookup reads reaper-kb.ini (read only); whether SWS
+  CF_EnumerateActions is the better source is tested in the roadmap step that builds the lookup.
+- Looked-up IDs are cached in memory for the script run only, never stored (REAPER assigns the number, so it is
+  not ours to keep; a stored name ID is exactly the _RS problem).
 - Registering missing scripts in the action list moves to Setup (a lookup only looks).
 - No new _RS IDs in code.
 
