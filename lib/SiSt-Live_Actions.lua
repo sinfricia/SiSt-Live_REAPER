@@ -14,8 +14,10 @@
 --    list, so they differ per installation. They are looked up by the script's file:
 --      Actions.script_command(id, api)   command ID of a script in Actions.SCRIPTS, e.g. "mode"
 --    The files are where the SiSt-Live package installs them, below <resource path>/Scripts/SiSt-Live.
---    reaper.AddRemoveReaScript returns the command ID of a script that is in the action list (and adds it
---    if it isn't yet). Results are remembered for the rest of the script run.
+--    A script that is in the action list is found in reaper-kb.ini (read only) and its named ID turned into
+--    the command ID. Only a script that isn't there yet is added with reaper.AddRemoveReaScript: adding makes
+--    REAPER rewrite reaper-kb.ini, even for a script that is already in the list. Results are remembered for
+--    the rest of the script run.
 --    Adding a script: one line in Actions.SCRIPTS.
 --
 -- Self test: Actions.self_test() returns a list of { name, ok }. Uses a fake REAPER api.
@@ -86,19 +88,53 @@ function Actions.script_path(id, api)
   return Actions.join_path(api.GetResourcePath(), file, package.config:sub(1, 1))
 end
 
-local cache = {} -- id -> command ID (only for the real REAPER api)
+--- Pure. Named ID ("_RS...") of the script at `path` (full path) in the main section of reaper-kb.ini, or nil.
+--- kb_text: the file's text. REAPER stores the paths relative to <resource path>/Scripts (or full), with or
+--- without quotes. Separators and case are ignored.
+function Actions.find_registered(kb_text, resource_path, path)
+  local function norm(p) return (p:gsub("[/\\]+", "/"):lower()) end
+  local wanted = norm(path)
+  local scripts = norm(resource_path .. "/Scripts/")
+  for line in ((kb_text or "") .. "\n"):gmatch("([^\r\n]*)\r?\n") do
+    local id, stored = line:match('^SCR%s+%S+%s+0%s+(%S+)%s+"[^"]*"%s+(.-)%s*$')
+    if id and stored ~= "" then
+      stored = norm(stored:match('^"(.*)"$') or stored)
+      if stored == wanted or scripts .. stored == wanted then return "_" .. id end
+    end
+  end
+  return nil
+end
 
---- Command ID of a SiSt-Live script, or nil + reason.
-function Actions.script_command(id, api)
+local function read_kb(api)
+  local f = io.open(api.GetResourcePath() .. package.config:sub(1, 1) .. "reaper-kb.ini", "rb")
+  if not f then return nil end
+  local text = f:read("a")
+  f:close()
+  return text
+end
+
+local cache = {} -- path -> command ID (only for the real REAPER api)
+
+--- Command ID of a script by its file, relative to the package folder ("Transport/x.lua"), or nil + reason.
+--- Finds it in the action list; adds it only if it isn't there yet (see the top of this file).
+function Actions.file_command(file, api)
   api = api or reaper
-  if api == reaper and cache[id] then return cache[id] end
-  local path = Actions.script_path(id, api)
-  if not path then return nil, "unknown script '" .. tostring(id) .. "'" end
+  local path = Actions.join_path(api.GetResourcePath(), file, package.config:sub(1, 1))
+  if api == reaper and cache[path] then return cache[path] end
   if not api.file_exists(path) then return nil, "not installed: " .. path end
-  local cmd = api.AddRemoveReaScript(true, 0, path, true)
+  local named = Actions.find_registered(read_kb(api), api.GetResourcePath(), path)
+  local cmd = named and api.NamedCommandLookup(named) or 0
+  if type(cmd) ~= "number" or cmd <= 0 then cmd = api.AddRemoveReaScript(true, 0, path, true) end
   if type(cmd) ~= "number" or cmd <= 0 then return nil, "could not get an action for " .. path end
-  if api == reaper then cache[id] = cmd end
+  if api == reaper then cache[path] = cmd end
   return cmd
+end
+
+--- Command ID of a SiSt-Live script in Actions.SCRIPTS, or nil + reason.
+function Actions.script_command(id, api)
+  local file = Actions.SCRIPTS[id]
+  if not file then return nil, "unknown script '" .. tostring(id) .. "'" end
+  return Actions.file_command(file, api)
 end
 
 -- Diagnostics & self test ------------------------------------------------------------------
@@ -142,6 +178,20 @@ function Actions.self_test()
   local none, why = Actions.script_command("status", api)
   check("script_command: not installed", none == nil and why:find("not installed", 1, true) ~= nil)
   check("script_command: unknown id", select(2, Actions.script_command("nope", api)):find("unknown", 1, true) ~= nil)
+
+  -- finding a script in reaper-kb.ini (registering instead would make REAPER rewrite the file on every run)
+  local kb = table.concat({
+    'SCR 4 32060 RSmidi "Custom: x.lua" "SiSt-Live/Modes/x.lua"',
+    'SCR 4 0 RSquoted "Custom: x.lua" "SiSt-Live/Modes/x.lua"',
+    'SCR 4 0 RSplain "Custom: y.lua" SiSt-Live/Transport/y.lua',
+    'SCR 4 0 RSfull "Custom: z.lua" "D:\\Other\\z.lua"',
+  }, "\r\n")
+  check("find_registered: main section only, quoted path, separators and case ignored",
+    Actions.find_registered(kb, "C:\\R", "c:\\r\\Scripts\\SiSt-Live\\MODES\\x.lua") == "_RSquoted")
+  check("find_registered: path without quotes, full path",
+    Actions.find_registered(kb, "C:/R", "C:/R/Scripts/SiSt-Live/Transport/y.lua") == "_RSplain"
+    and Actions.find_registered(kb, "C:/R", "d:/other/z.lua") == "_RSfull"
+    and Actions.find_registered(kb, "C:/R", "C:/R/Scripts/SiSt-Live/Modes/other.lua") == nil)
   local all_listed = true
   for _, id in ipairs(Actions.SCRIPT_ORDER) do all_listed = all_listed and Actions.SCRIPTS[id] ~= nil end
   check("every script in the diagnostics order exists", all_listed)

@@ -14,6 +14,7 @@ REAPER API: Docs/reference/ (generated, not in git). Look signatures up there; n
   commits (one step = one commit) and pushes.
 - When a step is finished, its section moves out of Docs/roadmap.md in the same commit that adds its entry to
   Docs/completed-tasks.md (the Status line keeps the list of done steps).
+- Commits: one step = one commit, with its docs changes in the same commit. Small doc fixes in between (renumbering, tidying) wait for the end of the session or the next step and are committed together, unless Sina asks for one right away.
 
 ## Code
 - Call reaper.X / gfx.X directly, never store `reaper` in a local (tests swap the global). Hot loops only,
@@ -30,3 +31,5 @@ Done = "DEBUG Run Self-Test" green + "DEBUG Run Live Test" green + Docs/Show che
 Must work after every step: the three Project End Handler custom actions, Start Show, Start Song,
 mode switch both ways. Self-test report: Data/SiSt Libraries/Self-test report.txt in the config folder
 (read it, don't ask Sina to paste it).
+Claude starts the self-test itself: `reaper.exe -nonewinst "<config>/Scripts/SiSt-Live/Debug/SiSt-Live_DEBUG Run
+Self-Test.lua"` (runs in the open REAPER; its window jumps). Never start tests while a show is running.

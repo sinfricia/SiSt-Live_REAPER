@@ -801,8 +801,8 @@ local LOOPER_TRACKS  = { "cue", "timecode" } -- muted by the looper while loopin
 local loop = {} -- the region under test: { proj, start, stop, count (-1 = until Stop loop), name, mutes = {} }
 
 local function script_cmd(file)
-  local cmd = reaper.AddRemoveReaScript(true, 0, Actions.join_path(reaper.GetResourcePath(), file, sep), true)
-  if not cmd or cmd <= 0 then error("script not found: " .. file, 0) end
+  local cmd, err = Actions.file_command(file)
+  if not cmd then error("script not found: " .. file .. " (" .. tostring(err) .. ")", 0) end
   return cmd
 end
 
