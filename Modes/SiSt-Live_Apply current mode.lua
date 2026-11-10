@@ -6,8 +6,8 @@
 -- REAPER startup: __startup.lua runs this file with the argument "startup":
 --   local apply_mode = loadfile(reaper.GetResourcePath() .. "/Scripts/SiSt-Live/Modes/SiSt-Live_Apply current mode.lua")
 --   if apply_mode then apply_mode("startup") end
--- Then it always applies EDIT mode (SiSt-Live always starts in edit mode) and leaves locking as it is: locking is
--- per project and may have been set on purpose; it only changes on a real mode switch.
+-- Then it always applies EDIT mode (SiSt-Live always starts in edit mode). That also restores the mouse modifiers if
+-- REAPER was closed or crashed in show mode (see the mouse effect).
 
 local startup = (...) == "startup"
 
@@ -18,12 +18,11 @@ local Mode = require("SiSt-Live_Mode")
 local Log  = require("SiSt-Live_Log")
 local log  = Log.get("ApplyMode")
 
-local mode, opts = Mode.get(), nil
+local mode = Mode.get()
 if startup then
   mode = Mode.EDIT -- Mode.apply sets it, which also lights the mode button correctly
-  opts = { except = { locking = true }, except_reason = "left as it is at REAPER startup" }
 end
-local _, failed, err = Mode.apply(mode, opts) -- dialog if effects failed or could not run
+local _, failed, err = Mode.apply(mode) -- dialog if effects failed or could not run
 log:info("applied %s mode%s, %s", mode, startup and " (REAPER startup)" or "",
   err and ("effects could not run: " .. err) or (failed .. " effect(s) failed"))
 

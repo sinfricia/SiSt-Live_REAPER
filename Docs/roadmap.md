@@ -5,7 +5,7 @@ What's still to do. Reasons and rules: Docs/design-decisions.md. Finished work: 
 
 ## Status
 
-- Done: step -1, step 0, step 1, step 1b, step 2, step 2b, step 3a, step 3 loader (module path line), step 3 mode-effects message (Mode.apply).
+- Done: step -1, step 0, step 1, step 1b, step 2, step 2b, step 3a, step 3 loader (module path line), step 3 mode-effects message (Mode.apply), step 3 mouse mode effect (show protection).
 - Next: the rest of step 3, then step 4.
 - Bug fix 2026-11-10: Start Show "No" now switches recording off (see completed tasks).
 
@@ -13,56 +13,40 @@ What's still to do. Reasons and rules: Docs/design-decisions.md. Finished work: 
 
 ### Rest of step 3
 
-- Gui: Zoom (repeated in Setlist, Status Display, Toolbar); popup_menu (menu at the mouse without a window, built
-  on Window.build_menu; the live test uses it).
-- Action IDs (see design decisions): lookup by file name (verify the API first; test SWS CF_EnumerateActions as the
-  lookup, its script names are "Script: <file>.lua", with reaper-kb.ini as the fallback, today's way; Sina wants
-  that tested only at this step), per-package declaration table,
-  one on-demand check in Self-Test; remove Actions.require_native from the Screenset, Fullscreen, KeySection
-  and Locking effects; script registration moves to Setup; split Actions into general part + SiSt-Live's table.
-- Per-project mode effects with ownership (2026-10-25; only if still needed after the show protection decision): a
-  per-project effect (today: locking) notes in each
-  project's own ExtState (saved in the .rpp) that SiSt-Live changed it and the state before; going back restores
-  exactly that, also for projects opened later in edit mode (Setlist / Status Display watch the projects). Only
-  undoes what SiSt-Live did. Generic helper in ModeEffects, so future per-project effects use the same pattern.
-- DECISION: show protection, more global than per-project locking. Preferred (Sina, 2026-10-25): a new mode
-  effect "mouse modifiers" + the SHOW keyboard section: in show mode, mouse modifiers that change something are
-  removed (global, not per project; later clicks could also do useful show things). To do first: confirm
-  GetMouseModifier / SetMouseModifier cover the needed contexts; keep the edit modifiers safe if REAPER crashes
-  or closes in show mode (fixed edit/show mouse maps as files in the config, or save before switching); list
-  together what counts as "changing" (select allowed? move, trim, fades, envelopes blocked). Then decide whether
-  locking is still needed at all (if not, no ownership needed for it). Other options: show screenset without an
-  editable arrange view; lock every project that becomes active. (Change watch: dropped, overkill.)
-- Per-mode setting descriptions (on/off, number with range, choice, custom with "take current"), storage per mode
-  once; keep the Windows effect's "never set = default" vs "empty = none"; the text dialog becomes one renderer,
-  usable by the future configuration window.
-- Save current look for a mode (2026-11-10): one action/button "Save current state as SHOW (EDIT) mode" takes the
-  current theme, TCP / MCP / transport layouts and screenset (saves the window set into the mode's slot) into the
-  current mode's settings, built on "take current". Later also a button in the configuration window. NO autosave
-  of theme/layouts/screenset (a window closed by accident on stage would become the new show look); SiSt-Live
-  window positions keep autosaving as today.
-- Remove Window debug scaffolding (size_suffix, remembered_size, client_w/h) and the Log debug-flag cache.
-- Window.parse_state: pattern parser instead of load(), tested against real stored values.
-- Make shared candidates general: Theme.configure (show/edit accents), Log.configure (show-mode console rule,
-  file, section).
-- Global debug switch for all packages; SiSt-Live's mode sets a global "quiet console" flag that Log respects.
-- VS Code debugger helper (SiSt Libraries, next to Log; 2026-10-25): finds the newest
-  .vscode/extensions/antoinebalaine.reascript-docs-*/debugger/LoadDebug.lua in the user folder (no user name or
-  version in code), attaches only when a switch is on (off by default, e.g. second entry in "Debug logging
-  on/off"), never in show mode. Called by the loader, so every script can be debugged without extra lines.
-  First check how LoadDebug.lua behaves when VS Code isn't listening and when loaded twice.
-- Setup becomes the entry point for checks (installation, tests, action markers); then remove the DEBUG actions
-  one by one (approval for each).
-- Status Display / Toolbar debug-on-open test runs switch to SelfTest.
-- Editor setup: REAPER/ImGui Lua definition files in the repo, .vscode/settings.json points at them relatively.
-- TO BE DISCUSSED: static analysis (a tool reads the code without running it and reports e.g. variables used
-  before they exist or misspelled names; would have caught the `songs` bug). Decide whether it is worth it.
-- After the loader and the action lookup: simplify the live test. Action IDs by file name instead of 8 literal
-  IDs; general helpers (relative paths, file lists, folder picker, close all projects) into the libraries; one FX
-  name each for Tone Generator / ReaSynth; split into a short main file + LiveTest/Loopback.lua, Show.lua,
-  Looper.lua. The melodies stay.
-- DECISION: rename ExtState sections to the naming rule (Sist-Live_Setlist, SiSt-Live_Status) with a one-time
-  migration, or leave them?
+In this order (decided 2026-11-10): decisions first, core cleanups before the things that build on them, the live
+test and the DEBUG actions last. Done so far: editor setup (nothing to do in the repo), static analysis (dropped),
+show protection decision (the mouse mode effect, see completed tasks).
+
+1. DECISION: rename ExtState sections to the naming rule (SiSt-Live_Setlist, SiSt-Live_Status) with a one-time
+   migration, or leave them? (Before code that stores settings is touched.)
+2. Remove Window debug scaffolding (size_suffix, remembered_size, client_w/h) and the Log debug-flag cache.
+3. Window.parse_state: pattern parser instead of load(), tested against real stored values.
+4. Gui: Zoom (repeated in Setlist, Status Display, Toolbar); popup_menu (menu at the mouse without a window, built
+   on Window.build_menu; the live test uses it).
+5. Action IDs (see design decisions): lookup by file name (verify the API first; test SWS CF_EnumerateActions as
+   the lookup, its script names are "Script: <file>.lua", with reaper-kb.ini as the fallback, today's way; Sina
+   wants that tested only at this step), per-package declaration table, one on-demand check in Self-Test; remove
+   Actions.require_native from the Screenset, Fullscreen and KeySection effects; split Actions into
+   general part + SiSt-Live's table. Script registration moves to Setup (belongs with item 9).
+6. Per-mode setting descriptions (on/off, number with range, choice, custom with "take current"), storage per
+   mode once; keep the Windows effect's "never set = default" vs "empty = none"; the text dialog becomes one
+   renderer, usable by the future configuration window.
+7. Save current look for a mode (2026-11-10; builds on 6): one action/button "Save current state as SHOW (EDIT)
+   mode" takes the current theme, TCP / MCP / transport layouts and screenset (saves the window set into the
+   mode's slot) into the current mode's settings, built on "take current". Later also a button in the
+   configuration window. NO autosave of theme/layouts/screenset (a window closed by accident on stage would
+   become the new show look); SiSt-Live window positions keep autosaving as today.
+8. Logging in one go: make shared candidates general (Theme.configure: show/edit accents; Log.configure:
+   show-mode console rule, file, section); global debug switch for all packages, SiSt-Live's mode sets a global
+   "quiet console" flag that Log respects. (The VS Code debugger helper was dropped, 2026-11-10: see design
+   decisions, "Editor".)
+9. Setup as the entry point for checks, in this order: Status Display / Toolbar debug-on-open test runs switch to
+    SelfTest; Setup becomes the entry point for checks (installation, tests, action markers) and registers the
+    scripts in the action list (from 5); then remove the DEBUG actions one by one (approval for each).
+10. After 5: simplify the live test. Action IDs by file name instead of 8 literal IDs; general helpers (relative
+    paths, file lists, folder picker, close all projects) into the libraries; one FX name each for Tone Generator
+    / ReaSynth; split into a short main file + LiveTest/Loopback.lua, Show.lua, Looper.lua. The melodies stay.
+
 
 ## Step 4: Setlist
 
@@ -181,7 +165,8 @@ After step 6: what Setup installs depends on the package split. Ends with the cl
 - Better problem messages than reaper.MB (copyable, formatted): short MB + details in console/log, or a small
   Gui message window. Never a modal dialog in show mode from background code.
 - Web interface (WIP), incl. its bugs: Save open project info uses project.name instead of projName
-  (OpenProjects always empty); Remote - Select project with empty ExtState.
+  (OpenProjects always empty); Remote - Select project with empty ExtState; Save open project info crashes for a
+  project path without a folder part (`project_path:match("^.+[\\/](.+)$")` returns nil, then `:gsub` on nil).
 
 ## Ideas (not decided whether we do them)
 
@@ -192,9 +177,7 @@ After step 6: what Setup installs depends on the package split. Ends with the cl
 
 ## Open decisions (at their step)
 
-- 3: static analysis? (to be discussed)
 - 3: rename ExtState sections (with migration)?
-- 3: show protection (preferred: mouse-modifier effect + SHOW keyboard; is locking still needed?).
 - 5: index name + categories, working copy, SiSt-Local packaging, may SiSt-Local use the SiSt Libraries?
 - 6a: namespace for the shared modules?
 - 6c: Batch Project Tools design.

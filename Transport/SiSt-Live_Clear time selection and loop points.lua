@@ -5,10 +5,10 @@
 -- Replacement for the native action 40020 "Time selection: Remove (unselect) time selection and
 -- loop points" in custom actions (Start Song, Project End Handler).
 --
--- Why: in show mode REAPER's locking locks the time selection and loop points. Action 40020 then
+-- Why: when REAPER's locking locks the time selection and loop points, action 40020
 -- stops and asks "Time selection locked. Unlock and remove now?". This script clears both directly
 -- through the API, which doesn't go through the action system, so no prompt appears and the lock
--- itself stays on.
+-- itself stays on. (SiSt-Live no longer locks in show mode; the script is kept as it is used in custom actions.)
 --
 -- Works on the ACTIVE project tab, like 40020 does. In a custom action it therefore acts on whatever
 -- tab is active at that step (e.g. after "Switch to next project tab": the new song).

@@ -11,7 +11,7 @@
 --   - screenset: number of a window set saved in REAPER's Screensets window (loaded on every switch)
 --   - fullscreen: on / off
 --   - keyboard: main, or the alt section number (1 = Main alt-1)
---   - locking: on (all lock modes except full item, every open project) / off
+--   - mouse: block (show mode: switches item, envelope and time selection mouse actions off) / restore
 --   - windows: open (show mode: opens the setlist, status display and toolbar) / restore (closes
 --     the ones that show mode opened). Never configured: show = open, edit = restore
 --   An empty field leaves that part of REAPER alone. Set both modes, otherwise switching back

@@ -414,7 +414,7 @@ function SelfTest.run_suites(suites, title, opts)
   both("")
   -- A scenario is a named group of checks: in a component's result list, checks named "[Group] text" form the
   -- group "Group"; checks without that prefix form one scenario with the whole component. Live checks look at
-  -- this machine's config (keyboard effect, locking, screenset, windows), so their number
+  -- this machine's config (keyboard effect, screenset, windows), so their number
   -- differs between machines and configs; it is shown apart from the tests.
   both(("Result: %d passed (%d scenarios, %d checks, %d live checks), %d failed, %d warning%s"):format(
     total_p, scenario_count, total_p - live_p, live_p, total_f, total_w, total_w == 1 and "" or "s"))

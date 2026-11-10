@@ -3,6 +3,32 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-10 - Step 3: show protection (mouse mode effect), editor, static analysis
+- New mode effect "mouse" (lib/ModeEffects/SiSt-Live_ModeEffect_Mouse.lua). Show mode: saves the current
+  assignments of the blocked contexts to Data/SiSt-Live/mouse-edit-state.txt, then sets every key combination to "No
+  action". Edit mode: restores from the file and deletes it. The file is written and read back BEFORE anything is
+  blocked and never overwritten while it exists; after a crash in show mode the next start (edit mode, __startup.lua)
+  restores it. The edit state is simply the current Preferences > Mouse Modifiers, nothing else to maintain; changes to
+  a blocked context made in show mode are overwritten by the restore. Settings: "SHOW mouse" = block, "EDIT mouse" =
+  restore (Configure modes; empty = leave alone). Blocked (list at the top of the effect file): item (drag, click,
+  double-click, edge, fade, lower half), crossfade, envelopes, ruler drag, empty-track drag, arrange right-drag.
+  Not blocked: lanes, middle-drag scrolling, MIDI editor, clicks in ruler / track area / cursor handle (edit cursor;
+  with Sina's seek settings these don't move the play position, tested 2026-11-10).
+- Probe in the open REAPER (backed up the ini first): "No action" reads back as "0", a restore from a dump is exact
+  for all slots; side effect: REAPER then lists previously implicit default slots explicitly in reaper-mouse.ini
+  (same behaviour, longer file).
+- Known and accepted: clicking an item still selects it (built into REAPER, not a mouse modifier); the cursor over item
+  edges and envelope points still shows the edit icons. Cursor images can't follow the mode: custom cursors are .cur
+  files in the resource path's Cursors folder and REAPER needs a restart to load them (reaper.fm/sdk/cursors).
+- Locking removed in the same commit (Sina, 2026-11-10): the Locking effect, its tests, its Setup entry and the
+  startup exception are gone, so the per-project ownership idea is dropped. Its old settings `locking_show` /
+  `locking_edit` stay unused in reaper-extstate.ini. Project locking that is already on in a project stays on until
+  switched off by hand. `ModeEffects.apply_all`'s `except` option has no caller any more (kept, tested).
+  "Clear time selection and loop points" stays: it is used by custom actions.
+- Editor: nothing to do in the repo (the ReaScript extension writes .vscode/settings.json itself, per machine);
+  static analysis dropped after a trial (93 warnings, 92 noise); no VS Code debugger helper. Design decisions, "Editor".
+- Self-test: 422 passed (51 scenarios, 389 checks, 33 live checks; the Locking effect's tests are gone). Live test: 98 passed.
+
 ## 2026-11-10 - Step 3: uniform mode-effects message
 - New `Mode.apply(mode, opts)`: sets the mode, then runs the mode effects. Every place that switches or re-applies
   the mode uses it (Toggle Edit-Show Mode, Apply current mode, Configure modes, the Status Display's mode and

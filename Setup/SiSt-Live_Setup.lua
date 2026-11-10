@@ -45,7 +45,7 @@
 --   - Setlist (was Project List 0.5): edit/show mode, theme colors, position per mode, window menu,
 --     autosave with a question at the first start, follow-scroll, off-screen arrow, Ctrl + wheel zoom
 --   - Status display: shows the mode and failed mode effects, position per mode
---   - Edit/show mode with mode effects: theme, layouts, screenset, fullscreen, keyboard section, locking
+--   - Edit/show mode with mode effects: theme, layouts, screenset, fullscreen, keyboard section, mouse modifiers
 --   - Debug actions: "DEBUG Toggle Logging" and "DEBUG Run Self-Test"
 -- @provides
 --   [main] .
@@ -73,7 +73,7 @@
 --   [nomain] ../lib/ModeEffects/SiSt-Live_ModeEffect_Fullscreen.lua
 --   [nomain] ../lib/ModeEffects/SiSt-Live_ModeEffect_Layout.lua
 --   [nomain] ../lib/ModeEffects/SiSt-Live_ModeEffect_KeySection.lua
---   [nomain] ../lib/ModeEffects/SiSt-Live_ModeEffect_Locking.lua
+--   [nomain] ../lib/ModeEffects/SiSt-Live_ModeEffect_Mouse.lua
 --   [nomain] ../lib/ModeEffects/SiSt-Live_ModeEffect_Windows.lua
 --   [nomain] ../lib/Gui/Theme.lua
 --   [nomain] ../lib/Gui/Window.lua
@@ -88,7 +88,7 @@
 --   - SiSt-Live: Setup: shows the installed version and checks the installation
 --   - Toggle Edit/Show mode: switches the mode. Toolbar button lit = show mode
 --   - Configure modes: what happens in REAPER when the mode changes (theme, layouts, screenset,
---     fullscreen, keyboard section, locking, windows)
+--     fullscreen, keyboard section, mouse modifiers, windows)
 --   - Apply current mode: applies the current mode again (e.g. from Scripts/__startup.lua)
 --   - Setlist: the setlist (project tabs in show order)
 --   - Status Display: the mode and any problems

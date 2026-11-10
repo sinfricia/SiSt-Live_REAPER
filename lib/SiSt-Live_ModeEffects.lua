@@ -58,7 +58,7 @@ ModeEffects.MODULES = {
   "ModeEffects.SiSt-Live_ModeEffect_Layout",    -- last: layout names depend on the loaded theme, and
                                                 -- its assigned layouts always win over the screenset's
   "ModeEffects.SiSt-Live_ModeEffect_KeySection", -- independent of the others
-  "ModeEffects.SiSt-Live_ModeEffect_Locking",    -- independent of the others
+  "ModeEffects.SiSt-Live_ModeEffect_Mouse",      -- independent of the others
   "ModeEffects.SiSt-Live_ModeEffect_Windows",    -- last: windows open into the final screenset and layouts
 }
 
@@ -130,7 +130,7 @@ end
 --- Makes REAPER match `mode`: runs every effect, stores its status and logs it.
 --- opts.effects: effect list (default: MODULES).
 --- opts.except: { [effect name] = true } effects that are not run (status "skipped" with opts.except_reason),
---- e.g. locking at REAPER startup.
+--- (no caller uses it at the moment; tested).
 --- Returns results ({ name, result, mode, time, message } per effect, in run order) and the
 --- number of failures. Throws only for an invalid mode (a programming error).
 function ModeEffects.apply_all(mode, opts)
@@ -282,10 +282,10 @@ function ModeEffects.self_test()
   check("failure count", failed == 3)
   check("invalid mode is rejected", threw)
 
-  -- except (REAPER startup leaves locking alone): the effect must not run, but gets a status
+  -- except (an effect that is left alone): the effect must not run, but gets a status
   local ran = false
-  local some = { { name = "locking", apply = function() ran = true; return "ok", "" end } }
-  local res2 = with_reaper(fakes, ModeEffects.apply_all, Mode.EDIT, { effects = some, except = { locking = true },
+  local some = { { name = "example", apply = function() ran = true; return "ok", "" end } }
+  local res2 = with_reaper(fakes, ModeEffects.apply_all, Mode.EDIT, { effects = some, except = { example = true },
     except_reason = "not at startup" })
   check("except: effect not run, reported as skipped with the reason",
     not ran and res2[1].result == "skipped" and res2[1].message == "not at startup")

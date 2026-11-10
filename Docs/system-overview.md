@@ -33,7 +33,8 @@ For developers. The operator documentation is a separate project. Plan: roadmap.
   (then one final pass).
 
 ## Modes
-- Edit / Show. Show = safe for stage: theme, layouts, screenset, keyboard section SHOW, fullscreen, locking,
+- Edit / Show. Show = safe for stage: theme, layouts, screenset, keyboard section SHOW, fullscreen, mouse modifiers (item, envelope and
+  time selection mouse actions off, restored from a saved file on return),
   windows (Setlist, Status Display, Toolbar). REAPER always starts in edit mode (__startup.lua).
 
 ## Components

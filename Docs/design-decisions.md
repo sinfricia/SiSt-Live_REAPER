@@ -196,6 +196,32 @@ only ever run on demand; lookups only where unavoidable.
   a new lib file also gets an entry in lib/SiSt-Live_Tests.lua.
 - ReaPack has moved to Codeberg and v2 is in development: details may shift.
 
+## Editor (2026-11-10)
+
+- VS Code with the extensions "ReaScript" (antoinebalaine.reascript-docs) and the Lua language server gives
+  autocomplete and warnings for the REAPER and ReaImGui API. Every machine installs the extension; no copy of its
+  definition files in the repo (third-party files, licence not checked).
+- `.vscode/settings.json` stays out of git (`.gitignore`): the extension itself writes it into the opened
+  workspace, with absolute paths of its own folder (version and user name in the path), so it is per machine.
+  A stale entry is replaced when the extension runs in that workspace. Nothing to maintain in the repo.
+- ReaImGui here is 0.10, which is the extension's default (setting `reascript-docs.reaImGuiVersion`).
+- No static analysis for now (2026-11-10): the Lua language server's command-line check over the repo gave 93
+  warnings, 92 of them noise; with the noisy kinds off it would only report undefined globals (zero today). Not worth
+  the extra config; syntax is checked with `luac -p`. May be reevaluated.
+- No VS Code debugger helper (decided against, Sina and Claude): Claude works through files, tests and logs and
+  can't use an attached debugger, the tests and the log cover the rest, and it would add path searching and a
+  switch to the shared Log library. The only code that used it was removed in step 1.3.
+
+## Show protection (2026-11-10)
+
+- Show mode switches the mouse actions that select, move, edit or draw a time selection off (mode effect "mouse"),
+  globally and not per project. It replaces locking (which is dropped: projects opened later weren't covered and
+  restoring needed per-project ownership).
+- The edit state is not stored anywhere permanent: the effect saves the current Mouse Modifiers preferences in a
+  small file while show mode is blocking them and restores them on the way back (or at the next start after a
+  crash). Edit the mouse modifiers in edit mode as usual.
+- Cursor images can't follow the mode (custom .cur files in the Cursors folder need a REAPER restart).
+
 ## Naming (2026-10-19)
 
 - A window is named after what it IS (a noun), never after a mode: "Show"/"Edit" only ever mean the mode.

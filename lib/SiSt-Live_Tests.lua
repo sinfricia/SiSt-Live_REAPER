@@ -28,7 +28,7 @@ local Layout         = require("ModeEffects.SiSt-Live_ModeEffect_Layout")
 local Screenset      = require("ModeEffects.SiSt-Live_ModeEffect_Screenset")
 local KeySection     = require("ModeEffects.SiSt-Live_ModeEffect_KeySection")
 local Fullscreen     = require("ModeEffects.SiSt-Live_ModeEffect_Fullscreen")
-local Locking        = require("ModeEffects.SiSt-Live_ModeEffect_Locking")
+local Mouse          = require("ModeEffects.SiSt-Live_ModeEffect_Mouse")
 local Windows        = require("ModeEffects.SiSt-Live_ModeEffect_Windows")
 local GuiTheme       = require("Gui.Theme")
 local Window         = require("Gui.Window")
@@ -66,9 +66,8 @@ local components = {
   { name = "Effect fullscreen", file = "lib/ModeEffects/SiSt-Live_ModeEffect_Fullscreen.lua",
     self_test = Fullscreen.self_test, diagnostics = function() return Fullscreen.diagnostics() end,
     live_check = function() return Fullscreen.check_actions() end },
-  { name = "Effect locking", file = "lib/ModeEffects/SiSt-Live_ModeEffect_Locking.lua",
-    self_test = Locking.self_test, diagnostics = function() return Locking.diagnostics() end,
-    live_check = function() return Locking.check_actions() end },
+  { name = "Effect mouse", file = "lib/ModeEffects/SiSt-Live_ModeEffect_Mouse.lua",
+    self_test = Mouse.self_test, diagnostics = function() return Mouse.diagnostics() end },
   { name = "Effect windows", file = "lib/ModeEffects/SiSt-Live_ModeEffect_Windows.lua",
     self_test = Windows.self_test, diagnostics = function() return Windows.diagnostics() end,
     live_check = function() return Windows.check_actions() end },
