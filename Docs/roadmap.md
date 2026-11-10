@@ -17,12 +17,13 @@ In this order (decided 2026-11-10): decisions first, core cleanups before the th
 test and the DEBUG actions last. Done so far: editor setup (nothing to do in the repo), static analysis (dropped),
 show protection decision (the mouse mode effect, see completed tasks).
 
-1. Action IDs (see design decisions): lookup by file name (verify the API first; test SWS CF_EnumerateActions as
-   the lookup, its script names are "Script: <file>.lua", with reaper-kb.ini as the fallback, today's way; Sina
-   wants that tested only at this step), per-package declaration table, one on-demand check in Self-Test; remove
-   Actions.require_native from the Screenset, Fullscreen and KeySection effects; the self-test then reports the native
-   actions as one line per group ("10 window set actions ok"), not one line per action (Sina, 2026-11-10); split Actions into
-   general part + SiSt-Live's table. Script registration moves to Setup (belongs with item 5).
+1. Action IDs, second part (the first part, lookup by file name in the action list and registration in Setup, is
+   done; see completed tasks): remove Actions.require_native from the Screenset, Fullscreen and KeySection effects
+   (Sina, 2026-11-10: native IDs are trusted, a missing one is rare); the self-test reports the native actions as one
+   line per group ("10 window set actions ok"), not one line per action; each effect keeps declaring its own native
+   actions; split Actions into a general part (lookup by name, register, check a list; nothing SiSt-Live-specific) and
+   SiSt-Live's script list; narrow the design decision text ("one table per package" becomes: one list for scripts,
+   the rest stays with its code). Extensions are checked in the Setup step (item 5), not here.
 2. Per-mode setting descriptions (on/off, number with range, choice, custom with "take current"), storage per
    mode once; keep the Windows effect's "never set = default" vs "empty = none"; the text dialog becomes one
    renderer, usable by the future configuration window.

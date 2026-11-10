@@ -230,16 +230,19 @@ run_self_test = function()
   local function fake(opts)
     opts = opts or {}
     local runs, open = {}, {}
-    local cmds, files = {}, {}
+    local list, files = {}, {}
     for i, w in ipairs(Windows.WINDOWS) do
       local path = Actions.join_path("R", Actions.SCRIPTS[w.id], sep)
       if not (opts.missing and opts.missing[w.id]) then files[path] = true end
-      cmds[path] = 1000 + i
+      list[#list + 1] = { 1000 + i, "Script: " .. Actions.base_name(Actions.SCRIPTS[w.id]), "RS" .. i }
     end
     local fakes = {
       GetResourcePath = function() return "R" end,
       file_exists = function(p) return files[p] == true end,
-      AddRemoveReaScript = function(add, section, path) return cmds[path] or 0 end,
+      kbd_enumerateActions = function(_, i) local e = list[i + 1]; if e then return e[1], e[2] end return 0, "" end,
+      ReverseNamedCommandLookup = function(cmd)
+        for _, e in ipairs(list) do if e[1] == cmd then return e[3] end end
+      end,
       GetToggleCommandStateEx = function(section, cmd) return open[cmd] and 1 or 0 end,
       Main_OnCommand = function(cmd)
         runs[#runs + 1] = cmd

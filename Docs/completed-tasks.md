@@ -3,6 +3,20 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-10 - Step 3: Action IDs, part 1 (lookup and registration)
+- `Actions.file_command` / `script_command` find a script by its file name in the action list with
+  `reaper.kbd_enumerateActions` (measured: 6,942 actions in 4 ms; script actions are named "Script: <file>.lua", their
+  named ID starts with "RS", custom actions don't). The reaper-kb.ini parsing (`find_registered`, `read_kb`) and its
+  tests are gone. A lookup only looks: it never adds anything. Messages: "not installed", "not in the action list (run
+  SiSt-Live: Setup)", "more than one script action is named ...".
+- `Actions.register(file)` adds a script to the action list. Setup calls it for every [main] script of its header that
+  is missing and lists the added ones (and failures) in its report. When Claude adds a script during development, it
+  runs Setup in the open REAPER.
+- Tests: Actions (found by name in any folder, translated word before the colon, custom action ignored, not in the
+  list, not installed, ambiguous, lookup adds nothing, register), Setup (scripts_to_register, report), the Windows
+  effect's fakes use the action list.
+- Self-test: 460 passed (52 scenarios, 427 checks, 33 live checks). Live test: 98 passed.
+
 ## 2026-11-10 - Step 3: Gui Zoom
 - New lib/Gui/Zoom.lua: clamp / scale / scaled (10% per level, range -5 to 15 or its own), Ctrl + mouse wheel, and the
   ready-made "Zoom" submenu (Zoom in, Zoom out, Reset zoom). Status Display and Toolbar use it and lost their copies. The

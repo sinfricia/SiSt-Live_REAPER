@@ -11,13 +11,16 @@
 --                                        Only a missing action counts as failed.
 --
 -- 2. SiSt-Live's own scripts. Their command IDs are given by REAPER when a script is added to the action
---    list, so they differ per installation. They are looked up by the script's file:
+--    list, so they differ per installation. They are looked up by the script's FILE NAME:
 --      Actions.script_command(id)        command ID of a script in Actions.SCRIPTS, e.g. "mode"
+--      Actions.file_command(file)        the same for any package file, e.g. "Transport/SiSt-Live_Start Show.lua"
+--    A lookup only looks: it reads the action list (reaper.kbd_enumerateActions: about 4 ms for all ~7000 actions;
+--    a script action is named "Script: <file name>"), nothing is added, no file is written. A script that is not in
+--    the action list is reported ("run SiSt-Live: Setup"). Two script actions with the same file name are reported
+--    as ambiguous. Results are remembered for the rest of the script run.
+--      Actions.register(file)            adds a package script to the action list (Setup does this for every
+--                                        [main] script of the package; REAPER rewrites reaper-kb.ini itself)
 --    The files are where the SiSt-Live package installs them, below <resource path>/Scripts/SiSt-Live.
---    A script that is in the action list is found in reaper-kb.ini (read only) and its named ID turned into
---    the command ID. Only a script that isn't there yet is added with reaper.AddRemoveReaScript: adding makes
---    REAPER rewrite reaper-kb.ini, even for a script that is already in the list. Results are remembered for
---    the rest of the script run.
 --    Adding a script: one line in Actions.SCRIPTS.
 --
 -- Self test: Actions.self_test() returns a list of { name, ok }. Uses fake REAPER functions (SelfTest.with_reaper).
@@ -86,49 +89,46 @@ function Actions.script_path(id)
   return Actions.join_path(reaper.GetResourcePath(), file, package.config:sub(1, 1))
 end
 
---- Pure. Named ID ("_RS...") of the script at `path` (full path) in the main section of reaper-kb.ini, or nil.
---- kb_text: the file's text. REAPER stores the paths relative to <resource path>/Scripts (or full), with or
---- without quotes. Separators and case are ignored.
-function Actions.find_registered(kb_text, resource_path, path)
-  local function norm(p) return (p:gsub("[/\\]+", "/"):lower()) end
-  local wanted = norm(path)
-  local scripts = norm(resource_path .. "/Scripts/")
-  for line in ((kb_text or "") .. "\n"):gmatch("([^\r\n]*)\r?\n") do
-    local id, stored = line:match('^SCR%s+%S+%s+0%s+(%S+)%s+"[^"]*"%s+(.-)%s*$')
-    if id and stored ~= "" then
-      stored = norm(stored:match('^"(.*)"$') or stored)
-      if stored == wanted or scripts .. stored == wanted then return "_" .. id end
+--- Pure. File name of a package path: "Modes/SiSt-Live_X.lua" -> "SiSt-Live_X.lua".
+function Actions.base_name(file)
+  return (file:match("([^/\\]+)$"))
+end
+
+-- The script actions of the action list: file name -> { command IDs }. One list per `reaper` table: a test swaps
+-- in its own fake reaper, so it never sees the real IDs and never leaves fake ones behind (weak keys: a fake's
+-- list goes with the fake).
+local lists = setmetatable({}, { __mode = "k" })
+
+local function script_actions()
+  if lists[reaper] then return lists[reaper] end
+  local by_file = {}
+  local i = 0
+  while true do
+    local cmd, name = reaper.kbd_enumerateActions(0, i)
+    if not cmd or cmd == 0 then break end
+    -- "Script: <file>.lua". The word before the colon may be translated, so only ": " and a Lua file are matched;
+    -- a custom action can't be mistaken for a script because a script's named ID starts with "RS".
+    local file = name and name:match("^[^:]+:%s(.+%.lua)$")
+    if file and (reaper.ReverseNamedCommandLookup(cmd) or ""):sub(1, 2) == "RS" then
+      by_file[file] = by_file[file] or {}
+      table.insert(by_file[file], cmd)
     end
+    i = i + 1
   end
-  return nil
+  lists[reaper] = by_file
+  return by_file
 end
-
-local function read_kb()
-  local f = io.open(reaper.GetResourcePath() .. package.config:sub(1, 1) .. "reaper-kb.ini", "rb")
-  if not f then return nil end
-  local text = f:read("a")
-  f:close()
-  return text
-end
-
--- path -> command ID, one cache per `reaper` table: a test swaps in its own fake reaper, so it never sees the
--- real IDs and never leaves fake ones behind (weak keys: a fake's cache goes with the fake)
-local caches = setmetatable({}, { __mode = "k" })
 
 --- Command ID of a script by its file, relative to the package folder ("Transport/x.lua"), or nil + reason.
---- Finds it in the action list; adds it only if it isn't there yet (see the top of this file).
+--- Only looks: nothing is added to the action list (see the top of this file).
 function Actions.file_command(file)
   local path = Actions.join_path(reaper.GetResourcePath(), file, package.config:sub(1, 1))
-  local cache = caches[reaper] or {}
-  caches[reaper] = cache
-  if cache[path] then return cache[path] end
   if not reaper.file_exists(path) then return nil, "not installed: " .. path end
-  local named = Actions.find_registered(read_kb(), reaper.GetResourcePath(), path)
-  local cmd = named and reaper.NamedCommandLookup(named) or 0
-  if type(cmd) ~= "number" or cmd <= 0 then cmd = reaper.AddRemoveReaScript(true, 0, path, true) end
-  if type(cmd) ~= "number" or cmd <= 0 then return nil, "could not get an action for " .. path end
-  cache[path] = cmd
-  return cmd
+  local base = Actions.base_name(file)
+  local found = script_actions()[base]
+  if not found then return nil, "not in the action list (run SiSt-Live: Setup): " .. base end
+  if #found > 1 then return nil, "more than one script action is named " .. base end
+  return found[1]
 end
 
 --- Command ID of a SiSt-Live script in Actions.SCRIPTS, or nil + reason.
@@ -136,6 +136,17 @@ function Actions.script_command(id)
   local file = Actions.SCRIPTS[id]
   if not file then return nil, "unknown script '" .. tostring(id) .. "'" end
   return Actions.file_command(file)
+end
+
+--- Adds a package script (path relative to the package folder) to the action list. Returns its command ID, or nil +
+--- reason. Call it only for a script that is missing: adding makes REAPER rewrite reaper-kb.ini.
+function Actions.register(file)
+  local path = Actions.join_path(reaper.GetResourcePath(), file, package.config:sub(1, 1))
+  if not reaper.file_exists(path) then return nil, "not installed: " .. path end
+  local cmd = reaper.AddRemoveReaScript(true, 0, path, true)
+  lists[reaper] = nil -- the action list changed
+  if type(cmd) ~= "number" or cmd <= 0 then return nil, "could not add to the action list: " .. path end
+  return cmd
 end
 
 -- Diagnostics & self test ------------------------------------------------------------------
@@ -154,14 +165,43 @@ function Actions.self_test()
   local function check(name, cond) results[#results + 1] = { name = name, ok = cond and true or false } end
 
   local names = { [40346] = "View: Toggle fullscreen (renamed in a REAPER update)" }
-  local fakes = {
-    kbd_getTextFromCmd = function(cmd) return names[cmd] or "" end,
-    GetResourcePath = function() return "R" end,
-    file_exists = function(p) return p:find("Status Display", 1, true) == nil end, -- status not installed
-    AddRemoveReaScript = function(_, _, path) return path:find("Toggle Edit", 1, true) and 55926 or 1234 end,
-  }
 
-  require("SelfTest").with_reaper(fakes, function()
+  -- a fake action list: { cmd, name, named ID }
+  local function fake(extra)
+    local list = {
+      { 40346, "View: Toggle fullscreen", "" },
+      { 55918, "Script: SiSt-Live_Toggle Edit-Show Mode.lua", "RS1111" },
+      { 55919, "Custom: SiSt-Live_Toggle Edit-Show Mode.lua", "c0ffee" }, -- a custom action, not the script
+      { 55920, "Skript: SiSt-Live_Setlist.lua", "RS2222" },               -- translated word before the colon
+      { 55921, "Script: SiSt-Live_Twice.lua", "RS3333" },
+      { 55922, "Script: SiSt-Live_Twice.lua", "RS4444" },                  -- same file name in two folders
+    }
+    for _, e in ipairs(extra or {}) do list[#list + 1] = e end
+    local installed = { ["Toggle Edit"] = true, ["Setlist"] = true, ["Twice"] = true, ["Start Show"] = true, ["arrow"] = true }
+    local added = {}
+    local fakes = {
+      kbd_getTextFromCmd = function(cmd) return names[cmd] or "" end,
+      GetResourcePath = function() return "R" end,
+      file_exists = function(p)
+        for key in pairs(installed) do if p:find(key, 1, true) then return true end end
+        return false
+      end,
+      kbd_enumerateActions = function(_, i) local e = list[i + 1]; if e then return e[1], e[2] end return 0, "" end,
+      ReverseNamedCommandLookup = function(cmd)
+        for _, e in ipairs(list) do if e[1] == cmd then return e[3] end end
+      end,
+      AddRemoveReaScript = function(_, _, path)
+        added[#added + 1] = path
+        list[#list + 1] = { 60000, "Script: " .. Actions.base_name(path), "RS9999" }
+        return 60000
+      end,
+    }
+    return fakes, added
+  end
+
+  local with_reaper = require("SelfTest").with_reaper
+  local fakes, added = fake()
+  with_reaper(fakes, function()
     -- native
     check("native: existing action, whatever its name", Actions.native_name(40346) ~= nil
       and Actions.require_native(40346) == names[40346])
@@ -172,28 +212,36 @@ function Actions.self_test()
     check("native check: a renamed action passes, a missing one fails", rows[1].ok and not rows[2].ok
       and rows[1].name:find("renamed", 1, true) ~= nil and rows[2].name:find("NO SUCH ACTION", 1, true) ~= nil)
 
-    -- scripts
-    local none, why = Actions.script_command("status")
-    check("script_command: not installed", none == nil and why:find("not installed", 1, true) ~= nil)
+    -- scripts: looked up by file name in the action list
+    check("script_command: found by file name, whatever the folder", Actions.file_command("Modes/SiSt-Live_Toggle Edit-Show Mode.lua") == 55918
+      and Actions.file_command("Elsewhere/SiSt-Live_Toggle Edit-Show Mode.lua") == 55918)
+    check("script_command: a custom action with the same name is not the script",
+      Actions.script_command("mode") == 55918)
+    check("script_command: translated word before the colon is fine", Actions.file_command("Setlist/SiSt-Live_Setlist.lua") == 55920)
+    local none, why = Actions.file_command("Transport/SiSt-Live_Start Show.lua")
+    check("script_command: installed but not in the action list says to run Setup",
+      none == nil and why:find("run SiSt-Live: Setup", 1, true) ~= nil)
+    local not_installed, why2 = Actions.file_command("Status Display/SiSt-Live_Status Display.lua")
+    check("script_command: not installed", not_installed == nil and why2:find("not installed", 1, true) ~= nil)
+    local twice, why3 = Actions.file_command("Twice/SiSt-Live_Twice.lua")
+    check("script_command: two script actions with one file name are ambiguous",
+      twice == nil and why3:find("more than one", 1, true) ~= nil)
     check("script_command: unknown id", select(2, Actions.script_command("nope")):find("unknown", 1, true) ~= nil)
+    check("lookup only looks: nothing was added", #added == 0)
+
+    -- registering
+    local new, new_why = Actions.register("Transport/SiSt-Live_Start Show.lua")
+    check("register: adds the script, the next lookup finds it",
+      new == 60000 and #added == 1 and Actions.file_command("Transport/SiSt-Live_Start Show.lua") == 60000 and new_why == nil)
+    check("register: a script that is not installed is not added",
+      Actions.register("Status Display/SiSt-Live_Status Display.lua") == nil and #added == 1)
   end)
 
-  -- finding a script in reaper-kb.ini (registering instead would make REAPER rewrite the file on every run)
-  local kb = table.concat({
-    'SCR 4 32060 RSmidi "Custom: x.lua" "SiSt-Live/Modes/x.lua"',
-    'SCR 4 0 RSquoted "Custom: x.lua" "SiSt-Live/Modes/x.lua"',
-    'SCR 4 0 RSplain "Custom: y.lua" SiSt-Live/Transport/y.lua',
-    'SCR 4 0 RSfull "Custom: z.lua" "D:\\Other\\z.lua"',
-  }, "\r\n")
-  check("find_registered: main section only, quoted path, separators and case ignored",
-    Actions.find_registered(kb, "C:\\R", "c:\\r\\Scripts\\SiSt-Live\\MODES\\x.lua") == "_RSquoted")
-  check("find_registered: path without quotes, full path",
-    Actions.find_registered(kb, "C:/R", "C:/R/Scripts/SiSt-Live/Transport/y.lua") == "_RSplain"
-    and Actions.find_registered(kb, "C:/R", "d:/other/z.lua") == "_RSfull"
-    and Actions.find_registered(kb, "C:/R", "C:/R/Scripts/SiSt-Live/Modes/other.lua") == nil)
   local all_listed = true
   for _, id in ipairs(Actions.SCRIPT_ORDER) do all_listed = all_listed and Actions.SCRIPTS[id] ~= nil end
   check("every script in the diagnostics order exists", all_listed)
+  check("base_name: file name of a path", Actions.base_name("Modes/x y.lua") == "x y.lua"
+    and Actions.base_name("a\\b\\c.lua") == "c.lua" and Actions.base_name("c.lua") == "c.lua")
   return results
 end
 

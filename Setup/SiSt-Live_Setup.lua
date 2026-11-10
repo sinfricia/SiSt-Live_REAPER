@@ -157,8 +157,18 @@ function Setup.resolve(script_dir, rel, sep)
   return prefix .. table.concat(parts, sep)
 end
 
---- Report text: version, number of files, missing files.
-function Setup.report(version, files, missing)
+--- The package's [main] scripts as paths relative to the package folder ("Modes/x.lua"), from the parsed header.
+function Setup.scripts_to_register(files)
+  local scripts = {}
+  for _, f in ipairs(files) do
+    local rel = f.main and f.path:match("^%.%./(.+)$")
+    if rel then scripts[#scripts + 1] = rel end
+  end
+  return scripts
+end
+
+--- Report text: version, number of files, missing files, scripts added to the action list.
+function Setup.report(version, files, missing, added, failed)
   local lines = { ("SiSt-Live %s"):format(version or "(unknown version)"), "" }
   if #missing == 0 then
     lines[#lines + 1] = ("All %d files of the package are installed."):format(#files)
@@ -167,6 +177,16 @@ function Setup.report(version, files, missing)
     for _, path in ipairs(missing) do lines[#lines + 1] = "  " .. path end
     lines[#lines + 1] = ""
     lines[#lines + 1] = "Reinstall the package 'SiSt-Live' in ReaPack (Extensions > ReaPack > Browse packages)."
+  end
+  if added and #added > 0 then
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = ("%d script%s added to the action list:"):format(#added, #added == 1 and "" or "s")
+    for _, rel in ipairs(added) do lines[#lines + 1] = "  " .. rel end
+  end
+  if failed and #failed > 0 then
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "NOT added to the action list:"
+    for _, line in ipairs(failed) do lines[#lines + 1] = "  " .. line end
   end
   lines[#lines + 1] = ""
   lines[#lines + 1] = "Next steps: 'Configure modes' sets what each mode does, 'DEBUG Run Self-Test' checks it."
@@ -193,6 +213,15 @@ function Setup.self_test()
     == "C:\\R\\Scripts\\SiSt-Live\\lib\\Gui\\Theme.lua")
   check("resolve: unix absolute path keeps its root",
     Setup.resolve("/r/Scripts/SiSt-Live/Setup/", "../Modes/x.lua", "/") == "/r/Scripts/SiSt-Live/Modes/x.lua")
+
+  local mains = Setup.scripts_to_register({ { path = "../Modes/a.lua", main = true }, { path = "../lib/b.lua", main = false },
+    { path = "../Transport/c d.lua", main = true } })
+  check("scripts_to_register: only [main] files, relative to the package folder",
+    #mains == 2 and mains[1] == "Modes/a.lua" and mains[2] == "Transport/c d.lua")
+  local added_report = Setup.report("1", { 1 }, {}, { "Modes/a.lua" }, { "Modes/b.lua: ambiguous" })
+  check("report: added and failed scripts listed", added_report:find("1 script added", 1, true) ~= nil
+    and added_report:find("Modes/a.lua", 1, true) ~= nil and added_report:find("NOT added", 1, true) ~= nil
+    and added_report:find("ambiguous", 1, true) ~= nil)
 
   local r = Setup.report(nil, { 1, 2 }, { "lib/x.lua" })
   check("report: missing files listed", r:find("1 of 2 files are MISSING", 1, true) ~= nil
@@ -245,13 +274,29 @@ local function main()
     reaper.ShowConsoleMsg(table.concat(out, "\n") .. "\n")
   end
 
+  -- Add the package's scripts to the action list when they are not in it yet (ReaPack does this on install; a
+  -- copied config or a new script needs it). Lookups elsewhere never add anything.
+  local added, failed = {}, {}
+  local has_actions, Actions = pcall(require, "SiSt-Live_Actions")
+  if has_actions then
+    for _, rel in ipairs(Setup.scripts_to_register(files)) do
+      local cmd, why = Actions.file_command(rel)
+      if not cmd and why and why:find("run SiSt-Live: Setup", 1, true) then
+        local new, err = Actions.register(rel)
+        if new then added[#added + 1] = rel else failed[#failed + 1] = rel .. ": " .. tostring(err) end
+      elseif not cmd then
+        failed[#failed + 1] = rel .. ": " .. tostring(why)
+      end
+    end
+  end
+
   -- Register SiSt-Live's test list for "Run all self-tests" (optional: a missing SelfTest library is reported above)
   local has_test, SelfTest = pcall(require, "SelfTest")
   if has_test then
     SelfTest.register("SiSt-Live", script_dir .. sep .. ".." .. sep .. "lib" .. sep .. "SiSt-Live_Tests.lua")
   end
 
-  reaper.MB(Setup.report(version, files, missing), "SiSt-Live Setup", 0)
+  reaper.MB(Setup.report(version, files, missing, added, failed), "SiSt-Live Setup", 0)
 end
 
 -- Test-only switch (see lib/SelfTest.lua): hand over the tests instead of running the setup

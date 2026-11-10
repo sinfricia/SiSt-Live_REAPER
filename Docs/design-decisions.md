@@ -105,10 +105,14 @@ only ever run on demand; lookups only where unavoidable.
 
 - Each package declares the actions it uses (plus required extensions) in ONE table; the shared library offers
   the tools and makes no distinction between packages. Calling other packages' scripts is for windows/toggles;
-  logic is called as library functions.
+  logic is called as library functions. (Narrowed 2026-11-10: only the scripts are one list; native actions stay
+  with the effect that runs them, and their on-demand check reports one line per group. Extensions are checked by
+  one API function each, in Setup.)
 - Lookup by FILE NAME (not path): survives moves and different repo/category names; prefixes keep names unique;
-  duplicates fail clearly. Today (step 3a) the lookup reads reaper-kb.ini (read only); whether SWS
-  CF_EnumerateActions is the better source is tested in the roadmap step that builds the lookup.
+  duplicates fail clearly. Since 2026-11-10 the lookup reads the action list with `reaper.kbd_enumerateActions`
+  (native since REAPER 6.71, about 4 ms for all ~7000 actions; a script action is named "Script: <file>.lua", its
+  named ID starts with "RS", which tells it from a custom action): always current, no file to parse, no extension.
+  The deprecated SWS CF_EnumerateActions is not used.
 - Looked-up IDs are cached in memory for the script run only, never stored (REAPER assigns the number, so it is
   not ours to keep; a stored name ID is exactly the _RS problem).
 - Registering missing scripts in the action list moves to Setup (a lookup only looks).
