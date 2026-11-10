@@ -33,6 +33,11 @@ reasons, not copies of those rules (2026-11-10, see "Where rules live" below).
   Performance (2026-10-26): `local r = reaper` only saves one table lookup per call; the API call itself costs
   far more, so it doesn't matter for our scripts. If a hot loop ever needs it: measure first, then copy single
   functions into locals INSIDE that function (local GetTrack = reaper.GetTrack), so tests still see the fakes.
+- Passing something to a script that another script starts (2026-11-10): load it with `loadfile` and call it with an
+  argument; the script reads it as `(...)` (examples: `Modes/SiSt-Live_Apply current mode.lua` with "startup", the
+  unattended live test runner with "unattended"). No globals, and no ExtState for a value that only lives for one
+  call. Such a script finds its own folder with `debug.getinfo(1, "S").source`, not with `get_action_context`,
+  because that returns the path of the script that loaded it.
 - A REAPER install used for development never subscribes to its own ReaPack repo (ReaPack would overwrite the
   working copy). Working copies mirror ReaPack's folder layout (Scripts/<index name>/<category>/...).
 - Delivery: Claude writes directly into the repo and says what changed; no files sent in the chat. Since

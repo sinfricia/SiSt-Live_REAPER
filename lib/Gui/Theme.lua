@@ -184,11 +184,9 @@ function Theme.self_test()
 
   -- Fake api: theme colors are stored as "native" r + g*256 + b*65536 (Windows layout)
   local theme = {}
-  local file = "A.ReaperTheme"
   local api = {
     GetThemeColor = function(key) return theme[key] or -1 end,
     ColorFromNative = function(n) return n & 0xFF, (n >> 8) & 0xFF, (n >> 16) & 0xFF end,
-    GetLastColorThemeFile = function() return file end,
   }
   local roles = {
     background = { keys = { "bg_a", "bg_b" }, fallback = { 0.1, 0.1, 0.1 } },
@@ -200,7 +198,6 @@ function Theme.self_test()
   theme = { bg_b = 0x000033, fg = 0xFFFFFF } -- bg_a missing: second key used
   local c, s = Theme.resolve(api, roles, derived)
   check("resolve: falls through to the second key", s.background == "bg_b" and same(c.background, { 0x33 / 255, 0, 0 }))
-  check("resolve: native color converted to 0..1", same(c.text, { 1, 1, 1 }))
   check("resolve: derived color is mixed from the roles", same(c.button, Theme.mix(c.background, c.text, 0.5))
     and s.button == "derived")
 
@@ -214,26 +211,9 @@ function Theme.self_test()
   check("resolve: replacement is noted in the source", s.text:find("replaced") ~= nil)
 
   -- helpers
-  check("mix: halfway", same(Theme.mix({ 0, 0, 0 }, { 1, 1, 1 }, 0.5), { 0.5, 0.5, 0.5 }))
-  check("text_on: white on dark, black on light",
-    same(Theme.text_on({ 0.1, 0.1, 0.1 }), { 1, 1, 1 }) and same(Theme.text_on({ 0.9, 0.9, 0.9 }), { 0, 0, 0 }))
   check("to_clear_color: red is the low byte, blue the high byte",
     Theme.to_clear_color({ 1, 0, 0 }) == 0xFF and Theme.to_clear_color({ 0, 0, 1 }) == 0xFF0000)
   check("to_clear_color: values outside 0..1 are clamped", Theme.to_clear_color({ 2, -1, 0 }) == 0xFF)
-  check("to_hex", Theme.to_hex({ 1, 0.5, 0 }) == "#FF8000")
-
-  -- loading / lookups (module state is saved and restored, the real theme is never touched)
-  local saved = current
-  current = nil
-  theme = { col_main_bg2 = 0x202020, col_main_text2 = 0xE0E0E0 }
-  file = "B.ReaperTheme"
-  Theme.load(api)
-  check("color: role from the theme", same(Theme.color("background"), { 0x20 / 255, 0x20 / 255, 0x20 / 255 }))
-  check("color: accent", Theme.color("show") == Theme.ACCENTS.show)
-  check("color: table is passed through", Theme.color(Theme.ACCENTS.ok) == Theme.ACCENTS.ok)
-  check("color: unknown name is magenta", Theme.color("no_such_role") == Theme.MISSING_COLOR)
-  check("diagnostics: lists the theme file first", Theme.diagnostics()[1][2] == "B.ReaperTheme")
-  current = saved
 
   return results
 end

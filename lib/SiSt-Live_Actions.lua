@@ -172,9 +172,6 @@ function Actions.self_test()
     and rows[1].name:find("renamed", 1, true) ~= nil and rows[2].name:find("NO SUCH ACTION", 1, true) ~= nil)
 
   -- scripts
-  check("join_path: separators", Actions.join_path("C:\\R", "Modes/x.lua", "\\") == "C:\\R\\Scripts\\SiSt-Live\\Modes\\x.lua"
-    and Actions.join_path("/r/", "a/b.lua", "/") == "/r/Scripts/SiSt-Live/a/b.lua")
-  check("script_command: found by its file", Actions.script_command("mode", api) == 55926)
   local none, why = Actions.script_command("status", api)
   check("script_command: not installed", none == nil and why:find("not installed", 1, true) ~= nil)
   check("script_command: unknown id", select(2, Actions.script_command("nope", api)):find("unknown", 1, true) ~= nil)

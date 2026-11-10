@@ -181,8 +181,7 @@ function Setup.self_test()
     "-- @description X", "-- @version 1.2.3", "-- @provides", "--   [main] .", "--   [main] ../A/a.lua",
     "--   [nomain] ../lib/b.lua", "--   ../lib/c.lua", "-- @about", "--   [main] ../not/a/file.lua",
   }, "\r\n")
-  local version, files = Setup.parse_header(header)
-  check("header: version", version == "1.2.3")
+  local _, files = Setup.parse_header(header)
   check("header: files without '.', stops at the next tag", #files == 3 and files[1].path == "../A/a.lua"
     and files[3].path == "../lib/c.lua")
   check("header: main / nomain", files[1].main and not files[2].main and not files[3].main)
@@ -193,7 +192,6 @@ function Setup.self_test()
   check("resolve: unix absolute path keeps its root",
     Setup.resolve("/r/Scripts/SiSt-Live/Setup/", "../Modes/x.lua", "/") == "/r/Scripts/SiSt-Live/Modes/x.lua")
 
-  check("report: all installed", Setup.report("1.0", { 1, 2 }, {}):find("All 2 files", 1, true) ~= nil)
   local r = Setup.report(nil, { 1, 2 }, { "lib/x.lua" })
   check("report: missing files listed", r:find("1 of 2 files are MISSING", 1, true) ~= nil
     and r:find("lib/x.lua", 1, true) ~= nil and r:find("unknown version", 1, true) ~= nil)

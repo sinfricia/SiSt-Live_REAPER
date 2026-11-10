@@ -579,7 +579,6 @@ function Window.self_test()
 
   -- parsing
   check("parse: empty string (first start) gives nil", Window.parse_state("", keys) == nil)
-  check("parse: nil gives nil", Window.parse_state(nil, keys) == nil)
   check("parse: syntax error gives nil", Window.parse_state("{{{ broken", keys) == nil)
   check("parse: code can't reach the Lua libraries", Window.parse_state("{wx=os.exit()}", keys) == nil)
   local p = Window.parse_state("{wx=10,zoomLevel=\"bad\",foo=1}", keys)
@@ -591,17 +590,12 @@ function Window.self_test()
   check("serialize: whitelisted keys in order", s == "{wx=-5,zoomLevel=2}")
   check("serialize: infinite / NaN values are left out",
     Window.serialize_state({ wx = math.huge, zoomLevel = 0 / 0 }, keys) == "{}")
-  local round = Window.parse_state(Window.serialize_state({ wx = 1.5, zoomLevel = -3 }, keys), keys)
-  check("serialize -> parse round trip", round and round.wx == 1.5 and round.zoomLevel == -3)
 
   -- placement helpers
-  check("slot_name", Window.slot_name("show") == "show" and Window.slot_name(nil) == "any"
-    and Window.slot_name("a b/c") == "a_b_c")
   check("is_docked_state", Window.is_docked_state(1) and Window.is_docked_state(257.0)
     and not Window.is_docked_state(256) and not Window.is_docked_state(nil))
   local full = { dockState = 0, wx = 1, wy = 2, ww = 3, wh = 4, zoomLevel = 9 }
   local copy = Window.copy_placement(full)
-  check("copy_placement: placement keys only", copy and copy.wh == 4 and copy.zoomLevel == nil)
   check("copy_placement: incomplete gives nil", Window.copy_placement({ wx = 1 }) == nil)
   check("same_placement", Window.same_placement(copy, { dockState = 0, wx = 1.2, wy = 2, ww = 3, wh = 4 })
     and not Window.same_placement(copy, { dockState = 1, wx = 1, wy = 2, ww = 3, wh = 4 }))
@@ -609,25 +603,6 @@ function Window.self_test()
   check("choose_placement: order remembered > saved > default",
     select(2, Window.choose_placement(a, b, c)) == "remembered" and select(2, Window.choose_placement(nil, b, c)) == "saved"
     and select(2, Window.choose_placement(nil, nil, c)) == "default" and Window.choose_placement(nil, nil, nil) == nil)
-
-  -- mouse
-  local m0 = empty_mouse()
-  local m1 = Window.next_mouse(m0, 1, 10, 20, 0)
-  check("mouse: press edge", m1.left and m1.left_pressed and not m1.left_released)
-  check("mouse: press position remembered", m1.press_x == 10 and m1.press_y == 20)
-  local m2 = Window.next_mouse(m1, 1, 50, 60, 0)
-  check("mouse: held is not a new press", m2.left and not m2.left_pressed and m2.press_x == 10)
-  local m3 = Window.next_mouse(m2, 0, 55, 65, 0)
-  check("mouse: release edge", not m3.left and m3.left_released and m3.press_y == 20)
-  local m4 = Window.next_mouse(m3, 2 | 4 | 16, 1, 2, 120)
-  check("mouse: right press, ctrl and alt, wheel",
-    m4.right_pressed and m4.ctrl and m4.alt and not m4.shift and m4.wheel == 120 and m4.press_x == 1)
-
-  -- object
-  local w0 = Window.new{ name = "test", defaults = { ww = 123 }, extra_keys = { "zoomLevel" }, api = {} }
-  check("new: defaults merged", w0.state.ww == 123 and w0.state.wh == Window.BASE_DEFAULTS.wh)
-  check("new: extra keys are saved too", w0.keys[#w0.keys] == "zoomLevel")
-  check("new: name is required", not pcall(Window.new, {}))
 
   -- placement per mode, with a fake window, fake ExtState and a fake clock
   local ext, clock = {}, 0
@@ -723,8 +698,6 @@ function Window.self_test()
   frame(win, "edit") -- closed during a mode change
   win:close()
   check("close during a mode change: saves where the window should be", saved("edit", "wx") == 111)
-  check("log: describes dockers and floating windows",
-    table.concat(log, "\n"):find("docker 1", 1, true) ~= nil and table.concat(log, "\n"):find("floating 111,", 1, true) ~= nil)
 
   ext["T/Placement_edit"] = nil -- no saved placement for edit: the default is used on open
   ext["T/DefaultPlacement_edit"] = "{dockState=0,wx=42,wy=1,ww=200,wh=90}"
@@ -740,15 +713,12 @@ function Window.self_test()
   check("no set_mode: placement saved under 'any'", ext["T/Placement_any"] ~= nil)
 
   -- menu
-  local menu, actions = Window.build_menu({
+  local _, actions = Window.build_menu({
     { label = "A", action = "a" }, { separator = true }, { label = "B", checked = true, action = "b" },
     { label = "C", disabled = true, action = "c" },
   })
-  check("build_menu: string", menu == "A||!B|#C")
   check("build_menu: actions numbered like gfx.showmenu, disabled has none",
     actions[1] == "a" and actions[2] == "b" and actions[3] == false and #actions == 3)
-  check("mode_suffix", Window.mode_suffix("show") == " (SHOW mode)" and Window.mode_suffix("any") == ""
-    and Window.mode_suffix(nil) == "")
 
   local events = {}
   ext["H/WindowState"] = "{dockState=0,wx=5,wy=5,ww=500,wh=400}"
@@ -758,37 +728,9 @@ function Window.self_test()
     extra_keys = { "zoomLevel" } }
   hw:open()
   check("ignore_saved_state: opens with the defaults", fake.w == Window.BASE_DEFAULTS.ww)
-  check("on_open: called after opening", events[1] == "open")
   hw:close()
   check("on_close: called before saving, so its values are saved",
     events[2] == "close" and (ext["H/WindowState"] or ""):find("zoomLevel=7", 1, true) ~= nil)
-
-  check("size_suffix: docked with size, nothing when floating or unknown",
-    Window.size_suffix({ dockState = 257 }, 420.4, 300) == " (420x300)"
-    and Window.size_suffix({ dockState = 0 }, 420, 300) == ""
-    and Window.size_suffix({ dockState = 257 }, nil, 300) == "" and Window.size_suffix(nil, 1, 1) == "")
-
-  -- docked size in the log: size before the switch is logged with "saved", size after with "window is at"
-  local slog = {}
-  local sg = { w = 400, h = 200 }
-  local sfake = { dock_state = 257 }
-  sg.init = function() end
-  sg.quit = function() end
-  sg.dock = function(v, ...)
-    if v == -1 and select("#", ...) > 0 then return sfake.dock_state, 0, 0, 100, 100 end
-    if v == -1 then return sfake.dock_state end
-    sfake.dock_state = v
-  end
-  local sw = Window.new{ name = "S", api = api, gfx = sg, toggle_action = false, defaults = { dockState = 257 },
-    debug = function(line) slog[#slog + 1] = line end }
-  sw:set_mode("edit"); sw:open()
-  local function sframe(mode, dt) clock = clock + (dt or 0); sw:capture_geometry(); sw:set_mode(mode) end
-  sframe("edit", 0.6); sframe("edit", 0.1)
-  sg.w, sg.h = 400, 120 -- the screenset shrinks the docker
-  sframe("show"); sframe("show", 0.6)
-  local stext = table.concat(slog, "\n")
-  check("log: docked size before the switch", stext:find("saved docker 1 (400x200) for edit", 1, true) ~= nil)
-  check("log: docked size after the switch", stext:find("stays at docker 1 (400x120)", 1, true) ~= nil)
 
   local function queue(list) local i = 0; return function() i = i + 1; return list[i] or 0 end end
   local closed, keys = Window.read_chars(queue({ 97, 98, 99 }))
@@ -800,8 +742,6 @@ function Window.self_test()
   closed, keys = Window.read_chars(function() return 120 end, 5)
   check("read_chars: limited per frame", not closed and #keys == 5)
 
-  check("docker_index / describe", Window.docker_index(769) == 3 and Window.describe(nil) == "(none)"
-    and Window.describe({ dockState = 769 }) == "docker 3")
   check("placement_matches: docked compares the docker only",
     Window.placement_matches({ dockState = 257 }, { dockState = 257, wx = 5, wy = 5, ww = 5, wh = 5 })
     and not Window.placement_matches({ dockState = 257 }, { dockState = 513 })

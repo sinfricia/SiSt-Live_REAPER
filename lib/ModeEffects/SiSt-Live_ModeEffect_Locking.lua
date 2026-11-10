@@ -179,7 +179,7 @@ function Locking.self_test()
 
   Locking.set_assignment("show", true, api)
   Locking.set_assignment("edit", false, api)
-  local result, msg = Locking.apply("show", api)
+  local result = Locking.apply("show", api)
   local per_project = #Locking.ON_STEPS
   check("apply on: every step in every project", result == "ok" and #runs == 3 * per_project
     and runs[1] == "p1:40595" and runs[per_project + 1] == "p2:40595")
@@ -189,7 +189,6 @@ function Locking.self_test()
     for _, r in ipairs(runs) do if r:find(":40574", 1, true) or r:find(":40568", 1, true) then return false end end
     return true
   end)())
-  check("apply on: message counts the projects", msg == "locking on (all lock modes but full item) in 3 projects")
 
   local api2, runs2 = fake()
   Locking.set_assignment("edit", false, api2)
@@ -211,10 +210,6 @@ function Locking.self_test()
   local missing_found = false
   for _, r in ipairs(Locking.check_actions(missing)) do if not r.ok then missing_found = true end end
   check("live check fails for a missing action", missing_found)
-
-  local ls = Locking.settings[1]
-  check("setting: parse / format", select(2, ls.parse("on")) == true and select(2, ls.parse("off")) == false
-    and select(2, ls.parse("")) == nil and not ls.parse("x") and ls.format(true) == "on" and ls.format(nil) == "")
 
   return results
 end

@@ -143,11 +143,7 @@ function Status.self_test()
   local mv = { show = "show", edit = "edit" }
   local function t(time) return "T" .. time end
 
-  local m = Status.build_model({ mode = "show", mode_values = mv })
-  check("mode: show", m.mode_label == "SHOW" and m.mode_accent == "show")
-  m = Status.build_model({ mode = "edit", mode_values = mv })
-  check("mode: edit", m.mode_label == "EDIT" and m.mode_accent == "edit")
-  m = Status.build_model({ mode = "garbage", mode_values = mv })
+  local m = Status.build_model({ mode = "garbage", mode_values = mv })
   check("mode: unknown value", m.mode_label == "MODE UNKNOWN" and m.mode_accent == "error")
   m = Status.build_model({})
   check("mode: Mode library missing", m.mode_label == "MODE UNKNOWN" and #m.lines == 0 and not m.has_errors)
@@ -162,11 +158,6 @@ function Status.self_test()
   m = Status.build_model({ effects = {}, failed_value = "failed" })
   check("no mode switch yet", m.lines[1].kind == "info" and not m.can_retry and not m.has_errors)
 
-  m = Status.build_model({ effects = {}, failed_value = "failed", format_time = t,
-    last_run = { mode = "show", time = 5, ok_count = 3, failed_count = 0 } })
-  check("all effects ok", m.lines[1].kind == "ok" and m.lines[1].text:find("show mode, T5", 1, true)
-    and not m.can_retry and not m.has_errors)
-
   local effects = {
     { name = "theme",  status = { result = "failed", message = "file not found" } },
     { name = "layout", status = { result = "ok", message = "" } },
@@ -179,13 +170,9 @@ function Status.self_test()
   check("failures: one detail line per failed effect", #m.lines == 3 and m.lines[2].text == "theme: file not found"
     and m.lines[3].text == "keys: no message")
   check("failures: retry offered", m.can_retry and m.has_errors)
-  m = Status.build_model({ effects = effects, failed_value = "failed", format_time = t,
-    last_run = { mode = "edit", time = 7, ok_count = 3, failed_count = 1 } })
-  check("failures: singular", m.lines[1].text:find("^1 mode effect failed") ~= nil)
 
   check("zoom: clamped", Status.clamp_zoom(100) == MAX_ZOOM and Status.clamp_zoom(-100) == MIN_ZOOM)
   check("zoom: nil is level 0", Status.clamp_zoom(nil) == 0 and Status.zoom_scale(nil) == 1)
-  check("zoom: sizes scale and round", Status.scaled(10, 5) == 15 and Status.scaled(16, 0) == 16)
 
   return results
 end

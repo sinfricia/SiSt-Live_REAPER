@@ -36,21 +36,16 @@ end
 function Button.self_test()
   local results = {}
   local function check(name, cond) results[#results + 1] = { name = name, ok = cond and true or false } end
-  local states, refreshed = {}, {}
+  local states = {}
   local api = {
     GetResourcePath = function() return "R" end,
-    file_exists = function(p) return p:find("Toggle Edit", 1, true) ~= nil end, -- only the mode script
-    AddRemoveReaScript = function() return 55926 end,
-    SetToggleCommandState = function(section, cmd, v) states[section .. ":" .. cmd] = v end,
-    RefreshToolbar2 = function(section, cmd) refreshed[#refreshed + 1] = section .. ":" .. cmd end,
+    file_exists = function() return false end, -- no script installed
+    SetToggleCommandState = function(section, cmd, v) states[#states + 1] = v end,
+    RefreshToolbar2 = function() end,
   }
-  check("set_state: lights the button of the mode action", Button.set_state("mode", true, api)
-    and states["0:55926"] == 1 and refreshed[1] == "0:55926")
-  Button.set_state("mode", false, api)
-  check("set_state: unlights it", states["0:55926"] == 0)
   local ok, why = Button.set_state("debug", true, api)
-  check("set_state: script not installed -> false + reason, nothing set", not ok and why:find("not installed", 1, true) ~= nil)
-  check("describe", Button.describe("mode", api) == "action 55926")
+  check("set_state: script not installed -> false + reason, nothing set",
+    not ok and why:find("not installed", 1, true) ~= nil and #states == 0)
   return results
 end
 

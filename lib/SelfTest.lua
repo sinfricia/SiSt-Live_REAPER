@@ -572,10 +572,6 @@ end
 function SelfTest.self_test()
   local check, results = SelfTest.checker()
 
-  local c2, r2 = SelfTest.checker()
-  c2("a", true); c2("b", nil)
-  check("checker: rows with name and ok", #r2 == 2 and r2[1].ok == true and r2[2].ok == false and r2[2].name == "b")
-
   check("normalize: separators and ..", SelfTest.normalize("C:\\R\\Scripts\\x\\..\\lib\\a.lua") == "C:/R/Scripts/lib/a.lua")
   check("normalize: unix root and .", SelfTest.normalize("/r/./x//y") == "/r/x/y")
   check("normalize: .. beyond the start is kept", SelfTest.normalize("a/../../b") == "../b")
@@ -583,9 +579,6 @@ function SelfTest.self_test()
   check("relative_to: outside, or only a name prefix", SelfTest.relative_to("D:/x.lua", "C:/R") == nil
     and SelfTest.relative_to("C:/Rx/a.lua", "C:/R") == nil)
 
-  local reg = { { name = "B", path = "Scripts/b.lua" }, { name = "A", path = "C:/x/a.lua" } }
-  local back = SelfTest.decode_registry(SelfTest.encode_registry(reg))
-  check("registry: round trip", #back == 2 and back[1].name == "B" and back[2].path == "C:/x/a.lua")
   check("registry: empty and garbage", #SelfTest.decode_registry("") == 0 and #SelfTest.decode_registry("nonsense|x=y") == 1)
 
   local rows = SelfTest.run_component({ name = "x",

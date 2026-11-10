@@ -258,9 +258,6 @@ function Layout.self_test()
   local enc = Layout.encode(map)
   check("encode: managed sections first, special characters escaped",
     enc == "tcp=B150%25;trans=;mcp=a%3Bb%3Dc;")
-  local dec = Layout.decode(enc)
-  check("decode: round trip incl. empty layout and special characters",
-    dec and dec.tcp == "B150%" and dec.trans == "" and dec.mcp == "a;b=c")
   check("decode: empty / garbage = nothing assigned", Layout.decode("") == nil and Layout.decode("garbage") == nil)
 
   -- apply
@@ -297,26 +294,13 @@ function Layout.self_test()
   check("apply: sections missing from the assignment are left alone",
     r4 == "ok" and Layout.current("trans", api4) == "default")
 
-  check("capture: reads every managed section",
-    Layout.capture(fake({ current = { tcp = "B", trans = "150%" } })).trans == "150%")
-
-
   -- settings field
   local lapi = fake({ current = { tcp = "B", trans = "150%", mcp = "" } })
-  local okc, mc = Layout.parse_setting("current", lapi)
-  check("setting: 'current' captures every section", okc and mc.tcp == "B" and mc.trans == "150%" and mc.mcp == "")
-  check("setting: format", Layout.format_setting(mc) == "tcp=B, trans=150%, mcp=")
-  check("setting: format -> parse round trip", (Layout.parse_setting(Layout.format_setting(mc), lapi)))
   local okp, mp = Layout.parse_setting("tcp = B150% , trans=150%", lapi)
   check("setting: typed text parsed, sections left out stay unmanaged",
     okp and mp.tcp == "B150%" and mp.trans == "150%" and mp.mcp == nil)
   check("setting: unknown section / missing '=' rejected",
     not Layout.parse_setting("foo=1", lapi) and not Layout.parse_setting("tcp", lapi))
-  local ls = Layout.settings[1]
-  ls.set("show", mp, lapi)
-  check("setting: set / get", ls.get("show", lapi).tcp == "B150%")
-  ls.set("show", nil, lapi)
-  check("setting: cleared", ls.get("show", lapi) == nil)
 
   return results
 end

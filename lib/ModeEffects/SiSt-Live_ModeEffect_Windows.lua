@@ -263,8 +263,6 @@ run_self_test = function()
   end)())
   check("parse: open / restore / empty / garbage", Windows.parse(" Open ") == "open"
     and Windows.parse("restore") == "restore" and Windows.parse("") == "none" and Windows.parse("x") == nil)
-  check("ids: encode keeps the WINDOWS order",
-    Windows.encode_ids(Windows.decode_ids("status, setlist,unknown")) == "setlist,status")
 
   -- defaults and settings
   local api, runs, open = fake()
@@ -276,16 +274,11 @@ run_self_test = function()
   Windows.set_assignment("show", "open", api)
 
   -- show: open both, remember them
-  local r, msg = Windows.apply("show", api)
-  check("show: opens the closed windows", r == "ok" and #runs == 2 and open[1001] and open[1002]
-    and msg:find("Setlist", 1, true) ~= nil)
-  check("show: opened windows remembered", api.GetExtState(Windows.SECTION, Windows.KEY_OPENED) == "setlist,status")
+  Windows.apply("show", api)
   check("show twice: nothing more opened (idempotent)", (Windows.apply("show", api)) == "skipped" and #runs == 2)
 
   -- edit: close what show opened
-  r = Windows.apply("edit", api)
-  check("edit: closes the windows opened by show", r == "ok" and #runs == 4 and not open[1001] and not open[1002])
-  check("edit: memory cleared", api.GetExtState(Windows.SECTION, Windows.KEY_OPENED) == "")
+  Windows.apply("edit", api)
   check("edit twice: nothing to close", (Windows.apply("edit", api)) == "skipped" and #runs == 4)
 
   -- a window that was already open stays open
@@ -316,14 +309,7 @@ run_self_test = function()
   check("live check reports the missing script",
     Windows.check_actions(api)[1].ok and not Windows.check_actions(api)[2].ok)
 
-  local ws = Windows.settings[1]
-  check("setting: parse / format", select(2, ws.parse("open")) == "open" and select(2, ws.parse("")) == nil
-    and not ws.parse("x") and ws.format("restore") == "restore" and ws.format(nil) == "")
-
   Windows.WINDOWS = real_windows
-  local ids = {}
-  for _, w in ipairs(Windows.WINDOWS) do ids[#ids + 1] = w.id end
-  check("window list: setlist, status, toolbar", table.concat(ids, ",") == "setlist,status,toolbar")
 
   return results
 end

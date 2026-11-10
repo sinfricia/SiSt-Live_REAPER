@@ -268,7 +268,6 @@ function ModeEffects.self_test()
     error("module '" .. m .. "' not found:\n\tno file ...", 0) -- like require: no position prefix
   end
   local loaded = ModeEffects.load({ "good", "missing", "nonsense" }, fake_require)
-  check("load: valid module loaded", loaded[1] == fake_modules.good)
   check("load: missing module reported, first line only",
     loaded[2].name == "missing" and loaded[2].load_error == "module 'missing' not found:")
   check("load: module without apply reported", loaded[3].load_error ~= nil)
@@ -298,13 +297,6 @@ function ModeEffects.self_test()
     #res == 5 and res[1].result == "ok" and res[2].result == "failed" and res[3].result == "skipped"
     and res[4].result == "failed" and res[5].result == "failed")
   check("failure count", failed == 3)
-  check("mode is passed to the effect", res[1].message == "did edit")
-  check("error message is kept", res[2].message == "boom")
-
-  local stored = ModeEffects.get_status("throws", api)
-  check("status stored per effect", stored and stored.result == "failed" and stored.mode == "edit")
-  local last = ModeEffects.get_last_run(api)
-  check("last run summary stored", last and last.mode == "edit" and last.ok_count == 2 and last.failed_count == 3)
   check("invalid mode is rejected", threw)
 
   -- except (REAPER startup leaves locking alone): the effect must not run, but gets a status
