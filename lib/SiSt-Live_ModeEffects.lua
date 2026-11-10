@@ -184,18 +184,7 @@ function ModeEffects.failure_message(mode, results)
     Log.file_path())
 end
 
-ModeEffects.DIALOG_TITLE = "SiSt-Live: mode effects"
-
---- What every place that switches or re-applies the mode calls (Toggle Edit-Show Mode, Apply current mode, the
---- Status Display's mode and retry buttons, Configure modes): runs the effects, then shows a dialog if any failed.
---- The user just triggered it, so the dialog is not a background dialog. Returns what apply_all returns.
---- opts: passed on to apply_all.
-function ModeEffects.apply_and_report(mode, opts)
-  local results, failed = ModeEffects.apply_all(mode, opts)
-  local msg = ModeEffects.failure_message(mode, results)
-  if msg then reaper.MB(msg, ModeEffects.DIALOG_TITLE, 0) end
-  return results, failed
-end
+-- Places that switch or re-apply the mode call Mode.apply (it shows the dialogs), not apply_all.
 
 -- Reading the status (for status displays) ------------------------------
 --- Names of all registered effects, in run order.

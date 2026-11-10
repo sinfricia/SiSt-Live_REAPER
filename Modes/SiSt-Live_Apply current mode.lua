@@ -14,18 +14,17 @@ local startup = (...) == "startup"
 -- Own folder from this file (not get_action_context: run from __startup.lua, that is __startup.lua's path)
 package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "") .. "../lib/?.lua;" .. package.path
 
-local Mode        = require("SiSt-Live_Mode")
-local Log         = require("SiSt-Live_Log")
-local ModeEffects = require("SiSt-Live_ModeEffects")
-local log         = Log.get("ApplyMode")
+local Mode = require("SiSt-Live_Mode")
+local Log  = require("SiSt-Live_Log")
+local log  = Log.get("ApplyMode")
 
 local mode, opts = Mode.get(), nil
 if startup then
-  mode = Mode.EDIT
-  Mode.set(mode) -- also lights the mode button correctly
+  mode = Mode.EDIT -- Mode.apply sets it, which also lights the mode button correctly
   opts = { except = { locking = true }, except_reason = "left as it is at REAPER startup" }
 end
-local _, failed = ModeEffects.apply_and_report(mode, opts) -- dialog if an effect failed
-log:info("applied %s mode%s, %d effect(s) failed", mode, startup and " (REAPER startup)" or "", failed)
+local _, failed, err = Mode.apply(mode, opts) -- dialog if effects failed or could not run
+log:info("applied %s mode%s, %s", mode, startup and " (REAPER startup)" or "",
+  err and ("effects could not run: " .. err) or (failed .. " effect(s) failed"))
 
 reaper.defer(function() end) -- no undo point

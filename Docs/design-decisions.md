@@ -29,6 +29,9 @@ reasons, not copies of those rules (2026-11-10, see "Where rules live" below).
 - Dialogs in show mode (2026-10-25): background code (defer loops) shows a dialog in show mode ONLY for problems
   that could make the show not work as intended and need immediate action (e.g. a setlist conflict). Everything
   else goes to the log (the console stays closed on stage).
+- Mode effects that fail (2026-11-10): always logged. Edit mode: only the log, which prints to the console (no
+  dialog). Show mode: one dialog that names the log file. One message per problem, never a dialog plus a console
+  line. Every place that switches the mode goes through `Mode.apply`.
 - Code calls reaper.X / gfx.X directly and never stores `reaper` in a local (tests swap the global).
   Performance (2026-10-26): `local r = reaper` only saves one table lookup per call; the API call itself costs
   far more, so it doesn't matter for our scripts. If a hot loop ever needs it: measure first, then copy single

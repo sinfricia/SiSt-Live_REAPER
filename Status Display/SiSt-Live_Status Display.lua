@@ -65,7 +65,7 @@ local function first_line(v)
 end
 
 local function debug_log(fmt, ...)
-  if log then log:debug(fmt, ...) end
+  log:debug(fmt, ...)
 end
 
 --------------------------------------------------------------------------------
@@ -211,26 +211,22 @@ local retry_problem = nil
 
 local function read_input()
   local input = { lib_problems = lib_problems, retry_problem = retry_problem }
-  if Mode then
-    input.mode = Mode.get()
-    input.mode_values = { show = Mode.SHOW, edit = Mode.EDIT }
-  end
-  if ModeEffects then
-    input.last_run = ModeEffects.get_last_run()
-    input.failed_value = ModeEffects.FAILED
-    input.effects = {}
-    for _, name in ipairs(effect_names) do
-      input.effects[#input.effects + 1] = { name = name, status = ModeEffects.get_status(name) }
-    end
+  input.mode = Mode.get()
+  input.mode_values = { show = Mode.SHOW, edit = Mode.EDIT }
+  input.last_run = ModeEffects.get_last_run()
+  input.failed_value = ModeEffects.FAILED
+  input.effects = {}
+  for _, name in ipairs(effect_names) do
+    input.effects[#input.effects + 1] = { name = name, status = ModeEffects.get_status(name) }
   end
   return input
 end
 
 local function apply_effects_again()
   retry_problem = nil
-  local ok, err = pcall(ModeEffects.apply_and_report, Mode.get()) -- dialog if an effect failed
-  if not ok then retry_problem = "Applying the mode effects failed: " .. first_line(err) end
-  debug_log("apply again: %s", ok and "done" or tostring(err))
+  local _, _, err = Mode.apply(Mode.get()) -- dialog if effects failed or could not run
+  if err then retry_problem = "Applying the mode effects failed: " .. first_line(err) end
+  debug_log("apply again: %s", err and tostring(err) or "done")
 end
 
 local LINE_STYLE = {
@@ -244,10 +240,9 @@ local LINE_STYLE = {
 -- effect never undoes the switch). Used by the mode button.
 local function switch_mode(target)
   retry_problem = nil
-  Mode.set(target)
-  if log then log:info("mode switched to %s from the status display", target) end
-  local ok, err = pcall(ModeEffects.apply_and_report, target) -- dialog if an effect failed
-  if not ok then retry_problem = "Applying the mode effects failed: " .. first_line(err) end
+  log:info("mode switched to %s from the status display", target)
+  local _, _, err = Mode.apply(target) -- sets the mode; dialog if effects failed or could not run
+  if err then retry_problem = "Applying the mode effects failed: " .. first_line(err) end
 end
 
 --- Draws the model. Returns the action that was clicked: "retry", "show", "edit" or nil.
@@ -263,7 +258,7 @@ local function draw(win, model)
   -- SHOW uses the deep teal "live" (white text stays readable on it)
   local banner_h = Widgets.HEADER_H
   local header_accent = ({ show = "live" })[model.mode_accent] or model.mode_accent
-  local has_mode_button = Mode and ModeEffects and (model.mode_accent == "show" or model.mode_accent == "edit")
+  local has_mode_button = (model.mode_accent == "show" or model.mode_accent == "edit")
   Widgets.header(model.mode_label, pad, pad, w, banner_h, header_accent) -- title centered over the whole header
   Theme.set_font(Widgets.header_text_size(banner_h))
   local label_w = gfx.measurestr(model.mode_label)
@@ -311,9 +306,9 @@ end
 -- Right-click anywhere: the shared window menu, the debug switch and zoom (no content menus here)
 local function show_context_menu(win)
   local function zoom_to(level) win.state.zoomLevel = Status.clamp_zoom(level) end
-  local debug_on = Log and Log.refresh()
+  local debug_on = Log.refresh()
   win:show_context_menu({
-    { label = "Debug logging", checked = debug_on, disabled = Log == nil,
+    { label = "Debug logging", checked = debug_on,
       action = function()
         local on = Log.toggle_debug() -- keeps the "DEBUG Toggle Logging" toolbar button in sync
         reaper.ShowConsoleMsg("SiSt-Live debug logging: " .. (on and "ON" or "OFF") .. "\n")
@@ -337,19 +332,17 @@ local function main()
     return
   end
 
-  if Log and Log.is_debug() then
+  if Log.is_debug() then
     run_self_tests(function(s) debug_log("%s", s) end)
     for _, row in ipairs(Theme.diagnostics()) do debug_log("%s: %s", row[1], row[2]) end
     for _, problem in ipairs(lib_problems) do debug_log("library problem: %s", problem) end
   end
 
-  if ModeEffects then
-    local ok, names = pcall(ModeEffects.names)
-    if ok then
-      effect_names = names
-    else
-      lib_problems[#lib_problems + 1] = "Mode effects could not be listed: " .. first_line(names)
-    end
+  local ok, names = pcall(ModeEffects.names)
+  if ok then
+    effect_names = names
+  else
+    lib_problems[#lib_problems + 1] = "Mode effects could not be listed: " .. first_line(names)
   end
 
   local win = Window.new{
@@ -359,7 +352,7 @@ local function main()
     extra_keys = { "zoomLevel" },
     debug = function(text) debug_log("window: %s", text) end,
   }
-  if Mode then win:set_mode(Mode.get()) end -- open where the window was in this mode
+  win:set_mode(Mode.get()) -- open where the window was in this mode
 
   local model, last_refresh = nil, -math.huge
   local function refresh_model()

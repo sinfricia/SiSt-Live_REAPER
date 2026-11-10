@@ -28,33 +28,17 @@
 
 package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "") .. "../lib/?.lua;" .. package.path
 
--- Shared SiSt-Live libraries, loaded in LoadSharedLibs().
--- Gui: window, theme colors, buttons.
-local Theme, Window, Widgets = nil, nil, nil -- lib/Gui/Theme.lua, Window.lua, Widgets.lua
-local win = nil                              -- the Window object (created in Init)
--- Mode: the shared edit/show mode.
-local Mode = nil     -- lib/SiSt-Live_Mode.lua
-local pollMode = nil -- returned by Mode.watch(); call once per frame to pick up mode changes
--- Log (shared logging): loaded first in LoadSharedLibs(). Until then, or if it can't be loaded, `log` is a
--- stand-in that drops debug/info lines and prints warnings and errors to the console.
-local Log = nil -- lib/SiSt-Live_Log.lua
-
-local function FallbackLine(level)
-   return function(_, fmt, ...)
-      local ok, msg = pcall(string.format, tostring(fmt), ...)
-      reaper.ShowConsoleMsg("[Setlist] " .. level .. " " .. (ok and msg or tostring(fmt)) .. "\n")
-   end
-end
-local log = {
-   debug = function() end,
-   info = function() end,
-   warn = FallbackLine("WARN"),
-   error = FallbackLine("ERROR"),
-}
+-- Shared SiSt-Live libraries (part of the package: Setup and the self-test check that they are all there)
+local Log = require("SiSt-Live_Log")
+local log = Log.get("Setlist")
+local Theme, Window, Widgets = require("Gui.Theme"), require("Gui.Window"), require("Gui.Widgets")
+local Mode = require("SiSt-Live_Mode")
+local win = nil     -- the Window object (created in Init)
+local pollMode = nil -- returned by Mode.watch() in Init; call once per frame to pick up mode changes
 
 -- True while SiSt-Live debug logging is on ("DEBUG Toggle Logging"). Use it to skip expensive debug output.
 function IsDebug()
-   return Log ~= nil and Log.is_debug()
+   return Log.is_debug()
 end
 
 function PrintListPaths(list)
@@ -230,7 +214,7 @@ local gui = setmetatable({
    dragThreshReached = nil,
 
    -- Follow-scroll (keeps the current project near the top of the list)
-   mode = MODE.SHOW,         -- set from the shared Mode library (see OnSharedModeChanged). Stays SHOW without it.
+   mode = MODE.SHOW,         -- set from the shared Mode library (see OnSharedModeChanged).
    followPending = true,     -- true = scroll to the current project as soon as possible (also on startup)
    listClickTarget = nil,    -- project just selected by clicking it in the list (no follow in edit mode)
    displayOffset = nil,      -- drawn scroll position (may be fractional while animating). nil = not started yet
@@ -415,23 +399,10 @@ function CheckDependencies()
    return false
 end
 
--- Requires the shared libraries (the path is set at the top of this file).
--- Returns true if the script can run.
-function LoadSharedLibs()
-
-   -- Log first, so everything after it is logged
-   Log = require("SiSt-Live_Log")
-   log = Log.get("Setlist")
-
-   Theme = require("Gui.Theme")
-   Window = require("Gui.Window")
-   Widgets = require("Gui.Widgets")
-
-   Mode = require("SiSt-Live_Mode")
-   pollMode = Mode.watch(OnSharedModeChanged) -- calls OnSharedModeChanged once right away
-
-   log:info("shared libraries loaded - list mode: %s", gui.mode)
-   return true
+-- Starts following the shared edit/show mode (Mode.watch calls OnSharedModeChanged once right away).
+function StartModeWatch()
+   pollMode = Mode.watch(OnSharedModeChanged)
+   log:info("following the shared mode - list mode: %s", gui.mode)
 end
 
 -- One line for the self test report.
@@ -2519,7 +2490,7 @@ end
 function SelfTestResults()
    local rows = {}
    -- keep the console readable: the tests call functions that log
-   if Log then Log.set_sink(function() end) end
+   Log.set_sink(function() end)
 
    for _, test in ipairs(selfTests) do
       local t = {}
@@ -2538,7 +2509,7 @@ function SelfTestResults()
       if not ok then rows[#rows + 1] = { name = "[" .. test.name .. "] ERROR " .. tostring(err), ok = false } end
    end
 
-   if Log then Log.set_sink(nil) end
+   Log.set_sink(nil)
    return rows
 end
 
@@ -2895,12 +2866,11 @@ DefineTest("SetListMode / OnSharedModeChanged", function(t)
    t.ok(SetListMode(MODE.SHOW), "edit -> show reports a change")
    t.eq(gui.followPending, true, "back in show mode: jump to the current project")
 
-   local lib = Mode or { SHOW = "show", EDIT = "edit" }
-   OnSharedModeChanged(lib.EDIT, nil)
+   OnSharedModeChanged(Mode.EDIT, nil)
    t.eq(gui.mode, MODE.EDIT, "callback: shared edit -> list edit")
-   OnSharedModeChanged("garbage", lib.EDIT)
+   OnSharedModeChanged("garbage", Mode.EDIT)
    t.eq(gui.mode, MODE.EDIT, "callback: unknown value keeps the current mode")
-   OnSharedModeChanged(lib.SHOW, lib.EDIT)
+   OnSharedModeChanged(Mode.SHOW, Mode.EDIT)
    t.eq(gui.mode, MODE.SHOW, "callback: shared show -> list show")
 
    gui.mode, gui.followPending = savedMode, savedPending
@@ -2934,8 +2904,8 @@ function Frame(w)
       currentProj = reaper.EnumProjects(-1)
 
       CountOpenProjects()
-      if pollMode then pollMode() end -- picks up edit/show changes (callback errors are logged, not thrown)
-      if Mode then w:set_mode(gui.mode) end -- the window saves / restores its position per mode
+      pollMode() -- picks up edit/show changes (callback errors are logged, not thrown)
+      w:set_mode(gui.mode) -- the window saves / restores its position per mode
 
       local rendering = IsRendering()
       if rendering ~= wasRendering then
@@ -3036,8 +3006,7 @@ function Init()
       reaper.ClearConsole()
    end
 
-   -- Loads lib/Gui (required) and the Mode library (optional, sets the list mode before the first frame)
-   if not LoadSharedLibs() then return false end
+   StartModeWatch() -- sets the list mode before the first frame
 
    CountOpenProjects()
 
@@ -3102,7 +3071,7 @@ function Init()
       on_close = OnWindowClose, -- also writes the autosave
       debug = function(text) log:debug("window: %s", text) end,
    }
-   if Mode then win:set_mode(gui.mode) end -- open at this mode's position
+   win:set_mode(gui.mode) -- open at this mode's position
 
    -- Run the self tests last, so the report is at the end of the console and isn't pushed out of
    -- REAPER's limited console buffer by the long startup log above it.
@@ -3119,7 +3088,6 @@ end
 
 -- Test-only switch (see lib/SelfTest.lua): hand over the tests instead of opening the window
 if rawget(_G, "SELFTEST_COLLECT") then
-   LoadSharedLibs() -- so the "Gui library loaded" test sees the libraries
    table.insert(SELFTEST_COLLECT, { name = "Setlist", self_test = SelfTestResults })
 else
    Init()

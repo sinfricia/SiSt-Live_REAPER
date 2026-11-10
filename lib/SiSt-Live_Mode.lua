@@ -56,6 +56,41 @@ function Mode.toggle()
   return Mode.set(Mode.is_edit() and Mode.SHOW or Mode.EDIT)
 end
 
+Mode.DIALOG_TITLE = "SiSt-Live: mode effects"
+
+--- What every place that switches or re-applies the mode calls (Toggle Edit-Show Mode, Apply current mode, the
+--- Status Display's mode and retry buttons, Configure modes): sets the mode, then runs the mode effects.
+--- The mode is the source of truth: a failing effect, or effects that can't run at all, never undo the switch.
+--- Problems (single effects failed, or the effects can't run at all: file missing, error in the library) are
+--- always logged. Log prints them to the console in edit mode, where you are at the computer and the console
+--- opens by itself; in show mode the console stays closed on stage, so there ONE dialog tells the user instead.
+--- The effects library is loaded here and not at the top, because it needs this module itself.
+--- opts: passed on to ModeEffects.apply_all.
+--- Returns results, failed (as apply_all), or nil, nil, <error text> if the effects could not run,
+--- or nil, nil, <reason> if the mode is invalid.
+function Mode.apply(mode, opts)
+  if not Mode.set(mode) then return nil, nil, "invalid mode " .. tostring(mode) end
+
+  local ok, results, failed, message = pcall(function()
+    local ModeEffects = require("SiSt-Live_ModeEffects")
+    local r, f = ModeEffects.apply_all(mode, opts)
+    return r, f, ModeEffects.failure_message(mode, r)
+  end)
+
+  if not ok then
+    local err = tostring(results):match("^[^\r\n]*")
+    log:error("mode effects could not run: %s", tostring(results))
+    if mode == Mode.SHOW then
+      reaper.MB("Show mode: the mode effects could not run.\n\nDetails in the log:\n" .. Log.file_path(),
+        Mode.DIALOG_TITLE, 0)
+    end
+    return nil, nil, err
+  end
+
+  if message and mode == Mode.SHOW then reaper.MB(message, Mode.DIALOG_TITLE, 0) end
+  return results, failed
+end
+
 --- Transition detection for defer loops.
 --- on_change(new_mode, old_mode) fires once immediately (old_mode == nil)
 --- so consumers can initialise, then only when the mode actually changes.
@@ -103,6 +138,22 @@ function Mode.self_test()
   poll()
   check("watch fires on change (show -> edit)",
     #calls == 2 and calls[2][1] == Mode.EDIT and calls[2][2] == Mode.SHOW)
+
+  -- apply: effects that can't run at all must not undo the switch; show mode gets a dialog, edit mode only the log
+  local real_effects, real_mb = package.loaded["SiSt-Live_ModeEffects"], reaper.MB
+  local dialogs = {}
+  reaper.MB = function(text) dialogs[#dialogs + 1] = text; return 1 end
+  package.loaded["SiSt-Live_ModeEffects"] = { apply_all = function() error("boom", 0) end }
+  local _, _, err_show = Mode.apply(Mode.SHOW)
+  local mode_after_show = Mode.get()
+  local _, _, err_edit = Mode.apply(Mode.EDIT)
+  local mode_after_edit = Mode.get()
+  package.loaded["SiSt-Live_ModeEffects"] = real_effects
+  reaper.MB = real_mb
+  check("apply: effects that can't run still switch the mode (both directions)",
+    mode_after_show == Mode.SHOW and mode_after_edit == Mode.EDIT)
+  check("apply: effects that can't run give a dialog in show mode only (edit mode: log)",
+    err_show == "boom" and err_edit == "boom" and #dialogs == 1 and dialogs[1]:find("Show mode", 1, true) ~= nil)
 
   -- restore original state
   if saved == "" then

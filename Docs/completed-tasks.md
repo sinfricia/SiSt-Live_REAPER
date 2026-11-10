@@ -3,6 +3,22 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-10 - Step 3: uniform mode-effects message
+- New `Mode.apply(mode, opts)`: sets the mode, then runs the mode effects. Every place that switches or re-applies
+  the mode uses it (Toggle Edit-Show Mode, Apply current mode, Configure modes, the Status Display's mode and
+  "Apply again" buttons). `ModeEffects.apply_and_report` and the toggle action's special dialog are gone. The
+  effects library is loaded inside Mode.apply (it needs Mode itself), so a missing or broken effects file never
+  stops the switch.
+- Rule (Sina, 2026-11-10): failed effects, or effects that can't run at all, are always logged. Edit mode: only
+  the log (it prints to the console, which opens by itself; no dialog). Show mode: ONE dialog that names the log
+  (the console stays closed on stage). Behaviour change: a single failed effect no longer shows a dialog in edit
+  mode (since step 1.2 it did).
+- Removed the dead library guards in Status Display, Toolbar and Setlist. The Setlist now requires its libraries at
+  the top like the other windows (stand-in logger, `LoadSharedLibs`, 5 guards gone; `StartModeWatch` starts the
+  mode watch). Toolbar lost its empty `lib_problems` list.
+- New Mode test: effects that can't run still switch the mode; dialog in show mode only.
+- Self-test: 433 passed (51 scenarios, 385 checks, 48 live checks). Live test: 98 passed.
+
 ## 2026-11-10 - Step 3: loader (module path)
 - Every script that uses the libraries starts with ONE line that puts lib/ on the module path (measured: each
   script run has its own Lua state and REAPER's default path only covers the config folder, so Setup or
@@ -14,8 +30,7 @@ Docs/design-decisions.md.
   GetSharedLibSearchDirs.
 - "DEBUG Run Self-Test" and Setup register the test list (as before).
 - New rule (CLAUDE.md): self-test while working, live test once right before the commit.
-- Still open from the loader item: some now-unneeded `if Mode then` / `if Log then` guards (go with the mode-effects
-  message step).
+- The now-unneeded `if Mode then` / `if Log then` guards were removed in the mode-effects message step (above).
 - Self-test: 431 passed (51 scenarios, 383 checks, 48 live checks). Live test: 98 passed.
 
 ## 2026-11-10 - Step 3a: tests Claude can run

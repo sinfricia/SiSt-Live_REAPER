@@ -57,14 +57,13 @@ local Theme, Window, Widgets = require("Gui.Theme"), require("Gui.Window"), requ
 local ToolbarSource = require("SiSt-Live_ToolbarSource")
 local Log, Mode = require("SiSt-Live_Log"), require("SiSt-Live_Mode")
 local log = Log.get("Toolbar")
-local lib_problems = {} -- (problems found while running)
 
 local function first_line(v)
   return (tostring(v):match("^[^\r\n]*"))
 end
 
 local function debug_log(fmt, ...)
-  if log then log:debug(fmt, ...) end
+  log:debug(fmt, ...)
 end
 
 --------------------------------------------------------------------------------
@@ -230,7 +229,7 @@ end
 --------------------------------------------------------------------------------
 
 local function current_mode()
-  return Mode and Mode.get() or "show"
+  return Mode.get()
 end
 
 local function main()
@@ -241,7 +240,7 @@ local function main()
     return
   end
 
-  if Log and Log.is_debug() then run_self_tests(function(s) debug_log("%s", s) end) end
+  if Log.is_debug() then run_self_tests(function(s) debug_log("%s", s) end) end
 
   local toolbar, message = nil, nil -- the loaded toolbar, or a message instead
   local loaded_mode = nil
@@ -319,7 +318,6 @@ local function main()
       -- One line per row (gfx.drawstr can't wrap), then a button to the settings
       local lines = {}
       for line in (message .. "\n"):gmatch("([^\n]*)\n") do lines[#lines + 1] = line end
-      for _, problem in ipairs(lib_problems) do lines[#lines + 1] = problem end
       local pad, line_h = px(SIZE.pad), math.floor(px(SIZE.message) * 1.4)
       local y = pad
       for _, line in ipairs(lines) do
