@@ -15,6 +15,7 @@ REAPER API: Docs/reference/ (generated, not in git). Look signatures up there; n
 - When a step is finished, its section moves out of Docs/roadmap.md in the same commit that adds its entry to
   Docs/completed-tasks.md (the Status line keeps the list of done steps).
 - Commits: one step = one commit, with its docs changes in the same commit. Small doc fixes in between (renumbering, tidying) wait for the end of the session or the next step and are committed together, unless Sina asks for one right away.
+- Commit messages are plain: no Co-Authored-By line and no Claude session link (Sina, 2026-11-10).
 
 ## Code
 - Call reaper.X / gfx.X directly, never store `reaper` in a local (tests swap the global). Hot loops only,
