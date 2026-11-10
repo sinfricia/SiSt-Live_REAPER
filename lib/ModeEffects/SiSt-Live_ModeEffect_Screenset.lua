@@ -10,15 +10,14 @@
 -- "Screenset: Save window set #NN" actions). This effect only stores WHICH slot belongs to a mode:
 -- enter the number in "SiSt-Live: Configure modes".
 --
--- Native command IDs never change, so they are constants and trusted (names sometimes change). Before
--- running one, the effect only checks that it exists. Screenset.check_actions() lists all of them with
--- their current names for "DEBUG Run Self-Test".
+-- Native command IDs never change, so they are constants and trusted (names sometimes change).
+-- Screenset.check_actions() checks all of them, in one line, for "DEBUG Run Self-Test".
 --
 -- See SiSt-Live_ModeEffects.lua for the effect contract.
 
 
 
-local Actions = require("SiSt-Live_Actions")
+local Actions = require("Actions")
 
 local Screenset = { name = "screenset" }
 
@@ -36,13 +35,13 @@ function Screenset.command(slot)
   return Screenset.FIRST_LOAD_CMD + slot - 1
 end
 
---- Live check: every command ID with its current name. Fails only for a missing action. Runs nothing.
+--- Live check: one line for all window set actions. Fails for a missing action. Runs nothing.
 function Screenset.check_actions()
   local list = {}
   for slot = 1, Screenset.SLOTS do
     list[#list + 1] = { cmd = Screenset.command(slot), what = ("load window set #%02d"):format(slot) }
   end
-  return Actions.check_native(list)
+  return Actions.check_native("window sets", list)
 end
 
 --- Pure. Parses the number typed into the settings dialog.
@@ -78,8 +77,6 @@ function Screenset.apply(mode)
 
   local cmd = Screenset.command(slot)
   if not cmd then error(("screenset #%d does not exist"):format(slot), 0) end
-
-  Actions.require_native(cmd, ("load window set #%02d"):format(slot))
 
   reaper.Main_OnCommand(cmd, 0)
   return "ok", ("loaded screenset #%02d"):format(slot)
@@ -141,11 +138,7 @@ function Screenset.self_test()
   with_reaper(fakes, Screenset.apply, "show")
   check("apply: loads again on every run (not idempotent by design)", #runs == 2)
 
-  local missing, missing_runs = fake(50000) -- REAPER has no actions at the expected IDs
-  with_reaper(missing, Screenset.set_assignment, "show", 2)
-  local ok, e = pcall(with_reaper, missing, Screenset.apply, "show")
-  check("apply: missing action fails, runs nothing",
-    not ok and #missing_runs == 0 and tostring(e):find("40455", 1, true) ~= nil)
+  local missing = fake(50000) -- REAPER has no actions at the expected IDs
   local renamed, renamed_runs = fake(Screenset.FIRST_LOAD_CMD)
   local real_name = renamed.kbd_getTextFromCmd
   renamed.kbd_getTextFromCmd = function(cmd) return real_name(cmd) ~= "" and "Window sets: Restore set (renamed)" or "" end
@@ -153,10 +146,12 @@ function Screenset.self_test()
   check("apply: a renamed action still runs (the ID is trusted)",
     (with_reaper(renamed, Screenset.apply, "show")) == "ok" and renamed_runs[1] == 40455)
 
-  local all_ok = true
-  for _, r in ipairs(with_reaper(fake(Screenset.FIRST_LOAD_CMD), Screenset.check_actions)) do all_ok = all_ok and r.ok end
-  check("live check passes when every action exists", all_ok)
-  check("live check fails for missing actions", not with_reaper(missing, Screenset.check_actions)[1].ok)
+  local rows = with_reaper(fake(Screenset.FIRST_LOAD_CMD), Screenset.check_actions)
+  check("live check: one line for the 10 actions, passes when every action exists",
+    #rows == 1 and rows[1].ok and rows[1].name == "window sets: 10 actions exist")
+  local bad = with_reaper(missing, Screenset.check_actions)
+  check("live check fails for missing actions and counts them", #bad == 1 and not bad[1].ok
+    and bad[1].name:find("10 of 10 actions MISSING", 1, true) ~= nil)
 
   return results
 end

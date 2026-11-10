@@ -3,6 +3,19 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-10 - Step 3: Action IDs, part 2 (native actions, split)
+- `Actions.require_native` is gone: the Screenset, Fullscreen and KeySection effects run their native action by its
+  fixed ID without checking first (Sina, 2026-11-10: native IDs are trusted; a vanished one is rare). The self-test
+  still checks them on demand, now ONE line per group: "window sets: 10 actions exist", "keyboard sections: 17
+  actions exist", "fullscreen: 1 action exist"; a missing action fails its group line and is listed. Each effect
+  keeps declaring its own native actions (no central table; the design decision text is narrowed).
+- `Actions` is split: `lib/Actions.lua` is general (native name and group check, `find_script(file name)`,
+  `register(path)`, nothing SiSt-Live-specific), `lib/SiSt-Live_Actions.lua` has SiSt-Live's script list, the package
+  folder and the file/script lookups with their messages. Lookups return nil + reason + kind ("not_installed",
+  "missing", "ambiguous"); Setup registers on "missing".
+- Self-test: 439 passed (53 scenarios, 431 checks, 8 live checks; the live checks were 33 single lines before).
+  Live test: 98 passed.
+
 ## 2026-11-10 - Step 3: Action IDs, part 1 (lookup and registration)
 - `Actions.file_command` / `script_command` find a script by its file name in the action list with
   `reaper.kbd_enumerateActions` (measured: 6,942 actions in 4 ms; script actions are named "Script: <file>.lua", their

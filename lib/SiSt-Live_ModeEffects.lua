@@ -23,7 +23,7 @@
 --                             or throws an error (use error(msg, 0) for a clean message): failed.
 --   Effect.settings           optional: list of settings shown in "SiSt-Live: Configure modes"
 --                             (contract in SiSt-Live_SettingsDialog.lua)
---   Effect.check_actions()    optional: live check of native command IDs, list of { name, ok }
+--   Effect.check_actions()    optional: live check of native command IDs, ONE { name, ok } line per group
 --   Effect.diagnostics()      optional: { label, value } rows
 --   Effect.self_test()        optional: list of { name, ok }
 --

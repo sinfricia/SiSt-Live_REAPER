@@ -61,6 +61,7 @@
 --   [main] ../Debug/SiSt-Live_DEBUG Run Self-Test.lua
 --   [nomain] ../lib/SiSt-Live_Log.lua
 --   [nomain] ../lib/SiSt-Live_Button.lua
+--   [nomain] ../lib/Actions.lua
 --   [nomain] ../lib/SiSt-Live_Actions.lua
 --   [nomain] ../lib/SiSt-Live_Mode.lua
 --   [nomain] ../lib/SiSt-Live_ModeEffects.lua
@@ -280,8 +281,8 @@ local function main()
   local has_actions, Actions = pcall(require, "SiSt-Live_Actions")
   if has_actions then
     for _, rel in ipairs(Setup.scripts_to_register(files)) do
-      local cmd, why = Actions.file_command(rel)
-      if not cmd and why and why:find("run SiSt-Live: Setup", 1, true) then
+      local cmd, why, kind = Actions.file_command(rel)
+      if not cmd and kind == "missing" then
         local new, err = Actions.register(rel)
         if new then added[#added + 1] = rel else failed[#failed + 1] = rel .. ": " .. tostring(err) end
       elseif not cmd then

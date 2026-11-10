@@ -20,6 +20,7 @@ local Log            = require("SiSt-Live_Log")
 local ModeEffects    = require("SiSt-Live_ModeEffects")
 local SettingsDialog = require("SiSt-Live_SettingsDialog")
 local ToolbarSource  = require("SiSt-Live_ToolbarSource")
+local ActionsGeneral = require("Actions")
 local Actions        = require("SiSt-Live_Actions")
 local Button         = require("SiSt-Live_Button")
 local ActionReferenceChecks = require("ActionReferenceChecks")
@@ -51,6 +52,7 @@ local components = {
   { name = "SettingsDialog", file = "lib/SiSt-Live_SettingsDialog.lua", self_test = SettingsDialog.self_test },
   { name = "ToolbarSource", file = "lib/SiSt-Live_ToolbarSource.lua", self_test = ToolbarSource.self_test,
     diagnostics = function() return ToolbarSource.diagnostics() end },
+  { name = "Actions (general)", file = "lib/Actions.lua", self_test = ActionsGeneral.self_test },
   { name = "Actions", file = "lib/SiSt-Live_Actions.lua", self_test = Actions.self_test,
     diagnostics = function() return Actions.diagnostics() end },
   { name = "Button", file = "lib/SiSt-Live_Button.lua", self_test = Button.self_test },

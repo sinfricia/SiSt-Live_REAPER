@@ -8,14 +8,14 @@
 -- Runs after the screenset effect (see ModeEffects.MODULES), so a window set can't undo it.
 --
 -- Set in "SiSt-Live: Configure modes": "on" or "off".
--- The command ID is trusted (IDs don't change, names sometimes do). Before running, the effect only checks
--- that the action exists. Fullscreen.check_actions() lists it for "DEBUG Run Self-Test".
+-- The command ID is trusted (IDs don't change, names sometimes do). Fullscreen.check_actions() checks it for
+-- "DEBUG Run Self-Test".
 --
 -- See SiSt-Live_ModeEffects.lua for the effect contract.
 
 
 
-local Actions = require("SiSt-Live_Actions")
+local Actions = require("Actions")
 
 local Fullscreen = { name = "fullscreen" }
 
@@ -27,7 +27,7 @@ Fullscreen.WHAT = "Toggle fullscreen" -- what the action does (for messages; REA
 
 -- Actions ---------------------------------------------------------------
 function Fullscreen.check_actions()
-  return Actions.check_native({ { cmd = Fullscreen.CMD, what = Fullscreen.WHAT } })
+  return Actions.check_native("fullscreen", { { cmd = Fullscreen.CMD, what = Fullscreen.WHAT } })
 end
 
 --- Pure. "on" / "off" (also yes/no, 1/0, true/false) -> true / false; empty -> "none"; else nil + error.
@@ -60,8 +60,6 @@ function Fullscreen.apply(mode)
   if want == nil then
     return "skipped", ("no fullscreen setting for %s mode"):format(mode)
   end
-
-  Actions.require_native(Fullscreen.CMD, Fullscreen.WHAT)
 
   local state = reaper.GetToggleCommandState(Fullscreen.CMD)
   if state ~= 0 and state ~= 1 then
@@ -137,11 +135,10 @@ function Fullscreen.self_test()
   with_reaper(renamed, Fullscreen.set_assignment, "show", true)
   check("apply: a renamed action still runs (the ID is trusted)",
     (with_reaper(renamed, Fullscreen.apply, "show")) == "ok" and #renamed_runs == 1)
-  local missing, missing_runs = fake({ name = "" })
-  with_reaper(missing, Fullscreen.set_assignment, "show", true)
-  check("apply: missing action fails, runs nothing", not pcall(with_reaper, missing, Fullscreen.apply, "show") and #missing_runs == 0)
-  check("live check", with_reaper(fake(), Fullscreen.check_actions)[1].ok and with_reaper(renamed, Fullscreen.check_actions)[1].ok
-    and not with_reaper(missing, Fullscreen.check_actions)[1].ok)
+  local missing = fake({ name = "" })
+  check("live check: one line, passes with the action, fails without it",
+    #with_reaper(fake(), Fullscreen.check_actions) == 1 and with_reaper(fake(), Fullscreen.check_actions)[1].ok
+    and with_reaper(renamed, Fullscreen.check_actions)[1].ok and not with_reaper(missing, Fullscreen.check_actions)[1].ok)
 
   return results
 end

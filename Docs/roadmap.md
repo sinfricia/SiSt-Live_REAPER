@@ -17,29 +17,22 @@ In this order (decided 2026-11-10): decisions first, core cleanups before the th
 test and the DEBUG actions last. Done so far: editor setup (nothing to do in the repo), static analysis (dropped),
 show protection decision (the mouse mode effect, see completed tasks).
 
-1. Action IDs, second part (the first part, lookup by file name in the action list and registration in Setup, is
-   done; see completed tasks): remove Actions.require_native from the Screenset, Fullscreen and KeySection effects
-   (Sina, 2026-11-10: native IDs are trusted, a missing one is rare); the self-test reports the native actions as one
-   line per group ("10 window set actions ok"), not one line per action; each effect keeps declaring its own native
-   actions; split Actions into a general part (lookup by name, register, check a list; nothing SiSt-Live-specific) and
-   SiSt-Live's script list; narrow the design decision text ("one table per package" becomes: one list for scripts,
-   the rest stays with its code). Extensions are checked in the Setup step (item 5), not here.
-2. Per-mode setting descriptions (on/off, number with range, choice, custom with "take current"), storage per
+1. Per-mode setting descriptions (on/off, number with range, choice, custom with "take current"), storage per
    mode once; keep the Windows effect's "never set = default" vs "empty = none"; the text dialog becomes one
    renderer, usable by the future configuration window.
-3. Save current look for a mode (2026-11-10; builds on 2): one action/button "Save current state as SHOW (EDIT)
+2. Save current look for a mode (2026-11-10; builds on 1): one action/button "Save current state as SHOW (EDIT)
    mode" takes the current theme, TCP / MCP / transport layouts and screenset (saves the window set into the
    mode's slot) into the current mode's settings, built on "take current". Later also a button in the
    configuration window. NO autosave of theme/layouts/screenset (a window closed by accident on stage would
    become the new show look); SiSt-Live window positions keep autosaving as today.
-4. Logging in one go: make shared candidates general (Theme.configure: show/edit accents; Log.configure:
+3. Logging in one go: make shared candidates general (Theme.configure: show/edit accents; Log.configure:
    show-mode console rule, file, section); global debug switch for all packages, SiSt-Live's mode sets a global
    "quiet console" flag that Log respects. (The VS Code debugger helper was dropped, 2026-11-10: see design
    decisions, "Editor".)
-5. Setup as the entry point for checks, in this order: Status Display / Toolbar debug-on-open test runs switch to
-    SelfTest; Setup becomes the entry point for checks (installation, tests, action markers) and registers the
-    scripts in the action list (from 1); then remove the DEBUG actions one by one (approval for each).
-6. After 1: simplify the live test. Action IDs by file name instead of 8 literal IDs; general helpers (relative
+4. Setup as the entry point for checks, in this order: Status Display / Toolbar debug-on-open test runs switch to
+    SelfTest; Setup becomes the entry point for checks (installation, tests, action markers), and checks the
+    required extensions (one API function each, e.g. APIExists); then remove the DEBUG actions one by one (approval for each).
+5. Simplify the live test (the Action ID lookup by file name is done). Action IDs by file name instead of 8 literal IDs; general helpers (relative
     paths, file lists, folder picker, close all projects) into the libraries; one FX name each for Tone Generator
     / ReaSynth; split into a short main file + LiveTest/Loopback.lua, Show.lua, Looper.lua. The melodies stay.
 

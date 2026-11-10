@@ -6,7 +6,7 @@
 --   Main:      "Main action section: Clear any override"      (24800)
 --   alt-N:     "Main action section: Toggle override to <name>" (24802 + N, alt-1 = 24803)
 -- The command IDs are trusted (IDs don't change, names sometimes do; the alt actions even carry the
--- section's name, which you can rename). Before running, the effect only checks that the action exists.
+-- section's name, which you can rename).
 --
 -- The alt actions TOGGLE: running one while it's active would switch the override off again. So the
 -- effect reads REAPER's toggle state first and only runs the action when it is off. If REAPER doesn't
@@ -14,13 +14,13 @@
 --
 -- Set in "SiSt-Live: Configure modes": "main" or the alt number, e.g. 1 for alt-1.
 --
--- KeySection.check_actions() lists all IDs with their current names for "DEBUG Run Self-Test".
+-- KeySection.check_actions() checks all IDs, in one line, for "DEBUG Run Self-Test".
 --
 -- See SiSt-Live_ModeEffects.lua for the effect contract.
 
 
 
-local Actions = require("SiSt-Live_Actions")
+local Actions = require("Actions")
 
 local KeySection = { name = "keyboard" }
 
@@ -45,13 +45,13 @@ function KeySection.label(n)
   return ("alt-%d"):format(n)
 end
 
---- Live check: every command ID with its current name. Fails only for a missing action. Runs nothing.
+--- Live check: one line for all keyboard section actions. Fails for a missing action. Runs nothing.
 function KeySection.check_actions()
   local list = {}
   for n = 0, KeySection.ALT_COUNT do
     list[#list + 1] = { cmd = KeySection.command(n), what = "keyboard " .. KeySection.label(n) }
   end
-  return Actions.check_native(list)
+  return Actions.check_native("keyboard sections", list)
 end
 
 --- Pure. Parses the text typed into the settings dialog: "main" / "default" / "0" -> 0,
@@ -98,13 +98,11 @@ function KeySection.apply(mode)
   local cmd = KeySection.command(n)
   if not cmd then error(("keyboard section %s does not exist"):format(tostring(n)), 0) end
 
-  local name = Actions.require_native(cmd, "keyboard " .. KeySection.label(n))
-
   local state = reaper.GetToggleCommandState(cmd)
   if state == 1 then return "skipped", "already active: " .. KeySection.label(n) end
   if state ~= 0 then
     -- the alt actions toggle: without a known state, running one might switch the section off
-    error(("REAPER doesn't report the state of '%s', not switching blindly"):format(name), 0)
+    error(("REAPER doesn't report the state of the keyboard section '%s', not switching blindly"):format(KeySection.label(n)), 0)
   end
 
   reaper.Main_OnCommand(cmd, 0)
@@ -197,14 +195,15 @@ function KeySection.self_test()
   with_reaper(renamed, KeySection.set_assignment, "show", 1)
   check("apply: a renamed action still runs (the ID is trusted)",
     (with_reaper(renamed, KeySection.apply, "show")) == "ok" and renamed_runs[1] == 24803)
-  local missing, missing_runs = fake({ names = { [24803] = "" } })
-  with_reaper(missing, KeySection.set_assignment, "show", 1)
-  check("apply: missing action fails, runs nothing", not pcall(with_reaper, missing, KeySection.apply, "show") and #missing_runs == 0)
+  local missing = fake({ names = { [24803] = "" } })
 
-  local all_ok = true
-  for _, r in ipairs(with_reaper(fake(), KeySection.check_actions)) do all_ok = all_ok and r.ok end
-  check("live check passes when every action exists", all_ok and #with_reaper(fake(), KeySection.check_actions) == 17)
-  check("live check fails for a missing action", not with_reaper(missing, KeySection.check_actions)[2].ok)
+  local rows = with_reaper(fake(), KeySection.check_actions)
+  check("live check: one line for the 17 actions, passes when every action exists",
+    #rows == 1 and rows[1].ok and rows[1].name == "keyboard sections: 17 actions exist")
+  check("live check fails for a missing action and names it", (function()
+    local r = with_reaper(missing, KeySection.check_actions)[1]
+    return not r.ok and r.name:find("24803", 1, true) ~= nil
+  end)())
 
   return results
 end

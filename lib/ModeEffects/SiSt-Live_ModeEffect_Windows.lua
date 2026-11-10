@@ -234,7 +234,7 @@ run_self_test = function()
     for i, w in ipairs(Windows.WINDOWS) do
       local path = Actions.join_path("R", Actions.SCRIPTS[w.id], sep)
       if not (opts.missing and opts.missing[w.id]) then files[path] = true end
-      list[#list + 1] = { 1000 + i, "Script: " .. Actions.base_name(Actions.SCRIPTS[w.id]), "RS" .. i }
+      list[#list + 1] = { 1000 + i, "Script: " .. require("Actions").base_name(Actions.SCRIPTS[w.id]), "RS" .. i }
     end
     local fakes = {
       GetResourcePath = function() return "R" end,
