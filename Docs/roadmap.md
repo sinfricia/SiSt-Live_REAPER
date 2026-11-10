@@ -17,22 +17,20 @@ In this order (decided 2026-11-10): decisions first, core cleanups before the th
 test and the DEBUG actions last. Done so far: editor setup (nothing to do in the repo), static analysis (dropped),
 show protection decision (the mouse mode effect, see completed tasks).
 
-1. Per-mode setting descriptions (on/off, number with range, choice, custom with "take current"), storage per
-   mode once; keep the Windows effect's "never set = default" vs "empty = none"; the text dialog becomes one
-   renderer, usable by the future configuration window.
-2. Save current look for a mode (2026-11-10; builds on 1): one action/button "Save current state as SHOW (EDIT)
+1. Save current look for a mode (2026-11-10): one action/button "Save current state as SHOW (EDIT)
    mode" takes the current theme, TCP / MCP / transport layouts and screenset (saves the window set into the
-   mode's slot) into the current mode's settings, built on "take current". Later also a button in the
+   mode's slot) into the current mode's settings, built on a "take current" function in each of those effects
+   (theme file in use, layouts, screenset slot; no setting descriptions needed). Later also a button in the
    configuration window. NO autosave of theme/layouts/screenset (a window closed by accident on stage would
    become the new show look); SiSt-Live window positions keep autosaving as today.
-3. Logging in one go: make shared candidates general (Theme.configure: show/edit accents; Log.configure:
+2. Logging in one go: make shared candidates general (Theme.configure: show/edit accents; Log.configure:
    show-mode console rule, file, section); global debug switch for all packages, SiSt-Live's mode sets a global
    "quiet console" flag that Log respects. (The VS Code debugger helper was dropped, 2026-11-10: see design
    decisions, "Editor".)
-4. Setup as the entry point for checks, in this order: Status Display / Toolbar debug-on-open test runs switch to
+3. Setup as the entry point for checks, in this order: Status Display / Toolbar debug-on-open test runs switch to
     SelfTest; Setup becomes the entry point for checks (installation, tests, action markers), and checks the
     required extensions (one API function each, e.g. APIExists); then remove the DEBUG actions one by one (approval for each).
-5. Simplify the live test (the Action ID lookup by file name is done). Action IDs by file name instead of 8 literal IDs; general helpers (relative
+4. Simplify the live test (the Action ID lookup by file name is done). Action IDs by file name instead of 8 literal IDs; general helpers (relative
     paths, file lists, folder picker, close all projects) into the libraries; one FX name each for Tone Generator
     / ReaSynth; split into a short main file + LiveTest/Loopback.lua, Show.lua, Looper.lua. The melodies stay.
 
@@ -133,7 +131,10 @@ After step 6: what Setup installs depends on the package split. Ends with the cl
   old item "reporting channel to the Status Display; possibly run the checks at startup".
 - Setlist: link text entries to projects (2026-11-10): a linked text entry moves with its project when
   reordering; an unlinked one keeps its place in the list.
-- Configuration window (setting descriptions + Gui), replacing the text dialog. Needs a checkbox widget (also for
+- Configuration window (setting descriptions + Gui), replacing the text dialog. The per-mode setting descriptions
+  (decided 2026-11-10 to build them together with this window, not before: nothing needs them earlier) declare each
+  setting as data (on/off, number with range, choice, custom with "take current"), storage per mode once with the
+  same ExtState keys and text formats as today; keep the Windows effect's "never set = default" vs "empty = none". Needs a checkbox widget (also for
   the live test's test selection).
 - Workflows (home: Batch Project Tools, 2026-11-10; after 6c and the configuration window): general operations
   with parameters, run through BatchProjects on chosen projects: rename tracks, add tracks, change existing tracks
