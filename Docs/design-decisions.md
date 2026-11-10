@@ -220,7 +220,9 @@ only ever run on demand; lookups only where unavoidable.
 - The edit state is not stored anywhere permanent: the effect saves the current Mouse Modifiers preferences in a
   small file while show mode is blocking them and restores them on the way back (or at the next start after a
   crash). Edit the mouse modifiers in edit mode as usual.
-- Cursor images can't follow the mode (custom .cur files in the Cursors folder need a REAPER restart).
+- While blocked, the arrange view shows the plain arrow (script "Lock mouse cursor to arrow in arrange view", blocks
+  WM_SETCURSOR through js_ReaScriptAPI; Windows first). Custom cursor images can't follow the mode (.cur files in the
+  Cursors folder need a REAPER restart).
 
 ## Naming (2026-10-19)
 

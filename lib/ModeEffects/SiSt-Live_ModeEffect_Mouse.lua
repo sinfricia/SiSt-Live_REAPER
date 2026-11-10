@@ -126,6 +126,92 @@ function Mouse.parse(input)
   return nil, ("'%s' is not 'block' or 'restore'"):format(input)
 end
 
+-- Arrow cursor ------------------------------------------------------------
+-- While the mouse modifiers are blocked, the arrange view shows the plain arrow, so it is clear that clicks and
+-- drags there do nothing. REAPER sets its own cursor on every mouse move, so setting the arrow alone flickers: the
+-- message that makes a window change its cursor (WM_SETCURSOR) is blocked on the arrange view for as long as the
+-- arrow script runs, and the arrow is set while the mouse is inside. Needs the js_ReaScriptAPI extension. Written
+-- for Windows: the arrow handle is a Windows cursor number, and on macOS / Linux the script ends without doing
+-- anything if it can't be loaded.
+--
+-- The script "SiSt-Live: Lock mouse cursor to arrow in arrange view" (Modes/) runs the loop; the effect starts it
+-- after it blocked the mouse modifiers. It ends by itself as soon as the mouse is no longer blocked (the state file
+-- is gone) and always gives the arrange view its cursor messages back, also when it ends in any other way.
+Mouse.ARROW_SECTION      = "SiSt-Live"
+Mouse.ARROW_KEY_BEAT     = "mouse_arrow_beat" -- heartbeat (os.time), not persisted
+Mouse.ARROW_BEAT_MAX_AGE = 3                  -- seconds: an older heartbeat means "not running"
+Mouse.ARROW_CURSOR       = 32512              -- IDC_ARROW (Windows predefined cursor)
+Mouse.ARRANGE_ID         = 1000               -- control ID of the arrange view in REAPER's main window
+Mouse.ARROW_MESSAGE      = "WM_SETCURSOR"
+
+--- true if the arrow script is running (its heartbeat is fresh).
+function Mouse.arrow_is_running()
+  local beat = tonumber(reaper.GetExtState(Mouse.ARROW_SECTION, Mouse.ARROW_KEY_BEAT))
+  return beat ~= nil and os.time() - beat < Mouse.ARROW_BEAT_MAX_AGE
+end
+
+--- Starts an arrow controller for the script's loop. is_blocked(): true while the mouse modifiers are blocked.
+--- Returns the controller (.step(), .release()), or nil + reason if it can't work here.
+function Mouse.arrow_create(is_blocked)
+  if not reaper.APIExists("JS_WindowMessage_Intercept") then
+    return nil, "the js_ReaScriptAPI extension is missing"
+  end
+  local arrange = reaper.JS_Window_FindChildByID(reaper.GetMainHwnd(), Mouse.ARRANGE_ID)
+  if not arrange then return nil, "the arrange view was not found" end
+  local arrow = reaper.JS_Mouse_LoadCursor(Mouse.ARROW_CURSOR)
+  if not arrow then return nil, "the arrow cursor could not be loaded (Windows cursor number)" end
+
+  local self = { blocking = false, last_beat = 0 }
+
+  --- Gives the arrange view its cursor messages back and removes the heartbeat. Safe to call more than once.
+  function self.release()
+    if self.blocking then
+      reaper.JS_WindowMessage_Release(arrange, Mouse.ARROW_MESSAGE)
+      self.blocking = false
+    end
+    reaper.DeleteExtState(Mouse.ARROW_SECTION, Mouse.ARROW_KEY_BEAT, false)
+  end
+
+  --- One cycle. Returns true to go on, or false and a reason when it is finished. Never leaves the block on when
+  --- it returns false.
+  function self.step()
+    if not is_blocked() then
+      self.release()
+      return false, "the mouse modifiers are no longer blocked"
+    end
+
+    local now = os.time()
+    if now ~= self.last_beat then
+      self.last_beat = now
+      reaper.SetExtState(Mouse.ARROW_SECTION, Mouse.ARROW_KEY_BEAT, tostring(now), false)
+    end
+
+    if not self.blocking then
+      if reaper.JS_WindowMessage_Intercept(arrange, Mouse.ARROW_MESSAGE, false) ~= 1 then -- false = block it
+        self.release()
+        return false, "the cursor messages of the arrange view could not be blocked (another script has them?)"
+      end
+      self.blocking = true
+    end
+
+    local x, y = reaper.GetMousePosition()
+    if reaper.JS_Window_FromPoint(x, y) == arrange then reaper.JS_Mouse_SetCursor(arrow) end
+    return true
+  end
+
+  return self
+end
+
+--- Starts the arrow script unless it already runs. Tests replace this function. Returns nil, or a short note if it
+--- could not be started: the mouse modifiers are blocked anyway, only the arrow is missing.
+function Mouse.start_arrow_script()
+  if Mouse.arrow_is_running() then return nil end
+  local cmd, why = require("SiSt-Live_Actions").script_command("arrow")
+  if not cmd then return "arrow cursor script not started: " .. tostring(why) end
+  reaper.Main_OnCommand(cmd, 0)
+  return nil
+end
+
 -- Effect ----------------------------------------------------------------
 local function block()
   local slots = Mouse.slots()
@@ -156,9 +242,13 @@ local function block()
     reaper.SetMouseModifier(s[1], s[2], Mouse.NO_ACTION)
   end
 
-  if not saved_now and changed == 0 then return "skipped", "already blocked" end
-  return "ok", ("blocked %d mouse modifier slots (edit state saved%s)"):format(
-    #slots, saved_now and "" or " earlier")
+  local ok_start, note = pcall(Mouse.start_arrow_script)
+  if not ok_start then note = "arrow cursor script not started: " .. tostring(note) end
+  note = note and (", " .. note) or ""
+
+  if not saved_now and changed == 0 then return "skipped", "already blocked" .. note end
+  return "ok", ("blocked %d mouse modifier slots (edit state saved%s)%s"):format(
+    #slots, saved_now and "" or " earlier", note)
 end
 
 local function restore()
@@ -215,6 +305,80 @@ function Mouse.diagnostics()
   return rows
 end
 
+--- Self-test of the arrow cursor. Fake window functions: never touches the real arrange view.
+function Mouse.arrow_self_test()
+  local with_reaper = require("SelfTest").with_reaper
+  local results = {}
+  local function check(name, cond) results[#results + 1] = { name = name, ok = cond and true or false } end
+
+  local function fake(opts)
+    opts = opts or {}
+    local log = { intercepts = 0, releases = 0, cursors = 0 }
+    local fakes = {
+      APIExists = function() return not opts.no_extension end,
+      GetMainHwnd = function() return "main" end,
+      JS_Window_FindChildByID = function() return (not opts.no_arrange) and "arrange" or nil end,
+      JS_Mouse_LoadCursor = function() return (not opts.no_arrow) and "arrow" or nil end,
+      JS_WindowMessage_Intercept = function() log.intercepts = log.intercepts + 1; return opts.intercept_result or 1 end,
+      JS_WindowMessage_Release = function() log.releases = log.releases + 1 end,
+      GetMousePosition = function() return 10, 10 end,
+      JS_Window_FromPoint = function() return opts.under_mouse or "arrange" end,
+      JS_Mouse_SetCursor = function() log.cursors = log.cursors + 1 end,
+    }
+    return fakes, log
+  end
+
+  local blocked = true
+  local function is_blocked() return blocked end
+
+  for _, case in ipairs({
+    { "no extension", { no_extension = true } },
+    { "no arrange view", { no_arrange = true } },
+    { "no arrow cursor", { no_arrow = true } },
+  }) do
+    local fakes, log = fake(case[2])
+    local c, why = with_reaper(fakes, Mouse.arrow_create, is_blocked)
+    check("arrow: " .. case[1] .. " -> nothing created, with a reason, nothing blocked",
+      c == nil and type(why) == "string" and log.intercepts == 0)
+  end
+
+  -- running: the block is set once, the arrow only while the mouse is over the arrange view
+  local fakes, log = fake()
+  local c = with_reaper(fakes, Mouse.arrow_create, is_blocked)
+  with_reaper(fakes, c.step); with_reaper(fakes, c.step); with_reaper(fakes, c.step)
+  check("arrow: cursor messages blocked once, arrow set every cycle over the arrange view",
+    log.intercepts == 1 and log.cursors == 3 and log.releases == 0)
+  check("arrow: heartbeat written, arrow_is_running sees it", with_reaper(fakes, Mouse.arrow_is_running))
+
+  local outside, outside_log = fake({ under_mouse = "tcp" })
+  local c2 = with_reaper(outside, Mouse.arrow_create, is_blocked)
+  with_reaper(outside, c2.step)
+  check("arrow: mouse outside the arrange view -> no arrow set", outside_log.cursors == 0)
+
+  -- the mouse modifiers are restored: finished, block released exactly once, heartbeat gone
+  blocked = false
+  local more, why = with_reaper(fakes, c.step)
+  with_reaper(fakes, c.release) -- the script's exit handler calls release again
+  check("arrow: no longer blocked -> finished, cursor messages given back once",
+    more == false and why ~= nil and log.releases == 1)
+  check("arrow: heartbeat removed when finished", not with_reaper(fakes, Mouse.arrow_is_running))
+
+  -- another script has the cursor messages: finish without leaving anything blocked
+  blocked = true
+  local taken, taken_log = fake({ intercept_result = 0 })
+  local c3 = with_reaper(taken, Mouse.arrow_create, is_blocked)
+  local more3 = with_reaper(taken, c3.step)
+  check("arrow: block refused -> finished, nothing to release", more3 == false and taken_log.releases == 0)
+
+  -- a stale heartbeat does not count as running
+  with_reaper(fake(), function()
+    reaper.SetExtState(Mouse.ARROW_SECTION, Mouse.ARROW_KEY_BEAT, tostring(os.time() - 60), false)
+    check("arrow: an old heartbeat means not running", not Mouse.arrow_is_running())
+  end)
+
+  return results
+end
+
 --- Built-in self-test. Fake mouse modifiers and a temporary state file: never touches the real mouse settings.
 function Mouse.self_test()
   local with_reaper = require("SelfTest").with_reaper
@@ -224,6 +388,8 @@ function Mouse.self_test()
   local sep = package.config:sub(1, 1)
   local tmp = reaper.GetResourcePath() .. sep .. "SiSt-Live_mousetest_" .. os.time() .. ".txt"
   Mouse.set_state_path(tmp)
+  local real_starter, started = Mouse.start_arrow_script, 0
+  Mouse.start_arrow_script = function() started = started + 1 end -- the real one would run a REAPER action
 
   -- A fake REAPER: slot values in a table; "No action" reads back as "0", -1 resets to the default ("")
   local function fake()
@@ -275,6 +441,7 @@ function Mouse.self_test()
   end
   check("block: state saved first, then every blocked slot is set to no action",
     result == "ok" and Mouse.is_blocked() and all_blocked)
+  check("block: the arrow script is started", started == 1)
   check("block: lanes, scrolling and the MIDI editor are not in the list", (function()
     for _, s in ipairs(Mouse.slots()) do
       if s[1]:find("LINKEDLANE", 1, true) or s[1]:find("FIXEDLANE", 1, true) or s[1]:find("MIDI", 1, true)
@@ -284,7 +451,8 @@ function Mouse.self_test()
   end)())
 
   local second = with_reaper(fakes, Mouse.apply, "show")
-  check("block twice: reported as already blocked", second == "skipped")
+  check("block twice: reported as already blocked, the arrow script is looked after again",
+    second == "skipped" and started == 2)
   local restored = with_reaper(fakes, Mouse.apply, "edit")
   check("restore: every slot is exactly as before, even after blocking twice (the saved state was not overwritten)",
     restored == "ok" and snapshot(store) == edit_state)
@@ -298,6 +466,20 @@ function Mouse.self_test()
   with_reaper(next_start_fakes, Mouse.set_assignment, "edit", "restore")
   with_reaper(next_start_fakes, Mouse.apply, "edit")
   check("restore after a restart in show mode: the saved state is put back", snapshot(next_store) == edit_state)
+
+  -- an arrow script that can't be started doesn't fail the block
+  local starter_fakes, starter_store = fake()
+  with_reaper(starter_fakes, Mouse.set_assignment, "show", "block")
+  Mouse.start_arrow_script = function() error("no such script", 0) end
+  local starter_result, starter_msg = with_reaper(starter_fakes, Mouse.apply, "show")
+  Mouse.start_arrow_script = function() return "arrow cursor script not started: not installed" end
+  os.remove(tmp)
+  local note_result, note_msg = with_reaper(starter_fakes, Mouse.apply, "show")
+  os.remove(tmp)
+  check("block: an arrow script that fails to start is only mentioned, the block still works",
+    starter_result == "ok" and starter_msg:find("arrow cursor script not started", 1, true) ~= nil
+    and note_result == "ok" and note_msg:find("not installed", 1, true) ~= nil
+    and starter_store["MM_CTX_ITEM:0"] == Mouse.BLOCKED)
 
   -- unreadable state file: nothing is changed, the file is kept
   local f = io.open(tmp, "wb"); f:write("garbage\n"); f:close()
@@ -314,8 +496,10 @@ function Mouse.self_test()
   check("block: if the state can't be saved, nothing is blocked",
     not pcall(with_reaper, nosave, Mouse.apply, "show") and #nosave_sets == 0)
 
+  Mouse.start_arrow_script = real_starter
   Mouse.set_state_path(nil)
   os.remove(tmp)
+  for _, r in ipairs(Mouse.arrow_self_test()) do results[#results + 1] = r end
   return results
 end
 

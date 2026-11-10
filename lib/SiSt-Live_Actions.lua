@@ -33,8 +33,9 @@ Actions.SCRIPTS = {
   toolbar = "Toolbar/SiSt-Live_Toolbar.lua",
   mode    = "Modes/SiSt-Live_Toggle Edit-Show Mode.lua",
   debug   = "Debug/SiSt-Live_DEBUG Toggle Logging.lua",
+  arrow   = "Modes/SiSt-Live_Lock mouse cursor to arrow in arrange view.lua",
 }
-Actions.SCRIPT_ORDER = { "setlist", "status", "toolbar", "mode", "debug" } -- for diagnostics
+Actions.SCRIPT_ORDER = { "setlist", "status", "toolbar", "mode", "debug", "arrow" } -- for diagnostics
 
 -- Native actions ---------------------------------------------------------------------
 

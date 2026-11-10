@@ -17,9 +17,14 @@ Docs/design-decisions.md.
 - Probe in the open REAPER (backed up the ini first): "No action" reads back as "0", a restore from a dump is exact
   for all slots; side effect: REAPER then lists previously implicit default slots explicitly in reaper-mouse.ini
   (same behaviour, longer file).
-- Known and accepted: clicking an item still selects it (built into REAPER, not a mouse modifier); the cursor over item
-  edges and envelope points still shows the edit icons. Cursor images can't follow the mode: custom cursors are .cur
-  files in the resource path's Cursors folder and REAPER needs a restart to load them (reaper.fm/sdk/cursors).
+- Arrow cursor: while the mouse is blocked the arrange view shows the plain arrow. Script "SiSt-Live: Lock mouse
+  cursor to arrow in arrange view" (Modes/), started by the mouse effect, ends when the state file is gone. It blocks
+  WM_SETCURSOR on the arrange view (JS_WindowMessage_Intercept) and sets the arrow while the mouse is inside;
+  setting the arrow every frame alone flickered (tested 2026-11-10). A short flicker when a modifier key is pressed
+  or released is accepted. Windows only for now (Windows cursor number); where it can't work the script ends
+  and the block still works. The code is part of the mouse effect file (`Mouse.arrow_*`) because nothing else uses
+  it. Custom cursor images (.cur in the Cursors folder) can't follow the mode: REAPER needs a restart for them.
+- Known and accepted: clicking an item still selects it (built into REAPER, not a mouse modifier).
 - Locking removed in the same commit (Sina, 2026-11-10): the Locking effect, its tests, its Setup entry and the
   startup exception are gone, so the per-project ownership idea is dropped. Its old settings `locking_show` /
   `locking_edit` stay unused in reaper-extstate.ini. Project locking that is already on in a project stays on until
@@ -27,7 +32,7 @@ Docs/design-decisions.md.
   "Clear time selection and loop points" stays: it is used by custom actions.
 - Editor: nothing to do in the repo (the ReaScript extension writes .vscode/settings.json itself, per machine);
   static analysis dropped after a trial (93 warnings, 92 noise); no VS Code debugger helper. Design decisions, "Editor".
-- Self-test: 422 passed (51 scenarios, 389 checks, 33 live checks; the Locking effect's tests are gone). Live test: 98 passed.
+- Self-test: 434 passed (51 scenarios, 401 checks, 33 live checks; the Locking effect's tests are gone, the arrow cursor tests are new). Live test: 99 passed.
 
 ## 2026-11-10 - Step 3: uniform mode-effects message
 - New `Mode.apply(mode, opts)`: sets the mode, then runs the mode effects. Every place that switches or re-applies
