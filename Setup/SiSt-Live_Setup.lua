@@ -60,6 +60,7 @@
 --   [main] ../Transport/SiSt-Live_Clear time selection and loop points.lua
 --   [main] ../Debug/SiSt-Live_DEBUG Toggle Logging.lua
 --   [main] ../Debug/SiSt-Live_DEBUG Run Self-Test.lua
+--   [nomain] ../lib/Log.lua
 --   [nomain] ../lib/SiSt-Live_Log.lua
 --   [nomain] ../lib/SiSt-Live_Button.lua
 --   [nomain] ../lib/Actions.lua

@@ -46,7 +46,7 @@ end
 
 local components = {
   { name = "Mode", file = "lib/SiSt-Live_Mode.lua", self_test = Mode.self_test, diagnostics = Mode.diagnostics },
-  { name = "Log", file = "lib/SiSt-Live_Log.lua", self_test = Log.self_test, diagnostics = Log.diagnostics },
+  { name = "Log", file = "lib/Log.lua", self_test = Log.self_test, diagnostics = Log.diagnostics },
   { name = "ModeEffects", file = "lib/SiSt-Live_ModeEffects.lua", self_test = ModeEffects.self_test,
     diagnostics = ModeEffects.diagnostics },
   { name = "SettingsDialog", file = "lib/SiSt-Live_SettingsDialog.lua", self_test = SettingsDialog.self_test },
@@ -114,6 +114,7 @@ return {
     folder = "lib",
     exceptions = {
       ["lib/SiSt-Live_Tests.lua"] = "this test list",
+      ["lib/SiSt-Live_Log.lua"] = "only configures lib/Log.lua (its rows show in Log's diagnostics)",
     },
   },
 }

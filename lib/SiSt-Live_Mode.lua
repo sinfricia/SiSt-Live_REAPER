@@ -20,9 +20,12 @@ Mode.DEFAULT = Mode.EDIT   -- applied on every REAPER start (nothing is persiste
 
 local VALID = { [Mode.SHOW] = true, [Mode.EDIT] = true }
 
--- Toolbar button: lit = SHOW mode (so the unlit startup state matches DEFAULT = EDIT)
-local function sync_button()
-  Button.set_state("mode", Mode.get() == Mode.SHOW)
+-- What follows the mode: the toolbar button (lit = SHOW mode, so the unlit startup state matches DEFAULT = EDIT) and
+-- Log's quiet console flag (on in SHOW mode: warnings go only to the log file, the console never pops up on stage).
+local function sync_outputs()
+  local show = Mode.get() == Mode.SHOW
+  Button.set_state("mode", show)
+  Log.set_quiet_console(show)
 end
 
 -- Public API ------------------------------------------------------------
@@ -48,7 +51,7 @@ function Mode.set(mode)
   local previous = Mode.get()
   reaper.SetExtState(Mode.SECTION, Mode.KEY_MODE, mode, false) -- persist = false
   log:debug("set: %s -> %s", previous, mode)
-  sync_button()
+  sync_outputs()
   return true
 end
 
@@ -139,6 +142,12 @@ function Mode.self_test()
   check("watch fires on change (show -> edit)",
     #calls == 2 and calls[2][1] == Mode.EDIT and calls[2][2] == Mode.SHOW)
 
+  -- the console stays closed on stage: Log's quiet flag follows the mode
+  Mode.set(Mode.SHOW)
+  local quiet_in_show = Log.is_quiet()
+  Mode.set(Mode.EDIT)
+  check("quiet console: on in show mode, off in edit mode", quiet_in_show and not Log.is_quiet())
+
   -- apply: effects that can't run at all must not undo the switch; show mode gets a dialog, edit mode only the log
   local real_effects, real_mb = package.loaded["SiSt-Live_ModeEffects"], reaper.MB
   local dialogs = {}
@@ -161,7 +170,7 @@ function Mode.self_test()
   else
     reaper.SetExtState(Mode.SECTION, Mode.KEY_MODE, saved, false)
   end
-  sync_button()
+  sync_outputs()
   Log.set_sink(nil)
 
   return results

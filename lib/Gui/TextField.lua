@@ -388,7 +388,7 @@ function TextField.draw(win, f, x, y, w, h, opts)
   local face = Theme.mix(Theme.color("background"), Theme.color("text"), 0.07)
   Theme.set(face, opts.disabled and 0.5 or 1)
   gfx.rect(x, y, w, h, true)
-  Theme.set(focused and "show" or "line")
+  Theme.set(focused and "accent" or "line")
   gfx.rect(x, y, w, h, false)
   if focused then gfx.rect(x + 1, y + 1, w - 2, h - 2, false) end
 
@@ -417,7 +417,7 @@ function TextField.draw(win, f, x, y, w, h, opts)
   if focused and from then
     local sx, ex = x_of(math.max(from, f.first - 1)), x_of(to)
     if ex > sx then
-      Theme.set("show", 0.45)
+      Theme.set("accent", 0.45)
       gfx.rect(sx, ty, ex - sx, th, true)
     end
   end

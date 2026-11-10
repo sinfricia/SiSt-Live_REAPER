@@ -3,6 +3,22 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-10 - Step 3: Logging in one go
+- New general lib/Log.lua (moved from lib/SiSt-Live_Log.lua, nothing SiSt-Live-specific left): ONE debug switch for
+  all packages (ExtState "SiSt Libraries" / debug) and a "quiet console" flag ("SiSt Libraries" / quiet_console): when
+  on, warnings and errors go only to the file; debug output still prints. Neither is persisted. `Log.configure{
+  file_dir, file_name, on_debug_change, diagnostics }`; default file Data/SiSt Libraries/SiSt Libraries.log.
+- lib/SiSt-Live_Log.lua is now a wrapper: loads Log, configures SiSt-Live's file (Data/SiSt-Live/SiSt-Live.log) and
+  the "DEBUG Toggle Logging" button, returns Log. The scripts that load it are unchanged.
+- Mode sets the quiet flag together with the mode button (`sync_outputs`): on in show mode. Log no longer reads the
+  mode. Same behaviour as before (the stage guard was "show mode and debug off").
+- Gui Theme: general accents only (accent = the teal used for focus and default headers, toggle, ok, error);
+  `Theme.configure{ accents }` adds a package's colors (Status Display: show, edit, live). An accent carries its
+  header strength (`header = 0.60`), so Widgets.HEADER_AMOUNT is gone. Colors unchanged.
+- Fix (save current look): the layouts line lists only the sections that change, in words: "mcp (not set) -> (theme
+  default)" instead of the whole old and new setting (Sina, 2026-11-10).
+- Self-test: 460 passed (53 scenarios, 451 checks, 9 live checks). Live test: 98 passed.
+
 ## 2026-11-10 - Step 3: Save current look for a mode
 - New action "SiSt-Live: Save current look for current mode" (Modes/): one confirmation lists what it stores for the
   current mode (theme: old -> new, layouts: old -> new, "screenset #NN: overwritten with the current windows and

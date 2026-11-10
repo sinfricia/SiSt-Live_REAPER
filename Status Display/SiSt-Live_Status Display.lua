@@ -56,6 +56,12 @@ local MODE_BUTTON = {
 package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "") .. "../lib/?.lua;" .. package.path
 local Theme, Window, Widgets = require("Gui.Theme"), require("Gui.Window"), require("Gui.Widgets")
 local Zoom = require("Gui.Zoom")
+-- SiSt-Live's mode colors (the Gui library only knows general accents)
+Theme.configure({ accents = {
+  show = { 0.25, 0.67, 0.60 },                                     -- same teal as the Setlist's show highlight
+  edit = { 1.00, 0.50, 0.20, header = 0.60 },                      -- same orange as the Setlist's edit title bar
+  live = { 0x1F / 255, 0x7F / 255, 0x70 / 255, header = 1.0 },     -- header in show mode: deep teal, white text readable
+} })
 local Log, Mode, ModeEffects = require("SiSt-Live_Log"), require("SiSt-Live_Mode"), require("SiSt-Live_ModeEffects")
 local log = Log.get("StatusDisplay")
 local lib_problems = {} -- (problems found while running, e.g. effects that can't be listed)

@@ -162,14 +162,20 @@ end
 -- Take current ----------------------------------------------------------
 --- "Save current look" (contract in SiSt-Live_ModeEffects.lua): the active layouts of every managed section
 --- become the mode's layouts.
+--- The confirmation line lists only the sections that change, in words: "mcp (not set) -> (theme default)".
 function Layout.take_current(mode)
   local now = Layout.capture()
-  local old = Layout.get_assignment(mode)
-  if old and Layout.encode(old) == Layout.encode(now) then
-    return nil, "unchanged: " .. Layout.format_setting(now)
+  local old = Layout.get_assignment(mode) or {}
+  local changes = {}
+  for _, s in ipairs(Layout.SECTIONS) do
+    if old[s.id] ~= now[s.id] then
+      changes[#changes + 1] = ("%s %s -> %s"):format(s.id,
+        old[s.id] == nil and "(not set)" or show_layout(old[s.id]), show_layout(now[s.id]))
+    end
   end
+  if #changes == 0 then return nil, "unchanged" end
   return {
-    text = ("layouts: %s -> %s"):format(old and Layout.format_setting(old) or "(none)", Layout.format_setting(now)),
+    text = "layouts: " .. table.concat(changes, ", "),
     save = function() Layout.set_assignment(mode, now) end,
   }
 end
@@ -321,11 +327,17 @@ function Layout.self_test()
   if item then with_reaper(tfakes, item.save) end
   local after = with_reaper(tfakes, Layout.get_assignment, "show")
   check("take current: nothing stored before saving, then every managed section is stored",
-    item ~= nil and item.text == "layouts: (none) -> tcp=B, trans=150%, mcp=" and before == nil
+    item ~= nil and item.text == "layouts: tcp (not set) -> B, trans (not set) -> 150%, mcp (not set) -> (theme default)"
+    and before == nil
     and after and after.tcp == "B" and after.trans == "150%" and after.mcp == "")
   local none, why = with_reaper(tfakes, Layout.take_current, "show")
   check("take current: same layouts already stored -> nothing to save",
     none == nil and tostring(why):find("unchanged", 1, true) ~= nil)
+  local pfakes = fake({ current = { tcp = "B", trans = "A", mcp = "" } })
+  with_reaper(pfakes, Layout.set_assignment, "show", { tcp = "B", trans = "A" }) -- stored before mcp was managed
+  local partial = with_reaper(pfakes, Layout.take_current, "show")
+  check("take current: only the changing sections are listed (unchanged tcp / trans left out)",
+    partial ~= nil and partial.text == "layouts: mcp (not set) -> (theme default)")
 
   return results
 end

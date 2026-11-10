@@ -20,7 +20,8 @@ again, it draws itself and tells you what happened. No widget objects to keep tr
 Design language (all SiSt-Live windows look alike):
   - Header: Widgets.header. A flat bar in a muted accent color (the accent mixed into the
     background), regular text. Fixed size (HEADER_H): headers don't zoom, only the content does.
-    Setlist: teal ("show"). Status display: its mode (SHOW deep teal "live", EDIT orange).
+    Setlist: teal ("accent"). Status display: its mode (SHOW deep teal "live", EDIT orange; accents it adds
+    with Theme.configure). How strong the mix is: the accent's header field, else HEADER_AMOUNT_DEFAULT.
     Header text is white; a header color light enough to need dark text should be avoided.
   - Buttons: Widgets.button. Toggle buttons (opts.toggle = true/false) have an indicator bar at the
     bottom, bright "toggle" color when on, dim when off. That, the hover and the press effect set
@@ -54,7 +55,6 @@ Widgets.HEADER_H = 44            -- header height in pixels (headers don't zoom)
 Widgets.HEADER_TEXT_RATIO = 0.62 -- header font size = height * ratio (27 at 44, as the setlist had)
 -- How much of the accent is mixed into the background for a header (the setlist's look: teal at 30 %,
 -- the orange edit bar at 60 %)
-Widgets.HEADER_AMOUNT = { show = 0.30, edit = 0.60, error = 0.60, live = 1.0 }
 Widgets.HEADER_AMOUNT_DEFAULT = 0.30
 
 -- Pure functions ----------------------------------------------------------------------
@@ -135,17 +135,17 @@ function Widgets.text(str, x, y, w, h, opts)
   gfx.drawstr(tostring(str), Widgets.drawstr_flags(opts.align), x + w, y + h)
 end
 
---- Pure. Header box color: the accent mixed into the background (see HEADER_AMOUNT).
-function Widgets.header_face(background, accent_color, accent_name)
-  return Theme.mix(background, accent_color, Widgets.HEADER_AMOUNT[accent_name] or Widgets.HEADER_AMOUNT_DEFAULT)
+--- Pure. Header box color: the accent mixed into the background (by its header field, else HEADER_AMOUNT_DEFAULT).
+function Widgets.header_face(background, accent_color)
+  return Theme.mix(background, accent_color, accent_color.header or Widgets.HEADER_AMOUNT_DEFAULT)
 end
 
---- Window header bar with centered text. accent: accent name ("show", "edit", "error"), default "show".
+--- Window header bar with centered text. accent: accent name ("accent", "error", or one a package added), default "accent".
 --- Use Widgets.HEADER_H as height. text_w (optional): the text is centered in the first text_w pixels
 --- only, e.g. when a button sits at the right end of the header.
 function Widgets.header(label, x, y, w, h, accent, text_w)
-  accent = accent or "show"
-  local face = Widgets.header_face(Theme.color("background"), Theme.color(accent), accent)
+  accent = accent or "accent"
+  local face = Widgets.header_face(Theme.color("background"), Theme.color(accent))
   Widgets.box(x, y, w, h, face)
   local text_color = Theme.luminance(face) > 0.6 and Theme.text_on(face) or "text"
   Widgets.text(label, x, y, text_w or w, h, {
@@ -172,8 +172,8 @@ end
 
 --- Base color of a button that is part of a header: the header color, a bit lighter.
 function Widgets.header_button_face(accent)
-  accent = accent or "show"
-  local header = Widgets.header_face(Theme.color("background"), Theme.color(accent), accent)
+  accent = accent or "accent"
+  local header = Widgets.header_face(Theme.color("background"), Theme.color(accent))
   return Theme.mix(header, Theme.color("text"), 0.14)
 end
 

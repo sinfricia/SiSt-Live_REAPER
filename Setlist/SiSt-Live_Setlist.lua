@@ -2395,7 +2395,7 @@ function DisplaySetlist()
    gfx.rect(0, gfx.h - gui.ctrlPanelSize, gfx.w, gui.ctrlPanelSize)
 
    -- Draw Title: the shared SiSt-Live header (teal, fixed size: gui.titleHeight - 12 = Widgets.HEADER_H)
-   Widgets.header(TITLE_TEXT, 3, 3, gfx.w - 6, gui.titleHeight - 12, "show")
+   Widgets.header(TITLE_TEXT, 3, 3, gfx.w - 6, gui.titleHeight - 12, "accent")
 
    -- Draw Total Setlist Time
 

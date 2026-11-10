@@ -6,7 +6,7 @@ Colors and fonts shared by all SiSt-Live windows.
 
 Components ask for ROLES, never for REAPER theme keys:
   Theme.set("text")             -- gfx.set to the text color of the current REAPER theme
-  Theme.set("show", 0.5)        -- accent colors work the same way, with an optional alpha
+  Theme.set("accent", 0.5)      -- accent colors work the same way, with an optional alpha
   Theme.set({ 1, 0, 0 })        -- a color table is accepted too
   Theme.set_font(18)            -- the shared font face at size 18
   gfx.clear = Theme.clear_color()
@@ -18,7 +18,10 @@ Where the colors come from:
   ROLES    read from the REAPER theme. Each role lists theme keys to try in order. The first one
            the theme defines wins. If none is defined, the fallback color is used.
   DERIVED  mixed from two roles, so they follow the theme without needing extra theme keys.
-  ACCENTS  fixed colors with a meaning that must not change with the theme (show/edit, ok/error).
+  ACCENTS  fixed colors with a meaning that must not change with the theme (accent, toggle, ok, error).
+           An accent may carry header = <0..1>: how strongly a Widgets header mixes it into the background.
+           A package adds its own accents once per script, e.g. SiSt-Live's Status Display:
+             Theme.configure({ accents = { edit = { 1.00, 0.50, 0.20, header = 0.60 } } })
 
 Adding a role: add one line to ROLES or DERIVED. Check the result with Theme.diagnostics()
 (the status display logs it at startup when SiSt-Live debug logging is on).
@@ -53,13 +56,16 @@ Theme.DERIVED = {
 }
 
 Theme.ACCENTS = {
-  show  = { 0.25, 0.67, 0.60 }, -- same teal as the Setlist's show highlight
-  edit  = { 1.00, 0.50, 0.20 }, -- same orange as the Setlist's edit title bar
-  toggle = { 0.30, 0.90, 0.80 }, -- toggle buttons that are on (brighter and more cyan than "show")
-  live   = { 0x1F / 255, 0x7F / 255, 0x70 / 255 }, -- status header in show mode: deep teal, white text readable
+  accent = { 0.25, 0.67, 0.60 }, -- teal: focus, default header (same teal as the Setlist's show highlight)
+  toggle = { 0.30, 0.90, 0.80 }, -- toggle buttons that are on (brighter and more cyan than "accent")
   ok    = { 0.30, 0.78, 0.40 },
-  error = { 0.92, 0.26, 0.24 },
+  error = { 0.92, 0.26, 0.24, header = 0.60 },
 }
+
+--- Adds (or replaces) accents: opts.accents = { name = { r, g, b[, a], header = amount } }.
+function Theme.configure(opts)
+  for name, color in pairs((opts or {}).accents or {}) do Theme.ACCENTS[name] = color end
+end
 
 -- Pure helpers ------------------------------------------------------------
 

@@ -32,6 +32,11 @@ reasons, not copies of those rules (2026-11-10, see "Where rules live" below).
 - Mode effects that fail (2026-11-10): always logged. Edit mode: only the log, which prints to the console (no
   dialog). Show mode: one dialog that names the log file. One message per problem, never a dialog plus a console
   line. Every place that switches the mode goes through `Mode.apply`.
+- Console on stage (2026-11-10): Log (general) knows no modes. It respects a "quiet console" flag (ExtState
+  "SiSt Libraries" / quiet_console, not persisted) that SiSt-Live's Mode sets together with the mode button (on in
+  show mode): warnings and errors then go only to the log file; debug output still prints. One debug switch for all
+  packages (ExtState "SiSt Libraries" / debug). Each package configures its log file and debug button through its
+  own wrapper (SiSt-Live: lib/SiSt-Live_Log.lua); package colors are added with Theme.configure.
 - Code calls reaper.X / gfx.X directly and never stores `reaper` in a local (tests swap the global).
   Performance (2026-10-26): `local r = reaper` only saves one table lookup per call; the API call itself costs
   far more, so it doesn't matter for our scripts. Measured 2026-11-10: `reaper.GetExtState` costs 0.13 microseconds per call, so
