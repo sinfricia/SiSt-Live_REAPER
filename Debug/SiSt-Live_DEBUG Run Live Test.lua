@@ -1121,8 +1121,23 @@ local function offer_closing(passed, failed)
   reaper.ShowConsoleMsg(closed and "Test projects closed.\n" or "Test projects left open.\n")
 end
 
+--- Unattended mode (set by "SiSt-Live_DEBUG Run Live Test unattended.lua"): no menu, no questions, only the show
+--- workflow test, other projects are never closed (the run is refused instead), test projects stay open.
+local UNATTENDED = rawget(_G, "SISTLIVE_UNATTENDED") == true
+
+--- Names of the non-empty open projects that are not from the test folder.
+local function foreign_projects()
+  local dir = SelfTest.normalize(test_folder() or ""):lower()
+  local names = {}
+  for _, p in ipairs(non_empty_projects()) do
+    local file = SelfTest.normalize(p.file):lower()
+    if p.file == "" or file:sub(1, #dir + 1) ~= dir .. "/" then names[#names + 1] = name_of(p.proj) end
+  end
+  return names
+end
+
 local function build_scenario(sel)
-  local steps = { close_step }
+  local steps = UNATTENDED and {} or { close_step }
   for _, t in ipairs(TESTS) do
     if sel[t.id] then for _, s in ipairs(t.steps(sel)) do steps[#steps + 1] = s end end
   end
@@ -1134,6 +1149,12 @@ local function build_scenario(sel)
         if not test_folder() then return false, "no test folder chosen (needed for the show workflow test)" end
         if playback_mode() == "rec" then return false, "playback mode is \"rec\": switch it to play first" end
         if not Mode.is_edit() then return false, "switch to edit mode first" end
+        if UNATTENDED then
+          local foreign = foreign_projects()
+          if #foreign > 0 then
+            return false, "other projects are open (unattended mode never closes them): " .. table.concat(foreign, ", ")
+          end
+        end
       end
       return true
     end,
@@ -1157,6 +1178,10 @@ end
 
 -- Menu ---------------------------------------------------------------------------------------------
 -- The tests are check items: clicking one ticks / unticks it and the menu opens again.
+
+local function run_unattended()
+  SelfTest.run_scenario(build_scenario({ show = true }), TITLE, { report_file = "Live test report.txt" })
+end
 
 local function menu()
   local x, y = reaper.GetMousePosition()
@@ -1197,4 +1222,4 @@ local function menu()
     { report_file = "Live test report.txt", progress = true, after_report = offer_closing })
 end
 
-menu()
+if UNATTENDED then run_unattended() else menu() end

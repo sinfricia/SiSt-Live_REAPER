@@ -426,13 +426,16 @@ skipped. A failed check only stops it if the step is `required` (e.g. preparing 
 --- Runs a scenario (see above). opts: passed on to run_suites (e.g. report_file); opts.progress = true opens a
 --- small window that shows the running step; closing it stops the scenario (cleanup still runs);
 --- opts.after_report(passed, failed, warnings) runs after the report is in the console.
---- Returns false if check_ready refused, true once started (the report comes when the last step is done).
+--- Returns false if check_ready refused (the reason is in the console and in the report file), true once
+--- started (the report comes when the last step is done).
 function SelfTest.run_scenario(scenario, title, opts)
   title = title or scenario.name
   if scenario.check_ready then
     local ok, ready, reason = xpcall(scenario.check_ready, debug.traceback)
     if not ok or not ready then
-      reaper.ShowConsoleMsg(("=== %s ===\nNot started: %s\n"):format(title, tostring(ok and reason or ready)))
+      local text = ("=== %s ===\nNot started: %s"):format(title, tostring(ok and reason or ready))
+      reaper.ShowConsoleMsg(text .. "\n")
+      write_report({ text }, opts and opts.report_file) -- also in the report file, so it can be read (not only seen)
       return false
     end
   end

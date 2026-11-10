@@ -33,3 +33,6 @@ mode switch both ways. Self-test report: Data/SiSt Libraries/Self-test report.tx
 (read it, don't ask Sina to paste it).
 Claude starts the self-test itself: `reaper.exe -nonewinst "<config>/Scripts/SiSt-Live/Debug/SiSt-Live_DEBUG Run
 Self-Test.lua"` (runs in the open REAPER; its window jumps). Never start tests while a show is running.
+Live test the same way with `Debug/SiSt-Live_DEBUG Run Live Test unattended.lua` (show workflow only, no loopbacks,
+no questions; refused if foreign projects are open). Report: Data/SiSt Libraries/Live test report.txt; wait for one
+newer than the start time (a run takes about 1 minute).
