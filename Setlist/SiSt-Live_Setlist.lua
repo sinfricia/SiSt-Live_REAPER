@@ -3048,7 +3048,7 @@ end)
 
 -- True while REAPER renders. REAPER then has an extra instance of the project being rendered, which the project
 -- check below would take for a project that is open twice ("DUPLICATE PROJECTS FOUND" during a render).
--- Same check as in Region Looping (defered).lua; becomes a shared helper in step 6.
+-- Same check as in Region Looping (defered).lua; becomes a shared helper in step 7.
 function IsRendering()
    return reaper.EnumProjects(0x40000000) ~= nil
 end

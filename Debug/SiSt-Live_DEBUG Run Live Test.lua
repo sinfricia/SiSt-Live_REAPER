@@ -53,7 +53,7 @@ local ActionReferenceChecks = require("ActionReferenceChecks")
 local sep = package.config:sub(1, 1)
 
 -- Actions under test. Scripts outside Actions.SCRIPTS and custom actions by their IDs for now
--- (replaced by the lookup by file name in step 3 / 6).
+-- (replaced by the lookup by file name in step 3 / 7).
 local START_SHOW_FILE = "Transport/SiSt-Live_Start Show.lua"                -- run with dofile (see Start Show step)
 local RECORDING_QUESTION = "Recording reminder!" -- title of Start Show's "Do you want to enable recording?"
 local START_SONG   = "_RSf6595f5391afe59936df5608aa263fde4281db94" -- Script: SiSt-Live_Start Song.lua (MIDI ch 16 note 0)

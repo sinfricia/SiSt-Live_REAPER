@@ -3,6 +3,10 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-10 - Roadmap steps renumbered
+- Roadmap steps renumbered to match the order of work: Setlist 7->4, General repo 4->5, Extract
+  packages 5->6 (5a-5d -> 6a-6d), Older scripts 6->7.
+
 ## 2026-11-10 - Bug fix: Start Show "No" left recording on
 - Cause: Start Show only toggled the playback mode when the answer was Yes and the mode was "play"; with the mode
   still "rec" (e.g. from a rehearsal), No changed nothing and the routing project recorded anyway.
@@ -69,8 +73,8 @@ Docs/design-decisions.md.
   except locking, which stays as saved per project). ModeEffects option `except` (skipped with a reason, self-test).
   Tested first: projects are already open when __startup.lua runs.
 - 1.5 Setlist: projects without an end marker show "--:--" and no progress indicator (no crash before: Lua's /
-  gives infinity). No fallback to GetProjectLength (re-check in step 7).
-- Dropped: 1.6 (Start Song region match "contains" is fine; rethink in step 6), 1.8 (REAPER already moves
+  gives infinity). No fallback to GetProjectLength (re-check in step 4).
+- Dropped: 1.6 (Start Song region match "contains" is fine; rethink in step 7), 1.8 (REAPER already moves
   off-screen gfx windows onto the screen).
 - Found on the way: files written twice from the same staging path arrived as the old version (not kDrive).
 - Docs moved into the repo (Docs/), kept in the claude.ai project as well.
@@ -95,7 +99,7 @@ Docs/design-decisions.md.
 - IsRendering() (reaper.EnumProjects(0x40000000)) in the Setlist: no conflict check / tab-order sync during a
   render, so the render instance isn't taken for a duplicate project. Debug log on start/finish. Tested by Sina.
 - 1.1 dropped: Setlist conflict dialogs stay in show mode (they need immediate action); Cancel closing the
-  Setlist goes into the resolver redesign (step 7).
+  Setlist goes into the resolver redesign (step 4).
 
 ## 2026-10-21 - kDrive conflict check v1.0.1
 - At startup (quiet), added folders that don't exist on this computer are skipped silently (the folder list
@@ -137,7 +141,7 @@ Docs/design-decisions.md.
 
 ## 2026-10-20 - 0.2 Self-Test on one generic runner
 - New: lib/SelfTest.lua, lib/SiSt-Live_Tests.lua (SiSt-Live's test list), Debug/SiSt-Live_DEBUG Run all
-  self-tests.lua (temporary; moves to SiSt Libraries in 5a).
+  self-tests.lua (temporary; moves to SiSt Libraries in 6a).
 - Changed: DEBUG Run Self-Test (registers + runs SiSt-Live's list); Setlist (SelfTestResults(), Alt start
   prints FAIL lines + summary); Status Display, Toolbar, Setup use the SELFTEST_COLLECT switch instead of their
   own *_SELFTEST_ONLY globals; Setup registers the test list and provides the new lib files.
@@ -148,7 +152,7 @@ Docs/design-decisions.md.
 - lib/ActionReferenceChecks.lua (read only, future shared module): config check in "DEBUG Run Self-Test" (named
   command IDs in reaper-kb.ini, reaper-menu.ini, reaper-mouse.ini, S&M_Cyclactions.ini, S&M.ini must exist;
   script files too; unused registered scripts with missing files listed).
-- Debug/SiSt-Live_DEBUG Check action markers.lua (not shipped; moves to Batch Project Tools in 5c).
+- Debug/SiSt-Live_DEBUG Check action markers.lua (not shipped; moves to Batch Project Tools in 6c).
 - Findings (fixed in roadmap step 2): toolbar 32 button, cycle action steps, unused entries with missing files.
 
 ## 2026-10-20 - Step -1 Prepare

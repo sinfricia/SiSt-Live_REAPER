@@ -1,13 +1,11 @@
 # SiSt-Live roadmap
 
-What's still to do. Order of the steps (2026-11-10): 3, 7, 4, 5, 6, 8 (numbers kept so older references stay
-valid). Reasons and rules: Docs/design-decisions.md. Finished work:
-Docs/completed-tasks.md.
+What's still to do. Reasons and rules: Docs/design-decisions.md. Finished work: Docs/completed-tasks.md.
 
 ## Status
 
 - Done: step -1, step 0, step 1, step 1b, step 2, step 2b.
-- Next: step 3 (starting with 3a), then step 7.
+- Next: step 3 (starting with 3a), then step 4.
 - Bug fix 2026-11-10: Start Show "No" now switches recording off (see completed tasks).
 
 ## Step 1b: Live test extensions - DONE 2026-10-25 (see completed tasks)
@@ -21,7 +19,7 @@ Docs/completed-tasks.md.
 - For Sina (list given 2026-10-26):
   - git mv to _Archive: Toggle Auto Ansage (deprecated), Sync WING custom control states (test only), DEBUG Main
     Toolbar Switch Test, Apply action ImGui Rewrite, Apply action (create action). Keep "Apply action to all open
-    projects" until 5c replaces it (Floating toolbar 1 uses it).
+    projects" until 6c replaces it (Floating toolbar 1 uses it).
   - git rm lib/SiSt-Live_Toolbar.lua (unused old copy of ToolbarSource).
   - action-list entries with missing files: removed 2026-10-26 (Claude, in reaper-kb.ini with REAPER closed;
     the mpl script's on-disk edit was overwritten by the running REAPER). Backup: reaper-kb.ini-backup.
@@ -113,9 +111,9 @@ and safer.
 - DECISION: rename ExtState sections to the naming rule (Sist-Live_Setlist, SiSt-Live_Status) with a one-time
   migration, or leave them?
 
-## Step 7: Setlist (comes right after step 3)
+## Step 4: Setlist
 
-### 7a: rework (behaviour unchanged except the conflict resolver)
+### 4a: rework (behaviour unchanged except the conflict resolver)
 First, so every feature below is built once on the new structure.
 
 - Redesign the conflict resolver (Sina, 2026-10-25). There should never be a reason to close the Setlist because of a
@@ -127,21 +125,21 @@ First, so every feature below is built once on the new structure.
   have changed) and decide on a fallback for projects without an end marker.
 - The live test loads the test setlist through the Setlist's own loading code.
 
-### 7b-7f: features (each its own commit, decided 2026-11-10)
-- 7b No locking in show mode: everything works in show mode; destructive actions (remove entry, reset, load
+### 4b-4f: features (each its own commit, decided 2026-11-10)
+- 4b No locking in show mode: everything works in show mode; destructive actions (remove entry, reset, load
   setlist) ask for confirmation while in show mode.
-- 7c Autosave: no question and no automatic load at start (loading also asks to open the previous projects).
+- 4c Autosave: no question and no automatic load at start (loading also asks to open the previous projects).
   The Setlist starts from the open projects; "Restore last setlist" in the menu brings the previous session's
   list back (and offers to open missing projects). The previous session's autosave must survive the first change
   of the new session (own file until the next session). "Reset setlist" in the menu. All launch modifiers removed
   (Shift = autosave, Ctrl = window state -> "Return to default position", Alt = self-tests -> step 3 self-test).
-- 7d Text entries edited in place in the list, no popup (lib/Gui TextField, built for this).
-- 7e Multi-selection of entries (move / remove several).
-- 7f Indicators per project: loop, no stop at end, no end (manual next), with tooltips. One shared "what does
+- 4d Text entries edited in place in the list, no popup (lib/Gui TextField, built for this).
+- 4e Multi-selection of entries (move / remove several).
+- 4f Indicators per project: loop, no stop at end, no end (manual next), with tooltips. One shared "what does
   this project do at its end" scan (LOOP regions, which Project End Handler the end marker calls), also used by
   the action-marker check.
 
-## Step 4: General repo and SiSt-Local
+## Step 5: General repo and SiSt-Local
 
 - DECISIONS first: index name and categories (fixes install paths and _RS IDs for good), working copy location,
   SiSt-Local packaging, may SiSt-Local use the SiSt Libraries (then the kDrive check uses Gui popup_menu).
@@ -153,19 +151,19 @@ First, so every feature below is built once on the new structure.
 - Test the Project End Handlers right away (they use "Move edit cursor..." from SiSt-Local).
 - Candidate shared function: project start/end respecting time 0 / =START / end markers (4+ users). To check.
 
-## Step 5: Extract packages
+## Step 6: Extract packages
 
-- 5a SiSt Libraries published (pure move + VERSION; Setup checks the repo is installed), with the two global
+- 6a SiSt Libraries published (pure move + VERSION; Setup checks the repo is installed), with the two global
   actions. DECISION: namespace for the modules (e.g. require("SiSt.SelfTest")) so generic names can't clash?
-- 5b SiSt-Live uses them (loader checks VERSION).
-- 5c Batch Project Tools (design approved first): BatchProjects.run_action({cmds}, {projects, restore_tab});
+- 6b SiSt-Live uses them (loader checks VERSION).
+- 6c Batch Project Tools (design approved first): BatchProjects.run_action({cmds}, {projects, restore_tab});
   "Apply action to project tabs" with SEVERAL actions run in the chosen order; "Create 'apply to all' action"
   (also with several actions); replace the toolbar 1 button, archive the old version, move the action-marker
   check here. "Stop all projects" can be a created action; SiSt-Live keeps its "ignore Routing" version.
-- 5d Toolbar package: works without SiSt-Live; move toolbar_show/edit settings and window positions.
+- 6d Toolbar package: works without SiSt-Live; move toolbar_show/edit settings and window positions.
   DECISION: package name.
 
-## Step 6: Older SiSt-Live scripts
+## Step 7: Older SiSt-Live scripts
 
 - Shared IsRendering() helper for the Setlist and the Region Looper (today one copy each).
 - Use BatchProjects and Actions instead of copied helpers (FindProjectByName x6, GetPlaybackMode x3,
@@ -186,7 +184,7 @@ First, so every feature below is built once on the new structure.
 
 ## Step 8: Setup and installation (2026-11-10)
 
-After step 5: what Setup installs depends on the package split. Ends with the clean-install test, then 1.0.
+After step 6: what Setup installs depends on the package split. Ends with the clean-install test, then 1.0.
 - Setup checks the minimum REAPER version and the required extensions (SWS, js_ReaScriptAPI, ReaImGui).
 - Setup adds the needed ReaPack repositories and installs what's missing. Verify first: ReaPack's scripting API
   can add/sync repositories; can it install single packages or only whole repositories?
@@ -210,7 +208,7 @@ After step 5: what Setup installs depends on the package split. Ends with the cl
   reordering; an unlinked one keeps its place in the list.
 - Configuration window (setting descriptions + Gui), replacing the text dialog. Needs a checkbox widget (also for
   the live test's test selection).
-- Workflows (home: Batch Project Tools, 2026-11-10; after 5c and the configuration window): general operations
+- Workflows (home: Batch Project Tools, 2026-11-10; after 6c and the configuration window): general operations
   with parameters, run through BatchProjects on chosen projects: rename tracks, add tracks, change existing tracks
   (inserts / FX, automation); the functions in Project Management/SiSt-Live_Workflows.lua are the starting list.
   Invivas specifics (IVS_* templates, track names) only as saved presets, not code. GUI: pick operation, fill in
@@ -225,7 +223,7 @@ After step 5: what Setup installs depends on the package split. Ends with the cl
   close to REAPER defaults where sensible. Pairs with the show-protection decision (step 3) and with version
   control for the config files.
 - Debug logging per component: debug output only for chosen components (logger names already exist); the switch
-  stores "all" or a list. After step 3/5a.
+  stores "all" or a list. After step 3/6a.
 - Better problem messages than reaper.MB (copyable, formatted): short MB + details in console/log, or a small
   Gui message window. Never a modal dialog in show mode from background code.
 - Web interface (WIP), incl. its bugs: Save open project info uses project.name instead of projName
@@ -234,7 +232,7 @@ After step 5: what Setup installs depends on the package split. Ends with the cl
 ## Ideas (not decided whether we do them)
 
 - Show control: setlist entries that send MIDI (later OSC), can be triggered by MIDI, and run REAPER actions;
-  linkable to projects like text entries. Start MIDI only. Not before step 7 is done.
+  linkable to projects like text entries. Start MIDI only. Not before step 4 is done.
 - TO BE DISCUSSED: how the config is distributed (whole portable install, config file, ReaPack), and whether the
   config files (reaper-kb.ini etc.) get version control (today config changes leave no history).
 
@@ -243,11 +241,11 @@ After step 5: what Setup installs depends on the package split. Ends with the cl
 - 3: static analysis? (to be discussed)
 - 3: rename ExtState sections (with migration)?
 - 3: show protection (preferred: mouse-modifier effect + SHOW keyboard; is locking still needed?).
-- 4: index name + categories, working copy, SiSt-Local packaging, may SiSt-Local use the SiSt Libraries?
-- 5a: namespace for the shared modules?
-- 5c: Batch Project Tools design.
-- 5d: Toolbar package name.
-- 6: Start Song start condition (preferred: playhead before =START instead of the "SONG ANNOUNCEMENT" region).
+- 5: index name + categories, working copy, SiSt-Local packaging, may SiSt-Local use the SiSt Libraries?
+- 6a: namespace for the shared modules?
+- 6c: Batch Project Tools design.
+- 6d: Toolbar package name.
+- 7: Start Song start condition (preferred: playhead before =START instead of the "SONG ANNOUNCEMENT" region).
 - 8: can ReaPack's API install single packages?
 - Later: readable action markers design (a or b); what the Status Display shows; config distribution and version
   control for the config files.

@@ -25,7 +25,7 @@ reasons, not copies of those rules (2026-11-10, see "Where rules live" below).
   path).
 - Back up reaper-kb.ini, reaper-menu.ini, reaper-extstate.ini before any step that touches them. Edit them only
   with REAPER closed (REAPER rewrites them on exit).
-- Show safety: Sina takes care of show-free periods (risky steps: 4 and 7 (step 7 comes right after step 3, see roadmap)).
+- Show safety: Sina takes care of show-free periods (risky steps: 4 (Setlist) and 5 (General repo)).
 - Dialogs in show mode (2026-10-25): background code (defer loops) shows a dialog in show mode ONLY for problems
   that could make the show not work as intended and need immediate action (e.g. a setlist conflict). Everything
   else goes to the log (the console stays closed on stage).
@@ -151,7 +151,7 @@ only ever run on demand; lookups only where unavoidable.
     action-marker check.
   - **Toolbar** (name to be decided): big-button toolbar window + Toolbars.lua. Works without SiSt-Live; per-mode
     toolbars only with SiSt-Live.
-  - SiSt-Local scripts (grouping decided in roadmap step 4).
+  - SiSt-Local scripts (grouping decided in roadmap step 5).
 - Repo sinfricia/SiSt-Live_REAPER: one package "SiSt-Live" for the show system (Modes, effects, per-mode
   settings, SettingsDialog, Setlist, Status Display, Setup, Transport + Project End Handler scripts, Region
   Looper (deferred in use, action-marker version kept as option), REC/render/export scripts, Web Remote (WIP),
