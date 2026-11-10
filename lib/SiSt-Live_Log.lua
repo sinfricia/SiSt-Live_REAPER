@@ -8,9 +8,8 @@
 --
 -- The debug flag lives in ExtState (not persisted), so every script sees the
 -- same switch and REAPER always starts with debug OFF.
--- The flag is cached for Log.CACHE_TTL seconds, so frequent log calls (e.g. in
--- a defer loop) don't hit ExtState every time. Changes made from another
--- script show up within that window; Log.refresh() forces a re-read.
+-- Every log call reads the flag from ExtState (measured 2026-11-10: 0.13 microseconds per call), so a change
+-- made by any script shows at once and there is nothing to cache or refresh.
 -- Output goes through a replaceable "sink", which is what makes the logger
 -- testable. The default sink writes every line to two places:
 --   console  the REAPER console (View > ReaScript console output)
@@ -137,44 +136,28 @@ local sink = default_sink
 --- Call with nil to restore the default (console + file).
 function Log.set_sink(fn) sink = fn or default_sink end
 
--- Debug flag (cached) ---------------------------------------------------
-Log.CACHE_TTL = 0.25 -- seconds
-
-local cache = { value = false, stamp = nil }
-
-local function read_debug(force)
-  local now = reaper.time_precise()
-  if force or not cache.stamp or now < cache.stamp or now - cache.stamp >= Log.CACHE_TTL then
-    cache.value = reaper.GetExtState(Log.SECTION, Log.KEY_DEBUG) == "1"
-    cache.stamp = now
-  end
-  return cache.value
-end
-
-function Log.is_debug() return read_debug(false) end
-
---- Bypass the cache and re-read the flag from ExtState.
-function Log.refresh() return read_debug(true) end
+-- Debug flag ----------------------------------------------------------
+function Log.is_debug() return reaper.GetExtState(Log.SECTION, Log.KEY_DEBUG) == "1" end
 
 --- Minimum level that is emitted right now.
 function Log.get_level()
   return Log.is_debug() and Log.LEVELS.DEBUG or Log.LEVELS.WARN
 end
 
---- Only writer of the debug flag; keeps cache and toolbar button in sync.
+--- Only writer of the debug flag; keeps the toolbar button in sync.
 function Log.set_debug(on)
   on = on and true or false
-  local was = read_debug(true)
+  local was = Log.is_debug()
   if was and not on then Log.get("Log"):debug("debug logging disabled") end
   reaper.SetExtState(Log.SECTION, Log.KEY_DEBUG, on and "1" or "0", false)
-  cache.value, cache.stamp = on, reaper.time_precise()
   Button.set_state("debug", on)
   if on and not was then Log.get("Log"):debug("debug logging enabled") end
 end
 
 function Log.toggle_debug()
-  Log.set_debug(not read_debug(true))
-  return cache.value
+  local on = not Log.is_debug()
+  Log.set_debug(on)
+  return on
 end
 
 -- Formatting ------------------------------------------------------------
@@ -235,9 +218,8 @@ end
 --- Ordered { label, value } rows for the diagnostics action.
 function Log.diagnostics()
   return {
-    { "debug logging", Log.refresh() and "ON" or "OFF" },
+    { "debug logging", Log.is_debug() and "ON" or "OFF" },
     { "min level",     LEVEL_NAMES[Log.get_level()] },
-    { "cache TTL",     Log.CACHE_TTL .. " s" },
     { "debug button",  Button.describe("debug") },
     { "log file",      Log.file_path() .. (file.error and ("  (NOT WRITTEN: " .. file.error .. ")") or "") },
   }
@@ -264,13 +246,13 @@ function Log.self_test()
     #records == 1 and records[1].level_name == "WARN")
 
   Log.set_debug(true)
-  check("set_debug(true) visible immediately (cache updated)", Log.is_debug() == true)
+  check("set_debug(true) visible immediately", Log.is_debug() == true)
 
   local ok = pcall(t.warn, t, "%d", "not a number")
   check("bad format string does not throw", ok)
 
   reaper.SetExtState(Log.SECTION, Log.KEY_DEBUG, "0", false)
-  check("refresh() picks up external change", Log.refresh() == false)
+  check("is_debug() sees a change made elsewhere at once", Log.is_debug() == false)
 
   check("safe_call returns false on error",
     select(1, Log.safe_call(t, "selftest", function() error("boom") end)) == false)
@@ -305,7 +287,7 @@ function Log.self_test()
   else
     reaper.SetExtState(Log.SECTION, Log.KEY_DEBUG, saved, false)
   end
-  Button.set_state("debug", Log.refresh())
+  Button.set_state("debug", Log.is_debug())
 
   return results
 end

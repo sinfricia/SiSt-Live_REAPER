@@ -306,7 +306,7 @@ end
 -- Right-click anywhere: the shared window menu, the debug switch and zoom (no content menus here)
 local function show_context_menu(win)
   local function zoom_to(level) win.state.zoomLevel = Status.clamp_zoom(level) end
-  local debug_on = Log.refresh()
+  local debug_on = Log.is_debug()
   win:show_context_menu({
     { label = "Debug logging", checked = debug_on,
       action = function()

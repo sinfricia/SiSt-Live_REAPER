@@ -3,6 +3,14 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-10 - Step 3: Window debug scaffolding and Log cache removed
+- Window: `size_suffix`, `remembered_size` and `client_w/h` are gone (they only added the docker size, "(420x300)", to
+  debug log lines). The log lines now say "docker 3" or "floating 200,150 320x170".
+- Log: the debug flag is no longer cached. Measured in Sina's REAPER: `GetExtState` costs 0.13 microseconds per call
+  (100,000 calls in 0.013 s), so every log call reads the flag directly. Removed: the timer, `Log.CACHE_TTL`,
+  `Log.refresh()` (use `Log.is_debug()`) and the "cache TTL" diagnostics row. A change of the switch is seen at once.
+- Self-test: 434 passed. Live test: 98 passed.
+
 ## 2026-11-10 - Step 3: ExtState section rename
 - Only one section broke the naming rule: the Setlist's "Sist-Live_Setlist" is now "SiSt-Live_Setlist" (Setlist and live
   test). The Status Display ("SiSt-Live_Status") and Toolbar ("SiSt-Live_Toolbar") already followed it. No migration

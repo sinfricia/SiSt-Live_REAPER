@@ -165,13 +165,6 @@ function Window.docker_index(dock)
   return (math.floor(dock) >> 8) & 0xFF
 end
 
---- " (420x300)" for a docked placement with a known size, "" otherwise. For the log only.
-function Window.size_suffix(p, w, h)
-  if not p or not Window.is_docked_state(p.dockState) then return "" end
-  if not (is_finite_number(w) and is_finite_number(h)) then return "" end
-  return (" (%dx%d)"):format(math.floor(w + 0.5), math.floor(h + 0.5))
-end
-
 --- Short description for the log: "docker 3" or "floating 200,150 320x170".
 function Window.describe(p)
   if not p then return "(none)" end
@@ -278,9 +271,6 @@ function Window.new(opts)
   self.pending = nil    -- after a mode change: { target, source, since, attempts } until settled
   self.settle_time = opts.settle_time or Window.SETTLE_TIME
 
-  self.remembered_size = {} -- slot -> " (WxH)" of the docked window, for the log only
-  self.client_w, self.client_h = nil, nil -- drawing area of the open window (gfx.w, gfx.h)
-
   self.mouse = empty_mouse()
   self.char = 0
   self.chars = {}
@@ -320,10 +310,9 @@ function Window:current_placement()
   return Window.copy_placement(self.state)
 end
 
---- The current placement for the log, with the docked size: "docker 3 (420x300)".
+--- The current placement for the log: "docker 3" or "floating 200,150 320x170".
 function Window:describe_now()
-  local p = self:current_placement()
-  return Window.describe(p) .. Window.size_suffix(p, self.client_w, self.client_h)
+  return Window.describe(self:current_placement())
 end
 
 function Window:placement_for(slot)
@@ -361,7 +350,6 @@ function Window:set_mode(mode)
     self:continue_mode_change()
   else
     self.remembered[slot] = self:current_placement()
-    self.remembered_size[slot] = Window.size_suffix(self.remembered[slot], self.client_w, self.client_h)
   end
 end
 
@@ -369,8 +357,7 @@ function Window:begin_mode_change(slot)
   local old = self.slot
   if self.remembered[old] and not self.pending then
     self:write_placement(SAVED, old, self.remembered[old])
-    self.debug(("mode %s -> %s: saved %s%s for %s"):format(old, slot, Window.describe(self.remembered[old]),
-      self.remembered_size[old] or "", old))
+    self.debug(("mode %s -> %s: saved %s for %s"):format(old, slot, Window.describe(self.remembered[old]), old))
   else
     self.debug(("mode %s -> %s: %s not saved (it had not settled yet)"):format(old, slot, old))
   end
@@ -472,7 +459,6 @@ end
 function Window:capture_geometry()
   local dock, wx, wy, ww, wh = gfx.dock(-1, 1, 1, 1, 1)
   if is_finite_number(dock) then self.state.dockState = dock end
-  self.client_w, self.client_h = gfx.w, gfx.h -- docked: the docker's size (log only)
   if is_finite_number(ww) and ww > 0 and is_finite_number(wh) and wh > 0 then
     self.state.wx, self.state.wy, self.state.ww, self.state.wh = wx, wy, ww, wh
   end
