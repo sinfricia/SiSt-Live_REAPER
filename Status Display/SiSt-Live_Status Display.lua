@@ -28,7 +28,7 @@
 --   Needs REAPER 7. Uses the Mode, ModeEffects and Log libraries of the package.
 --
 --   Debugging: when SiSt-Live debug logging is on ("DEBUG Toggle Logging") while the window opens,
---   the self tests run and the theme colors are logged (which REAPER theme key each color came from).
+--   the theme colors are logged (which REAPER theme key each color came from). Tests: "DEBUG Run Self-Test".
 
 local SCRIPT_NAME = "SiSt-Live_Status" -- ExtState section (window position, zoom)
 local WINDOW_TITLE = "SiSt-Live Status Display"
@@ -162,40 +162,6 @@ function Status.self_test()
 end
 
 --------------------------------------------------------------------------------
--- Self tests
---------------------------------------------------------------------------------
-
---- Runs the self tests of this script and of the Gui library. out(text) prints one line.
---- Returns the number of failures.
-local function run_self_tests(out)
-  local suites = {
-    { "Gui.Theme", Theme.self_test },
-    { "Gui.Window", Window.self_test },
-    { "Gui.Widgets", Widgets.self_test },
-    { "Status Display", Status.self_test },
-  }
-  local passed, failed = 0, 0
-  for _, suite in ipairs(suites) do
-    local ok, results = pcall(suite[2])
-    if not ok then
-      failed = failed + 1
-      out(("ERROR [%s] %s"):format(suite[1], tostring(results)))
-    else
-      for _, r in ipairs(results) do
-        if r.ok then
-          passed = passed + 1
-        else
-          failed = failed + 1
-          out(("FAIL [%s] %s"):format(suite[1], r.name))
-        end
-      end
-    end
-  end
-  out(("Status Display self tests: %d passed, %d failed"):format(passed, failed))
-  return failed
-end
-
---------------------------------------------------------------------------------
 -- Reading the state and drawing
 --------------------------------------------------------------------------------
 
@@ -323,7 +289,6 @@ local function main()
   end
 
   if Log.is_debug() then
-    run_self_tests(function(s) debug_log("%s", s) end)
     for _, row in ipairs(Theme.diagnostics()) do debug_log("%s: %s", row[1], row[2]) end
     for _, problem in ipairs(lib_problems) do debug_log("library problem: %s", problem) end
   end

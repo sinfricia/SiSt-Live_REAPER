@@ -368,7 +368,8 @@ local function write_report(lines, file_name)
 end
 
 --- Runs suites. Console: one line per component, every FAIL / WARN line and the diagnostics. Report file:
---- everything, incl. every PASS line. opts.report_file: other report file name (same folder).
+--- everything, incl. every PASS line. opts.report_file: other report file name (same folder). opts.console = false:
+--- nothing in the console (the caller shows the result itself, e.g. Setup).
 --- Returns passed, failed, warnings.
 function SelfTest.run_suites(suites, title, opts)
   local console, full = {}, {}
@@ -420,8 +421,8 @@ function SelfTest.run_suites(suites, title, opts)
     total_p, scenario_count, total_p - live_p, live_p, total_f, total_w, total_w == 1 and "" or "s"))
   local path = write_report(full, opts and opts.report_file)
   console[#console + 1] = path and ("Full report: " .. path) or "Full report could not be written."
-  reaper.ShowConsoleMsg(table.concat(console, "\n") .. "\n")
-  return total_p, total_f, total_w
+  if not (opts and opts.console == false) then reaper.ShowConsoleMsg(table.concat(console, "\n") .. "\n") end
+  return total_p, total_f, total_w, path -- path: the full report file, nil if it could not be written
 end
 
 --- Runs every registered test list. Lists that no longer exist are reported and removed from the registry.

@@ -116,8 +116,7 @@ What it does for now: checks that every file of the package is installed (list r
 header above, so it can't get out of step) and shows the result with the package version.
 Later this is the place for the first-time setup (key maps, toolbars, screensets, themes).
 
-Self test: run with SiSt-Live debug logging on ("DEBUG Toggle Logging"): the result of
-Setup.self_test() is printed to the console.
+Self test: Setup.self_test(), run by "DEBUG Run Self-Test" (test-only switch at the end of this file).
 ]]
 
 local Setup = {}
@@ -170,8 +169,30 @@ function Setup.scripts_to_register(files)
   return scripts
 end
 
---- Report text: version, number of files, missing files, scripts added to the action list.
-function Setup.report(version, files, missing, added, failed)
+-- Extensions ----------------------------------------------------------------------
+-- Required REAPER extensions: one API function each tells whether it is installed.
+Setup.EXTENSIONS = {
+  { name = "SWS", api = "CF_GetSWSVersion",
+    needed_for = "custom and cycle actions, clipboard in text fields" },
+  { name = "js_ReaScriptAPI", api = "JS_ReaScriptAPI_Version",
+    needed_for = "show mode: blocking the mouse in the arrange view, arrow cursor; Setlist file dialogs" },
+  { name = "ReaPack", api = "ReaPack_GetOwner",
+    needed_for = "installing and updating SiSt-Live" },
+}
+
+--- The required extensions that are not installed (entries of Setup.EXTENSIONS).
+function Setup.missing_extensions()
+  local missing = {}
+  for _, ext in ipairs(Setup.EXTENSIONS) do
+    if not reaper.APIExists(ext.api) then missing[#missing + 1] = ext end
+  end
+  return missing
+end
+
+--- Report text. r: version, files, missing (paths), added, failed (action list), extensions (missing ones),
+--- tests ({ passed, failed, warnings, report } or nil), tests_skipped (reason, or nil).
+function Setup.report(r)
+  local version, files, missing, added, failed = r.version, r.files, r.missing, r.added, r.failed
   local lines = { ("SiSt-Live %s"):format(version or "(unknown version)"), "" }
   if #missing == 0 then
     lines[#lines + 1] = ("All %d files of the package are installed."):format(#files)
@@ -192,7 +213,23 @@ function Setup.report(version, files, missing, added, failed)
     for _, line in ipairs(failed) do lines[#lines + 1] = "  " .. line end
   end
   lines[#lines + 1] = ""
-  lines[#lines + 1] = "Next steps: 'Configure modes' sets what each mode does, 'DEBUG Run Self-Test' checks it."
+  if not r.extensions or #r.extensions == 0 then
+    lines[#lines + 1] = "Required extensions are installed (SWS, js_ReaScriptAPI, ReaPack)."
+  else
+    lines[#lines + 1] = "MISSING extensions (Extensions > ReaPack > Browse packages):"
+    for _, ext in ipairs(r.extensions) do lines[#lines + 1] = ("  %s: needed for %s"):format(ext.name, ext.needed_for) end
+  end
+  lines[#lines + 1] = ""
+  if r.tests then
+    local t = r.tests
+    lines[#lines + 1] = ("Self-test: %d passed, %d failed%s."):format(t.passed, t.failed,
+      t.warnings > 0 and (", %d warning%s"):format(t.warnings, t.warnings == 1 and "" or "s") or "")
+    if t.failed > 0 or t.warnings > 0 then lines[#lines + 1] = "  The FAIL / WARN lines are in the full report." end
+  else
+    lines[#lines + 1] = "Self-test not run: " .. tostring(r.tests_skipped or "unknown reason")
+  end
+  lines[#lines + 1] = ""
+  lines[#lines + 1] = "Next step: 'Configure modes' sets what each mode does."
   return table.concat(lines, "\n")
 end
 
@@ -221,14 +258,26 @@ function Setup.self_test()
     { path = "../Transport/c d.lua", main = true } })
   check("scripts_to_register: only [main] files, relative to the package folder",
     #mains == 2 and mains[1] == "Modes/a.lua" and mains[2] == "Transport/c d.lua")
-  local added_report = Setup.report("1", { 1 }, {}, { "Modes/a.lua" }, { "Modes/b.lua: ambiguous" })
+  local added_report = Setup.report({ version = "1", files = { 1 }, missing = {}, added = { "Modes/a.lua" },
+    failed = { "Modes/b.lua: ambiguous" } })
   check("report: added and failed scripts listed", added_report:find("1 script added", 1, true) ~= nil
     and added_report:find("Modes/a.lua", 1, true) ~= nil and added_report:find("NOT added", 1, true) ~= nil
     and added_report:find("ambiguous", 1, true) ~= nil)
 
-  local r = Setup.report(nil, { 1, 2 }, { "lib/x.lua" })
+  local r = Setup.report({ files = { 1, 2 }, missing = { "lib/x.lua" }, tests_skipped = "playback is running" })
   check("report: missing files listed", r:find("1 of 2 files are MISSING", 1, true) ~= nil
     and r:find("lib/x.lua", 1, true) ~= nil and r:find("unknown version", 1, true) ~= nil)
+  check("report: skipped self-test says why", r:find("Self-test not run: playback is running", 1, true) ~= nil)
+
+  -- extensions (fake APIExists): a missing one is named with what needs it
+  local present = { CF_GetSWSVersion = true, ReaPack_GetOwner = true }
+  local gone = require("SelfTest").with_reaper({ APIExists = function(name) return present[name] == true end },
+    Setup.missing_extensions)
+  local er = Setup.report({ files = {}, missing = {}, extensions = gone,
+    tests = { passed = 3, failed = 1, warnings = 0 } })
+  check("extensions: the missing one is reported with what needs it", #gone == 1 and gone[1].name == "js_ReaScriptAPI"
+    and er:find("MISSING extensions", 1, true) ~= nil and er:find("js_ReaScriptAPI: needed for show mode", 1, true) ~= nil)
+  check("report: self-test result with its failures", er:find("Self-test: 3 passed, 1 failed.", 1, true) ~= nil)
 
   -- the real header of this file lists the package
   local _, own = Setup.parse_header(Setup.own_header or "")
@@ -262,20 +311,8 @@ local function main()
     if not reaper.file_exists(path) then missing[#missing + 1] = path end
   end
 
-  -- Self test into the console when debug logging is on (the Log library is optional here:
-  -- if it is missing, the check above already reports it)
+  -- The package's libraries (optional below: a missing one is already reported by the check above)
   package.path = script_dir .. sep .. ".." .. sep .. "lib" .. sep .. "?.lua;" .. package.path
-  local has_log, Log = pcall(require, "SiSt-Live_Log")
-  if has_log and Log.is_debug() then
-    local out = { "=== SiSt-Live Setup self test ===" }
-    local failed = 0
-    for _, r in ipairs(Setup.self_test()) do
-      out[#out + 1] = ("  %s  %s"):format(r.ok and "PASS" or "FAIL", r.name)
-      if not r.ok then failed = failed + 1 end
-    end
-    out[#out + 1] = ("%d failed"):format(failed)
-    reaper.ShowConsoleMsg(table.concat(out, "\n") .. "\n")
-  end
 
   -- Add the package's scripts to the action list when they are not in it yet (ReaPack does this on install; a
   -- copied config or a new script needs it). Lookups elsewhere never add anything.
@@ -294,12 +331,37 @@ local function main()
   end
 
   -- Register SiSt-Live's test list for "Run all self-tests" (optional: a missing SelfTest library is reported above)
+  local list_path = script_dir .. sep .. ".." .. sep .. "lib" .. sep .. "SiSt-Live_Tests.lua"
   local has_test, SelfTest = pcall(require, "SelfTest")
-  if has_test then
-    SelfTest.register("SiSt-Live", script_dir .. sep .. ".." .. sep .. "lib" .. sep .. "SiSt-Live_Tests.lua")
+  if has_test then SelfTest.register("SiSt-Live", list_path) end
+
+  -- The self-test (about a second, only reads; the mode is restored). Never while playing or recording: the
+  -- tests switch the mode for a moment, which must not happen during a show.
+  local tests, tests_skipped
+  if reaper.GetPlayState() & 5 ~= 0 then
+    tests_skipped = "playback or recording is running"
+  elseif not has_test then
+    tests_skipped = "the SelfTest library is missing"
+  else
+    local suite, err = SelfTest.load_suite(list_path)
+    if suite then
+      local p, f, w, report = SelfTest.run_suites({ suite }, "SiSt-Live self-test", { console = false })
+      tests = { passed = p, failed = f, warnings = w, report = report }
+    else
+      tests_skipped = "the test list could not be loaded: " .. tostring(err):match("^[^\r\n]*")
+    end
   end
 
-  reaper.MB(Setup.report(version, files, missing, added, failed), "SiSt-Live Setup", 0)
+  local text = Setup.report({ version = version, files = files, missing = missing, added = added, failed = failed,
+    extensions = Setup.missing_extensions(), tests = tests, tests_skipped = tests_skipped })
+  local report = tests and tests.report
+  if report and reaper.APIExists("CF_ShellExecute") then
+    if reaper.MB(text .. "\n\nOpen the full self-test report?", "SiSt-Live Setup", 4) == 6 then
+      reaper.CF_ShellExecute(report)
+    end
+  else
+    reaper.MB(text .. (report and ("\n\nFull self-test report:\n" .. report) or ""), "SiSt-Live Setup", 0)
+  end
 end
 
 -- Test-only switch (see lib/SelfTest.lua): hand over the tests instead of running the setup

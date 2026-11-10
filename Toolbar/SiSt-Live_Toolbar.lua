@@ -27,8 +27,8 @@
 --   Ctrl + mouse wheel zooms. The window remembers its position per mode, like the other windows.
 --   Run the action again (or click its toolbar button) to close the window.
 --
---   Debugging: with SiSt-Live debug logging on ("DEBUG Toggle Logging") while the window opens, the
---   self tests run, and every reload and button click is logged ([Toolbar]).
+--   Debugging: with SiSt-Live debug logging on ("DEBUG Toggle Logging") every reload and button
+--   click is logged ([Toolbar]). Tests: "DEBUG Run Self-Test".
 
 local SCRIPT_NAME = "SiSt-Live_Toolbar" -- ExtState section (window position, zoom)
 local WINDOW_TITLE = "SiSt-Live Toolbar"
@@ -196,25 +196,6 @@ function ToolbarWindow.self_test()
   return results
 end
 
-local function run_self_tests(out)
-  local passed, failed = 0, 0
-  local suites = { { "Toolbar window", ToolbarWindow.self_test }, { "ToolbarSource", ToolbarSource.self_test },
-    { "Gui Widgets", Widgets.self_test } }
-  for _, suite in ipairs(suites) do
-    local ok, res = pcall(suite[2])
-    if not ok then
-      failed = failed + 1
-      out(("FAIL %s self test crashed: %s"):format(suite[1], tostring(res)))
-    else
-      for _, r in ipairs(res) do
-        if r.ok then passed = passed + 1 else failed = failed + 1; out(("FAIL %s: %s"):format(suite[1], r.name)) end
-      end
-    end
-  end
-  out(("Toolbar self tests: %d passed, %d failed"):format(passed, failed))
-  return failed
-end
-
 --------------------------------------------------------------------------------
 -- Main
 --------------------------------------------------------------------------------
@@ -230,8 +211,6 @@ local function main()
     table.insert(SELFTEST_COLLECT, { name = "Toolbar window", self_test = ToolbarWindow.self_test })
     return
   end
-
-  if Log.is_debug() then run_self_tests(function(s) debug_log("%s", s) end) end
 
   local toolbar, message = nil, nil -- the loaded toolbar, or a message instead
   local loaded_mode = nil

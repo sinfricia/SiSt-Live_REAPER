@@ -3,6 +3,20 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-10 - Step 3: Setup as the entry point for checks
+- The debug-on-open test runners of the Status Display, Toolbar and Setup are gone (their tests run in the
+  self-test anyway). With debug on, the Status Display still logs its theme colors.
+- "SiSt-Live: Setup" now: files installed, scripts added to the action list (as before), required extensions (one
+  API function each: SWS `CF_GetSWSVersion`, js_ReaScriptAPI `JS_ReaScriptAPI_Version`, ReaPack `ReaPack_GetOwner`,
+  each listed with what needs it), then the self-test (about 1 s), all in one summary dialog with "Open the full
+  self-test report?" (SWS CF_ShellExecute; without SWS the path is shown). The self-test is skipped while playing or
+  recording (it switches the mode for a moment). Nothing goes to the console: `SelfTest.run_suites` has
+  `opts.console = false` and also returns the report path.
+- Not in Setup (Sina, 2026-11-10): "Check action markers" (about the open projects, run by hand) and the live test.
+  ReaImGui is not a dependency.
+- The DEBUG actions stay until the configuration window can start the tests (Sina, 2026-11-10; roadmap).
+- Self-test: 463 passed (53 scenarios, 454 checks, 9 live checks). Live test: 98 passed.
+
 ## 2026-11-10 - Step 3: Logging in one go
 - New general lib/Log.lua (moved from lib/SiSt-Live_Log.lua, nothing SiSt-Live-specific left): ONE debug switch for
   all packages (ExtState "SiSt Libraries" / debug) and a "quiet console" flag ("SiSt Libraries" / quiet_console): when
