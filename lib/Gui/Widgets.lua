@@ -8,7 +8,7 @@ again, it draws itself and tells you what happened. No widget objects to keep tr
   Widgets.box(x, y, w, h, "button")                       -- filled rectangle
   Widgets.text("Hello", x, y, w, h, { size = 18, align = "center", color = "muted" })
   if Widgets.button(win, "Retry", x, y, w, h) then ... end
-  if Widgets.hold_button(win, "Hold to switch", x, y, w, h) then ... end -- fires after holding 1 s
+  if Widgets.hold_button(win, "Hold to switch", x, y, w, h) then ... end -- fires after holding 0.5 s
   Widgets.header("REAPER SETLIST", x, y, w, h)            -- window header bar
 
   -- Text entry: the text field lives in its own file (lib/Gui/TextField.lua, it keeps state and is
@@ -50,8 +50,8 @@ end
 
 Widgets.TEXT_SIZE = 18
 Widgets.DISABLED_ALPHA = 0.35
-Widgets.HEADER_H = 44             -- header height in pixels (headers don't zoom)
-Widgets.HEADER_TEXT_RATIO = 0.62  -- header font size = height * ratio (27 at 44, as the setlist had)
+Widgets.HEADER_H = 44            -- header height in pixels (headers don't zoom)
+Widgets.HEADER_TEXT_RATIO = 0.62 -- header font size = height * ratio (27 at 44, as the setlist had)
 -- How much of the accent is mixed into the background for a header (the setlist's look: teal at 30 %,
 -- the orange edit bar at 60 %)
 Widgets.HEADER_AMOUNT = { show = 0.30, edit = 0.60, error = 0.60, live = 1.0 }
@@ -148,8 +148,11 @@ function Widgets.header(label, x, y, w, h, accent, text_w)
   local face = Widgets.header_face(Theme.color("background"), Theme.color(accent), accent)
   Widgets.box(x, y, w, h, face)
   local text_color = Theme.luminance(face) > 0.6 and Theme.text_on(face) or "text"
-  Widgets.text(label, x, y, text_w or w, h, { size = math.floor(h * Widgets.HEADER_TEXT_RATIO + 0.5),
-    align = "center", color = text_color })
+  Widgets.text(label, x, y, text_w or w, h, {
+    size = math.floor(h * Widgets.HEADER_TEXT_RATIO + 0.5),
+    align = "center",
+    color = text_color
+  })
 end
 
 --- Font size of a header's text.
@@ -209,7 +212,7 @@ end
 --- to right (opts.fill_color, default "toggle"). Returns true in the frame the hold completes.
 --- opts: size, disabled, hold, fill_color, face (see Widgets.button), id (only needed for two hold buttons
 --- with the same label).
-Widgets.HOLD_TIME = 1.0
+Widgets.HOLD_TIME = 0.5
 function Widgets.hold_button(win, label, x, y, w, h, opts)
   opts = opts or {}
   win.widget_holds = win.widget_holds or {}

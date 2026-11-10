@@ -9,7 +9,7 @@
 --   - the result of the last mode switch: which mode effects failed and why ("Apply again" retries)
 --   - SiSt-Live libraries that could not be loaded
 --
---   Mode button (right end of the header): in show mode "Hold for EDIT" must be held down for a second (a
+--   Mode button (right end of the header): in show mode "Hold for EDIT" must be held down for half a second (a
 --   bar fills it) so a stray click on stage can't leave show mode. In edit mode "Switch to SHOW" is a normal
 --   click. It switches exactly like the toggle action (mode, then the mode effects).
 --

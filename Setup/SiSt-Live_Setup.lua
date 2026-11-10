@@ -28,7 +28,7 @@
 --   - Gui: windows receive every key typed in a frame (win.chars), toggle buttons (indicator bar)
 --   - Gui: new TextField widget (single-line text entry, UTF-8, selection, clipboard via SWS).
 --     Not used by a component yet. Test window: Debug/SiSt-Live_DEBUG Text Field Test.lua (not installed)
---   - Status display: mode button in the header. Show mode: "Hold for EDIT" (hold 1 s, no accidental
+--   - Status display: mode button in the header. Show mode: "Hold for EDIT" (hold 0.5 s, no accidental
 --     switch on stage). Edit mode: "Switch to SHOW" (click). Show header in a deep teal. Right-click:
 --     "Debug logging" on/off
 --   - Native REAPER actions are run by their command ID (IDs don't change; names sometimes do). Before
