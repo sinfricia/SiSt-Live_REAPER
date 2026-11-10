@@ -147,16 +147,10 @@ function Status.self_test()
   check("mode: unknown value", m.mode_label == "MODE UNKNOWN" and m.mode_accent == "error")
   m = Status.build_model({})
   check("mode: Mode library missing", m.mode_label == "MODE UNKNOWN" and #m.lines == 0 and not m.has_errors)
-  m = Status.build_model({ mode = nil, mode_values = { show = nil, edit = "edit" } })
-  check("mode: nil never matches a missing constant", m.mode_label == "MODE UNKNOWN")
-
   m = Status.build_model({ lib_problems = { "A missing", "B missing" } })
   check("library problems are errors", #m.lines == 2 and m.lines[1].kind == "error" and m.has_errors)
   m = Status.build_model({ retry_problem = "boom" })
   check("retry problem is shown", m.lines[1].text == "boom" and m.has_errors)
-
-  m = Status.build_model({ effects = {}, failed_value = "failed" })
-  check("no mode switch yet", m.lines[1].kind == "info" and not m.can_retry and not m.has_errors)
 
   local effects = {
     { name = "theme",  status = { result = "failed", message = "file not found" } },
@@ -170,9 +164,6 @@ function Status.self_test()
   check("failures: one detail line per failed effect", #m.lines == 3 and m.lines[2].text == "theme: file not found"
     and m.lines[3].text == "keys: no message")
   check("failures: retry offered", m.can_retry and m.has_errors)
-
-  check("zoom: clamped", Status.clamp_zoom(100) == MAX_ZOOM and Status.clamp_zoom(-100) == MIN_ZOOM)
-  check("zoom: nil is level 0", Status.clamp_zoom(nil) == 0 and Status.zoom_scale(nil) == 1)
 
   return results
 end

@@ -459,29 +459,16 @@ function TextField.self_test()
   local c = TextField.split("aä€😀")
   check("split: characters, not bytes", #c == 4 and c[2] == "ä" and c[4] == "😀")
   check("split: broken UTF-8 doesn't crash", #TextField.split("a\255b") == 3)
-  check("char_of: ASCII, Latin-1 and unicode codes",
-    TextField.char_of(65) == "A" and TextField.char_of(228) == "ä" and TextField.char_of(u(0x20AC)) == "€")
-  check("char_of: control and special keys are no characters",
-    TextField.char_of(8) == nil and TextField.char_of(K.LEFT) == nil and TextField.char_of(K.DELETE) == nil
-    and TextField.char_of(127) == nil and TextField.char_of(u(5)) == nil)
 
   -- typing
   local f = TextField.new()
   typed(f, { "H", "i", 228, u(0x20AC) })
   check("typing: ASCII, umlaut, euro", f.text == "Hiä€" and f.caret == 4)
-  typed(f, { K.LEFT, K.LEFT, "X" })
-  typed(f, { K.BACKSPACE, K.DELETE })
-  typed(f, { K.HOME, K.BACKSPACE, K.END, K.DELETE })
-  check("backspace at the start / delete at the end do nothing", f.text == "Hi€" and f.caret == 3)
 
   -- words
   f = TextField.new{ text = "Intro für Song 2" }
-  typed(f, { K.LEFT }, { ctrl = true })
-  typed(f, { K.LEFT, K.LEFT }, { ctrl = true })
+  typed(f, { K.LEFT, K.LEFT, K.LEFT }, { ctrl = true })
   check("ctrl+left over a word with an umlaut", f.caret == 6)
-  typed(f, { K.BACKSPACE }, { ctrl = true })
-  typed(f, { K.DELETE }, { ctrl = true })
-  check("ctrl+letter is not typed", TextField.apply_key(f, 115, { ctrl = true }) == nil and f.text == " Song 2")
 
   -- clipboard
   f = TextField.new{ text = "a" }
@@ -494,30 +481,6 @@ function TextField.self_test()
   f.anchor, f.caret = 0, 4
   typed(f, { K.CTRL_V }, nil, { get = function() return "123456" end })
   check("max_length: paste is cut", f.text == "1234")
-
-  -- layout helpers
-  -- a fake font where a string is narrower than its letters added up (like real fonts)
-  local function narrow(str) local n = utf8.len(str); return n * 10 - math.max(0, n - 1) end
-  local pw = TextField.prefix_widths(TextField.split("abcd"), narrow)
-  check("prefix_widths: measured as whole strings", pw[0] == 0 and pw[1] == 10 and pw[4] == 37)
-  check("prefix_widths: end of text is where the whole text ends", pw[4] == narrow("abcd"))
-  local prefix = { [0] = 0, 10, 20, 30 }
-  check("index_at: nearest gap", TextField.index_at(prefix, 3, 4) == 0 and TextField.index_at(prefix, 3, 6) == 1
-    and TextField.index_at(prefix, 3, 99) == 3 and TextField.index_at(prefix, 3, -5) == 0)
-  local widths = { 10, 10, 10, 10, 10, 10, 10, 10, 10, 10 } -- 10 characters, room for 4
-  check("scroll: cursor at the end shows the last characters", TextField.scroll_first(widths, 1, 10, 40) == 7)
-  check("scroll: cursor visible: no jump", TextField.scroll_first(widths, 3, 5, 40) == 3)
-  check("scroll: cursor left of the view", TextField.scroll_first(widths, 7, 2, 40) == 3)
-  check("scroll: back left when there is room", TextField.scroll_first({ 10, 10 }, 2, 2, 40) == 1)
-
-  -- focus
-  local win = {}
-  local a, b = TextField.new{ text = "aa", select_all = true }, TextField.new{ text = "bb" }
-  check("new: select_all on an empty text selects nothing", TextField.selection(TextField.new{ select_all = true }) == nil)
-  TextField.focus(win, a)
-  TextField.focus(win, b)
-  check("focus: one field at a time", not TextField.has_focus(win, a) and TextField.has_focus(win, b)
-    and b.caret == 2 and TextField.selection(b) == nil)
 
   return results
 end

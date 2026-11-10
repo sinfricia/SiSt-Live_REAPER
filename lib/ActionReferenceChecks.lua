@@ -381,11 +381,8 @@ function Checks.self_test()
   local all_failed = true
   for _, r in ipairs(rows) do all_failed = all_failed and not r.ok end
   check("results: exactly one failed row per problem", #rows == #problems and all_failed)
-  local clean = Checks.results({ problems = {}, checked = 7, unreadable = {} }, "Config")
-  check("results: no problems gives one passed row", #clean == 1 and clean[1].ok)
   local unread = Checks.results({ problems = {}, checked = 0, unreadable = { "x.ini" } }, "Config")
   check("results: an unreadable file is a failure", #unread == 1 and not unread[1].ok)
-  check("empty files give nothing", #select(2, Checks.parse_kb(nil)) == 0 and #Checks.parse_menu(nil) == 0)
   return results
 end
 

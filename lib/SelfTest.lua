@@ -92,12 +92,14 @@ local function with_global(name, fakes, fn, ...)
   return table.unpack(results, 2, results.n)
 end
 
---- with_global for `reaper`. Adds a working ExtState (Get/Set/Has/DeleteExtState, in memory) to fakes unless it
---- has its own; it lives in the fakes table, so calls with the same fakes share it:
+--- with_global for `reaper`. Adds to fakes, unless it has its own: a working ExtState (Get/Set/Has/DeleteExtState,
+--- in memory; it lives in the fakes table, so calls with the same fakes share it) and the REAL clock
+--- (time_precise only reads, harmless; a test that needs to control time fakes it itself):
 ---   local fakes = { GetResourcePath = function() return "R" end }
 ---   with_reaper(fakes, Theme.set_assignment, "show", "x")   -- fn and its arguments
 ---   with_reaper(fakes, function() check(...) end)            -- or a block of test code
 function SelfTest.with_reaper(fakes, fn, ...)
+  if not rawget(fakes, "time_precise") then fakes.time_precise = reaper.time_precise end
   if not rawget(fakes, "GetExtState") then
     local ext = {}
     fakes.GetExtState    = function(section, key) return ext[section .. "/" .. key] or "" end
@@ -619,6 +621,7 @@ function SelfTest.self_test()
   check("with_reaper: a call nobody faked fails and names it",
     not unfaked_ok and tostring(unfaked_err):find("unfaked: reaper.GetResourcePath", 1, true) ~= nil)
   check("with_reaper: the real reaper is back after a failure", reaper == real)
+  check("with_reaper: the clock is the real one", SelfTest.with_reaper({}, function() return type(reaper.time_precise()) == "number" end))
   check("with_reaper: built-in ExtState", SelfTest.with_reaper({}, function()
     reaper.SetExtState("s", "k", 5, false)
     return reaper.GetExtState("s", "k") == "5" and reaper.HasExtState("s", "k")

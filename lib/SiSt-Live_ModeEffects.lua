@@ -242,7 +242,7 @@ function ModeEffects.self_test()
   end
 
   local with_reaper = require("SelfTest").with_reaper
-  local fakes = { time_precise = function() return 0 end } -- the log reads the clock; ExtState is built in
+  local fakes = {} -- ExtState and the clock are built in
 
   -- status encoding
   local s = { result = "failed", mode = "show", time = 1700000000, message = "a|b\nsecond line" }
