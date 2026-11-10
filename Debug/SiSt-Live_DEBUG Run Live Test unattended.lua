@@ -8,7 +8,7 @@
 local _, script_path = reaper.get_action_context()
 local script_dir = script_path:match("^(.*[/\\])") or ""
 
-SISTLIVE_UNATTENDED = true
-local ok, err = pcall(dofile, script_dir .. "SiSt-Live_DEBUG Run Live Test.lua")
-SISTLIVE_UNATTENDED = nil -- the scenario already read it
+local live_test, err = loadfile(script_dir .. "SiSt-Live_DEBUG Run Live Test.lua")
+local ok = live_test ~= nil
+if ok then ok, err = pcall(live_test, "unattended") end
 if not ok then reaper.ShowConsoleMsg("Unattended live test failed: " .. tostring(err) .. "\n") end

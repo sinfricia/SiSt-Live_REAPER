@@ -40,8 +40,8 @@
 --
 -- Temporary home: not part of the package (not in Setup's @provides). Moves with the other checks in step 3.
 
-local _, script_path = reaper.get_action_context()
-local script_dir = script_path:match("^(.*[/\\])") or ""
+-- Own folder from this file (not get_action_context: the unattended runner loads this file, that is its path)
+local script_dir = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or ""
 package.path = script_dir .. "../lib/?.lua;" .. package.path
 
 local SelfTest    = require("SelfTest")
@@ -1121,9 +1121,9 @@ local function offer_closing(passed, failed)
   reaper.ShowConsoleMsg(closed and "Test projects closed.\n" or "Test projects left open.\n")
 end
 
---- Unattended mode (set by "SiSt-Live_DEBUG Run Live Test unattended.lua"): no menu, no questions, only the show
+--- Unattended mode (the argument "unattended", passed by "SiSt-Live_DEBUG Run Live Test unattended.lua"): no menu, no questions, only the show
 --- workflow test, other projects are never closed (the run is refused instead), test projects stay open.
-local UNATTENDED = rawget(_G, "SISTLIVE_UNATTENDED") == true
+local UNATTENDED = (...) == "unattended" -- argument of the unattended runner (loadfile + call), nil when run as an action
 
 --- Names of the non-empty open projects that are not from the test folder.
 local function foreign_projects()
