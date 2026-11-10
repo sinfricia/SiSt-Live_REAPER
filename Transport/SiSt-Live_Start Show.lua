@@ -143,8 +143,9 @@ reaper.SelectProjectInstance(rout_proj)
 reaper.PreventUIRefresh(1)
 local retval = reaper.ShowMessageBox("Do you want to enable recording?", "Recording reminder!", 4)
 local rec_toggle_id = reaper.NamedCommandLookup("_RSa9686300d4ed1b32912b2918386a4fe072559b3a")
-local rec_state = reaper.GetToggleCommandState(rec_toggle_id)
-if retval == 6 and rec_state == 0 then
+-- Yes = record, No = play: toggle only if the saved playback mode differs from the answer
+local is_rec = reaper.GetExtState("SiSt-Live", "playback_mode") == "rec"
+if (retval == 6) ~= is_rec then
     reaper.Main_OnCommand(rec_toggle_id, 0)
 end
 reaper.RefreshToolbar2(0, rec_toggle_id)

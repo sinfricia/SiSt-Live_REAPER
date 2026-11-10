@@ -3,6 +3,14 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-10 - Bug fix: Start Show "No" left recording on
+- Cause: Start Show only toggled the playback mode when the answer was Yes and the mode was "play"; with the mode
+  still "rec" (e.g. from a rehearsal), No changed nothing and the routing project recorded anyway.
+- Fix: the answer sets the mode both ways (Yes = rec, No = play); toggles only if the saved ExtState
+  `playback_mode` differs (no longer the toolbar toggle state, which only matched because __startup.lua syncs it).
+- Live test: the play round switches to "rec" before Start Show, so the "answered No" check proves No turns it off.
+- Self-test: 728 passed. Live test: 152 passed (Sina, 2026-11-10).
+
 ## 2026-10-26 - Step 2b: line endings (first Claude Code session)
 - Cause: core.autocrlf=true from Git for Windows' system config, so git checked files out as CRLF while the repo
   (GitHub) stored LF. Fix: .gitattributes `* text=auto eol=lf` (overrides autocrlf and goes with the repo to every

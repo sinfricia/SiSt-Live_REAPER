@@ -6,6 +6,7 @@ Docs/completed-tasks.md.
 ## Status
 
 - Done: step -1, step 0, step 1, step 1b, step 2, step 2b.
+- Bug fix 2026-11-10: Start Show "No" now switches recording off (see completed tasks).
 - Next: step 3.
 
 ## Step 1b: Live test extensions - DONE 2026-10-25 (see completed tasks)

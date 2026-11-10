@@ -34,7 +34,8 @@
 -- Other open projects: the test asks to close them (REAPER asks about saving). It never runs on other projects.
 -- The test projects must record into the test folder (only new files there are deleted afterwards).
 -- Playback mode must be "play", REAPER in edit mode. Start Show's "Do you want to enable recording?" is answered
--- automatically (No in the play round, Yes in the rec round). At the end everything is stopped, playback mode play and edit mode are
+-- automatically (No in the play round, which first switches to "rec" so No must switch it off; Yes in the rec
+-- round). At the end everything is stopped, playback mode play and edit mode are
 -- restored, the recordings deleted; the test projects stay open.
 --
 -- Temporary home: not part of the package (not in Setup's @provides). Moves with the other checks in step 3.
@@ -317,6 +318,8 @@ local function show_round(rec)
     { name = "Start Show" .. suffix,
       run = function()
         stop_all()
+        -- Play round: start from "rec", so answering No has to switch recording off (it once stayed on)
+        if not rec and playback_mode() == "play" then run(TOGGLE_PLAYBACK_MODE) end
         -- Start Show runs here (dofile) instead of as an action, so its recording question can be answered
         -- automatically: No in the play round, Yes in the rec round. Any other message box is recorded.
         local original = reaper.ShowMessageBox
