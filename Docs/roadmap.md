@@ -1,6 +1,7 @@
 # SiSt-Live roadmap
 
-What's still to do. Reasons and rules: Docs/design-decisions.md. Finished work: Docs/completed-tasks.md.
+What's still to do. Reasons and rules: Docs/design-decisions.md. Finished work: Docs/completed-tasks.md
+(a finished step's section moves there; the Status keeps the list of done steps).
 
 ## Status
 
@@ -8,43 +9,11 @@ What's still to do. Reasons and rules: Docs/design-decisions.md. Finished work: 
 - Next: step 3 (starting with 3a), then step 4.
 - Bug fix 2026-11-10: Start Show "No" now switches recording off (see completed tasks).
 
-## Step 1b: Live test extensions - DONE 2026-10-25 (see completed tasks)
-
-- Later: "right track in the routing session" per function (needs a naming scheme; MIDI by name first).
-
-## Step 2: Cleanup - DONE 2026-10-26 (see completed tasks)
-
-- Done by Claude (2026-10-26): Setlist dead code and typos; __startup.lua Auto Ansage call removed; coverage
-  exception for lib/SiSt-Live_Toolbar.lua removed.
-- For Sina (list given 2026-10-26):
-  - git mv to _Archive: Toggle Auto Ansage (deprecated), Sync WING custom control states (test only), DEBUG Main
-    Toolbar Switch Test, Apply action ImGui Rewrite, Apply action (create action). Keep "Apply action to all open
-    projects" until 6c replaces it (Floating toolbar 1 uses it).
-  - git rm lib/SiSt-Live_Toolbar.lua (unused old copy of ToolbarSource).
-  - action-list entries with missing files: removed 2026-10-26 (Claude, in reaper-kb.ini with REAPER closed;
-    the mpl script's on-disk edit was overwritten by the running REAPER). Backup: reaper-kb.ini-backup.
-  - cycle action "SiSt-Live_Loop current region 4x (action marker)": fixed (Sina, 2026-10-26).
-  - Lock/Unlock Session custom actions renamed to "SiSt-Live_Lock/Unlock all items (except in REC folder),
-    envelopes, time selection, tempo and markers (deprecated)" (Claude, 2026-10-26; command IDs unchanged).
-  - reaper-extstate.ini: cleaned 2026-10-26 (Claude, REAPER closed; backup reaper-extstate.ini-backup). Only
-    sections a registered script or SiSt-Live reads are kept; removed: old SiSt-Live keys, [ProjectList] /
-    [CustomProjectListSection] docking leftovers (the web remote writes ProjectList non-persistently), 23 sections
-    of third-party scripts that are not in the action list.
-  - Floating toolbar 32: already fixed (item 0 = Setlist).
-
-## Step 2b: Line endings - DONE 2026-10-26 (see completed tasks)
-
-- .gitattributes: LF for all text files. Check `git config core.autocrlf` first, so git doesn't convert back.
-- Normalize once (`git add --renormalize .`) in a commit of its own, nothing else in it.
-- Also check in this first Claude Code session (started in the config folder): are both CLAUDE.md files read
-  from the start? Can REAPER run a script in the open instance from the command line (then Claude Code can
-  start the self-test and read its report)?
-
 ## Step 3: Simplify and prepare generalization (behaviour unchanged)
 
 ### 3a first: tests Claude can run (2026-11-10)
 Every step ends with "self-test + live test green". When Claude can start both and read the reports
-(`reaper.exe -nonewinst <script>`, step 2b; edit mode only, the REAPER window jumps), every later step gets faster
+(`reaper.exe -nonewinst <script>`, see completed tasks step 2b; edit mode only, the REAPER window jumps), every later step gets faster
 and safer.
 - Live test: unattended mode (no questions, results in a report file next to the self-test report).
 - Tests: strict fakes SelfTest.with_reaper / with_gfx (an unfaked call fails; built-in ExtState and clock); api.X
@@ -200,6 +169,7 @@ After step 6: what Setup installs depends on the package split. Ends with the cl
 
 ## To be implemented (planned, no fixed slot yet)
 
+- Later: "right track in the routing session" per function (needs a naming scheme; MIDI by name first).
 - Review the Status Display (2026-11-10): kept as it is for now (mode, mode switch, failed mode effects, missing
   libraries). Probably becomes a show health monitor (play/rec mode, devices, routing project running, disk space,
   problems from all components); decide what to show after step 8, when we know what Setup checks. Includes the

@@ -42,6 +42,13 @@ Docs/design-decisions.md.
   on disk, and the running REAPER wrote it back); Lock/Unlock Session custom actions renamed "... all items
   (except in REC folder), envelopes, time selection, tempo and markers (deprecated)"; reaper-extstate.ini
   reduced to the sections something still reads; cycle action fixed (Sina). Self-test: 729 passed.
+- Archived (git mv to _Archive): Toggle Auto Ansage, Sync WING custom control states, DEBUG Main Toolbar Switch
+  Test, Apply action ImGui Rewrite, Apply action (create action). "Apply action to all open projects" stays until
+  6c replaces it (Floating toolbar 1 uses it).
+- Details: Lock/Unlock command IDs unchanged; cycle action = "SiSt-Live_Loop current region 4x (action marker)";
+  reaper-extstate.ini lost old SiSt-Live keys, the [ProjectList] / [CustomProjectListSection] docking leftovers
+  (the web remote writes ProjectList non-persistently) and 23 sections of third-party scripts not in the action
+  list. Floating toolbar 32 was already fixed (item 0 = Setlist).
 
 ## 2026-10-26 - Step 2: cleanup (code part)
 - Setlist: removed dead code (displayTabIdx - always true, gui.minHeight/minWidth, gui.autoscrolling - written,

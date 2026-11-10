@@ -12,6 +12,8 @@ REAPER API: Docs/reference/ (generated, not in git). Look signatures up there; n
 - Start: `git status` in this repo must be clean, `git fsck`; read the roadmap status.
 - End of a step: Sina tests (see Testing), then Claude updates the docs (roadmap status, completed tasks),
   commits (one step = one commit) and pushes.
+- When a step is finished, its section moves out of Docs/roadmap.md in the same commit that adds its entry to
+  Docs/completed-tasks.md (the Status line keeps the list of done steps).
 
 ## Code
 - Call reaper.X / gfx.X directly, never store `reaper` in a local (tests swap the global). Hot loops only,
