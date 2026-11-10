@@ -377,6 +377,7 @@ function SelfTest.run_suites(suites, title, opts)
   both(("%s | REAPER %s | %s"):format(os.date("%Y-%m-%d %H:%M:%S"), reaper.GetAppVersion(), _VERSION))
 
   local total_p, total_f, total_w, live_p = 0, 0, 0, 0 -- live_p: passed rows that are live checks
+  local scenarios, scenario_count = {}, 0 -- distinct (component, group) of the test rows
   for _, suite in ipairs(suites) do
     both("")
     both("##### " .. suite.name)
@@ -390,6 +391,10 @@ function SelfTest.run_suites(suites, title, opts)
       total_p, total_f, total_w = total_p + p, total_f + f, total_w + w
       for _, r in ipairs(rows) do
         if r.kind == "live" and not r.warn and r.ok then live_p = live_p + 1 end
+        if r.kind == "test" then -- a scenario: the "[Group] " prefix of the check name, else the whole component
+          local key = c.name .. " " .. (r.name:match("^%[([^%]]+)%] ") or "")
+          if not scenarios[key] then scenarios[key] = true; scenario_count = scenario_count + 1 end
+        end
       end
 
       local summary = ("[%s] %d passed"):format(c.name, p)
@@ -407,10 +412,12 @@ function SelfTest.run_suites(suites, title, opts)
   end
 
   both("")
-  -- Live checks look at this machine's config (keyboard effect, locking, screenset, windows), so their number
+  -- A scenario is a named group of checks: in a component's result list, checks named "[Group] text" form the
+  -- group "Group"; checks without that prefix form one scenario with the whole component. Live checks look at
+  -- this machine's config (keyboard effect, locking, screenset, windows), so their number
   -- differs between machines and configs; it is shown apart from the tests.
-  both(("Result: %d passed (%d tests, %d live checks), %d failed, %d warning%s"):format(
-    total_p, total_p - live_p, live_p, total_f, total_w, total_w == 1 and "" or "s"))
+  both(("Result: %d passed (%d scenarios, %d checks, %d live checks), %d failed, %d warning%s"):format(
+    total_p, scenario_count, total_p - live_p, live_p, total_f, total_w, total_w == 1 and "" or "s"))
   local path = write_report(full, opts and opts.report_file)
   console[#console + 1] = path and ("Full report: " .. path) or "Full report could not be written."
   reaper.ShowConsoleMsg(table.concat(console, "\n") .. "\n")

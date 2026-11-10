@@ -12,7 +12,7 @@ Docs/design-decisions.md.
   Show workflow only, no loopbacks, no questions, never closes projects (refuses and says why), test projects stay
   open. It loads the live test with loadfile and passes "unattended" as the argument. A refused live test start
   (also the manual one) is now written to Live test report.txt, not only the console.
-- Report: "N passed (M tests, K live checks)". The live checks depend on the machine's config (keyboard effect,
+- Report: "N passed (S scenarios, T checks, K live checks)"; a scenario is a named group of checks ("[Group] text" in the check name), or the whole component. The live checks depend on the machine's config (keyboard effect,
   locking, screenset, windows), which probably explains 729 -> 728 (not proven).
 - Strict fakes: SelfTest.with_reaper / with_gfx (an unfaked call fails, ExtState built in, real clock passes
   through, the real global always comes back). The `api` parameter is gone from 15 lib modules; code calls
@@ -20,7 +20,7 @@ Docs/design-decisions.md.
   REAPER itself.
 - Tests trimmed by "what deserves a test": 682 -> 387 tests (the Setlist's own tests wait for step 4a). The Setlist
   no longer re-runs the Gui library's tests.
-- Self-test: 435 passed (387 tests, 48 live checks). Live test: 98 passed (show workflow only).
+- Self-test: 435 passed (387 checks, 48 live checks). Live test: 98 passed (show workflow only).
 
 ## 2026-11-10 - Roadmap steps renumbered
 - Roadmap steps renumbered to match the order of work: Setlist 7->4, General repo 4->5, Extract
