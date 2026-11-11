@@ -85,7 +85,8 @@ selected: Color Entries, Unlink, Close Projects, Delete Text Entries, each with 
 **Drag with Shift (text entries only: one, or a selection of them):** the drop line is where it always is; they are linked
 to the entry the mouse is over (the project it is, the group of the text entry it is, else the project on the side of the
 drop line); the line turns the accent colour. Dropped between the entries of a group they join it, with or without Shift.
-Ctrl copies (the text entries), also together with Shift (the copies are linked).
+Ctrl copies (the text entries), also together with Shift (the copies are linked). A Shift drop links even when the entry
+stays where it is (dropped on the neighbour it already sits next to, 2026-11-11).
 
 ## Look
 
@@ -160,7 +161,8 @@ One rule: a part has a natural size and gives way in a fixed order; the pure par
 - **Header:** a long title or setlist name gets "...". **Tooltips** wrap to the window width. **Load dialog list:** the type
   column goes below 420 px, the notes below 300 px, texts get "...". The dialogs themselves already adapt (`Dialog.layout`).
 - **Smallest size** (`gui.minWindowW / H`: the List section compact plus margins and the indicator; header, two rows and the
-  panel, about 240 x 250 px): a floating window is kept from getting smaller (`Window:enforce_min_size`, needs
-  js_ReaScriptAPI: the window is made bigger again). A docked window cannot be resized by a script: there the Setlist shows
-  "Window Too Small" and the size it needs, and does nothing else.
+  panel, about 240 x 250 px): the window is not forced to it (a script that made a floating
+  window bigger again flickered; removed 2026-11-11). Below it (docked or floating) the list is still drawn, the status line and the command bar are left out, and a "..." sign in the bottom
+  right corner opens all commands as a menu. A question is drawn over the list as always (Sina, 2026-11-11, replaces
+  "Window Too Small").
 - Mouse positions come from `win.mouse` (one snapshot per frame), not from `gfx.mouse_*`.

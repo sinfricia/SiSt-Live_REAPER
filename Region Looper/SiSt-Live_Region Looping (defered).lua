@@ -386,7 +386,8 @@ function ProcessLoop(playingProj)
       end
 
       local newLoopMarkerName = ""
-      local newMarkerColor = playingProj.isLastPass and finalPassMarkerColor or loopMarkerColor
+      -- (final colour from "next pass is final" until the end, not just in the frame where it was announced)
+      local newMarkerColor = (playingProj.isLastPass or playingProj.finalPassAdded) and finalPassMarkerColor or loopMarkerColor
       local rv, extStateVal = r.GetProjExtState(proj, extname, key)
       if not rv then
          r.SetProjExtState(proj, extname, key, "true")

@@ -273,10 +273,31 @@ function CommandArea.draw()
    if #plan.hidden > 0 then
       local x, ih = plan.overflow_x, gui.headingH + h
       local over, _, clicked = Widgets.button_state(State.win.mouse, x, top, OVERFLOW_W, ih)
-      Theme.set("accent", over and 1 or 0.7)
+      gfx.set(table.unpack(gui.activeProjHighlight)) -- (the colour of the active project: bright)
+      gfx.a = over and 1 or 0.95
       gfx.rect(x + OVERFLOW_W - 6, top + 4, 5, ih - 8)
       Widgets.tooltip(State.win, "More buttons are hidden: widen the window,\nor click here for a menu with them.", x, top, OVERFLOW_W, ih)
       if clicked then show_hidden_menu(plan.hidden) end
+   end
+end
+
+-- The window is too small for the command bar (docked small, or no js_ReaScriptAPI to enlarge it): only a sign in the
+-- bottom right corner; a click opens all commands as a menu.
+function CommandArea.draw_compact()
+   if not current then CommandArea.update() end
+   local size = 22
+   local x, y = gfx.w - size, gfx.h - size
+   local over, _, clicked = Widgets.button_state(State.win.mouse, x, y, size, size)
+   Theme.set("background", 0.9)
+   gfx.rect(x, y, size, size)
+   gfx.set(table.unpack(gui.activeProjHighlight)) -- (the colour of the active project: bright)
+   gfx.a = over and 1 or 0.95
+   for i = 0, 2 do gfx.rect(x + 4 + i * 6, y + size - 9, 3, 3) end -- "..."
+   Widgets.tooltip(State.win, "The window is too small for the buttons.\nClick for a menu with them.", x, y, size, size)
+   if clicked then
+      local all = {}
+      for i = 1, #current.sections do all[i] = i end
+      show_hidden_menu(all)
    end
 end
 

@@ -25,7 +25,7 @@ local Actions        = require("SiSt-Live_Actions")
 local Button         = require("SiSt-Live_Button")
 local ActionReferenceChecks = require("ActionReferenceChecks")
 local EffectTheme    = require("ModeEffects.SiSt-Live_ModeEffect_Theme")
-local Layout         = require("ModeEffects.SiSt-Live_ModeEffect_Layout")
+local LayoutEffect   = require("ModeEffects.SiSt-Live_ModeEffect_Layout")
 local Screenset      = require("ModeEffects.SiSt-Live_ModeEffect_Screenset")
 local KeySection     = require("ModeEffects.SiSt-Live_ModeEffect_KeySection")
 local Fullscreen     = require("ModeEffects.SiSt-Live_ModeEffect_Fullscreen")
@@ -60,8 +60,8 @@ local components = {
   { name = "Button", file = "lib/SiSt-Live_Button.lua", self_test = Button.self_test },
   { name = "Effect theme", file = "lib/ModeEffects/SiSt-Live_ModeEffect_Theme.lua", self_test = EffectTheme.self_test,
     diagnostics = function() return EffectTheme.diagnostics() end },
-  { name = "Effect layout", file = "lib/ModeEffects/SiSt-Live_ModeEffect_Layout.lua", self_test = Layout.self_test,
-    diagnostics = function() return Layout.diagnostics() end },
+  { name = "Effect layout", file = "lib/ModeEffects/SiSt-Live_ModeEffect_Layout.lua", self_test = LayoutEffect.self_test,
+    diagnostics = function() return LayoutEffect.diagnostics() end },
   { name = "Effect screenset", file = "lib/ModeEffects/SiSt-Live_ModeEffect_Screenset.lua",
     self_test = Screenset.self_test, diagnostics = function() return Screenset.diagnostics() end,
     live_check = function() return Screenset.check_actions() end },

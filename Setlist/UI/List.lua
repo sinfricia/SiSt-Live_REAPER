@@ -176,11 +176,11 @@ local wrap_cache = setmetatable({}, { __mode = "k" }) -- text entry -> { key, li
 --- breaks of the text count.
 function List.text_lines(entry)
    local name = entry.name or ""
-   if gfx.w == nil or gfx.w <= 0 then return List.wrap_text(name, math.huge, function() return 0 end), 0 end
+   if gfx.w == nil or gfx.w <= 0 or gui.small then return List.wrap_text(name, math.huge, function() return 0 end), 0 end
 
    local numW = List.number_width()
    local indent = List.link_indent(entry)
-   local key = table.concat({ name, gfx.w, gui.scrollW, gui.entryTextSize, gui.textEntrySize, numW, indent }, "|")
+   local key = table.concat({ name, tostring(gui.small), gfx.w, gui.scrollW, gui.entryTextSize, gui.textEntrySize, numW, indent }, "|")
    local c = wrap_cache[entry]
    if c and c.key == key then return c.lines, numW end
 
@@ -267,26 +267,25 @@ function List.entry_at_mouse(findAtLastClickPos)
    return nil, nil
 end
 
--- Pure function. Returns the scroll offset (0-based, number of entries scrolled out at the top) that puts the
--- previous PROJECT entry in the top row, so the current project and every text entry between the two stay visible.
--- If there is no previous project the list starts at the top. Returns nil if currentListIdx isn't in the list.
+-- Pure function. Returns the scroll offset (0-based, in rows scrolled out at the top) for the current project: the top row
+-- is the first of the text entries right above it that do not belong to the project before (link "above"), or the project
+-- itself when there are none. The previous project is not shown. Returns nil if currentListIdx isn't in the list.
 function List.follow_scroll_offset(list, currentListIdx, maxScroll)
    if not currentListIdx or currentListIdx < 1 or currentListIdx > #list then return nil end
 
-   local offset = 0
    local starts = List.layout(list)
+   local first = currentListIdx
    for i = currentListIdx - 1, 1, -1 do
-      if list[i].type == ENTRY.PROJECT then
-         offset = starts[i]
-         break
-      end
+      if list[i].type ~= ENTRY.TEXT or list[i].link == "above" then break end
+      first = i
    end
+   local offset = starts[first]
 
    return clamp(offset, 0, maxScroll or offset)
 end
 
--- Pure function. How far the list may scroll. Normally that's "last entry at the bottom", but to let the
--- previous project of the LAST project reach the top row the range is extended (the rows below stay empty).
+-- Pure function. How far the list may scroll. Normally that's "last entry at the bottom", but to let
+-- the top row of the LAST project (its text entries above it) reach the top the range is extended (the rows below stay empty).
 -- A list that fits completely never scrolls.
 function List.max_scroll(list, numVisibleEntries)
    local _, totalRows = List.layout(list)
@@ -379,7 +378,7 @@ function List.offscreen_indicator()
 
    local w, h = gui.offscreenIndicatorW, gui.offscreenIndicatorH
    local x = math.floor((gfx.w - gui.scrollW - w) / 2)
-   local listBottom = gui.titleHeight + gui.numVisibleEntries * gui.lineHeight
+   local listBottom = gui.titleHeight + gui.listH -- (the list reaches the panel; a last row may be cut)
    local y = dir < 0 and gui.titleHeight + 2 or listBottom - h - 2
 
    gfx.set(table.unpack(gui.offscreenIndicatorColor))
@@ -608,6 +607,9 @@ local function draw_entry(y, entry)
       else
          for k, line in ipairs(lines) do
             gfx.x, gfx.y = x0 + numW, y + top + (k - 1) * step + (step - lineH) / 2
+            if gui.small then -- (no wrapping in a small window: a line that is too long gets "...")
+               line = Widgets.fit_text(line, gfx.w - gui.scrollW - (x0 + numW) - gui.rowMargin, function(s) return (gfx.measurestr(s)) end)
+            end
             gfx.drawstr(line)
          end
       end
@@ -624,7 +626,7 @@ local function draw_entry(y, entry)
    local name_x = gfx.x
    local name_right = gfx.w - gui.scrollW - gui.rowMargin
    if entry.type == ENTRY.PROJECT and not entry.name:find("_.*ROUTING") then
-      local min_name = gui.entryTextSize * 5
+      local min_name = gui.entryTextSize * (gui.small and 12 or 5) -- (small window: the length goes sooner)
       local projLen = Sync.project_length(entry.proj)
       local projLenStr = projLen > 0 and Data.format_time(projLen) or "--:--" -- no end marker: no length
 
@@ -661,22 +663,6 @@ local function draw_entry(y, entry)
    end
 end
 
---- What the window shows when it is smaller than the Setlist can be used in (gui.minWindowW / H): only how big it has to be.
-function List.draw_too_small()
-   gfx.clear = Theme.clear_color()
-   Theme.set("background")
-   gfx.rect(0, 0, gfx.w, gfx.h)
-   local text = "Window Too Small\n\nMake it at least " .. math.ceil(gui.minWindowW) .. " x " .. math.ceil(gui.minWindowH) ..
-       " pixels."
-   Theme.set_font(16)
-   local lines = Widgets.wrap_text(text, math.max(40, gfx.w - 24), function(s) return (gfx.measurestr(s)) end)
-   local line_h = 22
-   local top = math.floor((gfx.h - #lines * line_h) / 2)
-   for i, line in ipairs(lines) do
-      Widgets.text(line, 12, top + (i - 1) * line_h, gfx.w - 24, line_h, { size = 16, align = "center", color = i == 1 and "text" or "muted" })
-   end
-end
-
 function List.draw()
    gfx.clear = Theme.clear_color()
 
@@ -698,7 +684,7 @@ function List.draw()
 
    Theme.set("background")
    gfx.rect(0, 0, gfx.w, gui.titleHeight)
-   gfx.rect(0, gfx.h - gui.ctrlPanelSize, gfx.w, gui.ctrlPanelSize)
+   gfx.rect(0, gfx.h - gui.panelH, gfx.w, gui.panelH)
 
    -- Draw Title: the shared SiSt-Live header (teal, fixed size: gui.titleHeight - 12 = Widgets.HEADER_H)
    local headerH = gui.titleHeight - 12
@@ -714,6 +700,8 @@ function List.draw()
    end
 
    -- Status line under the list (what the list holds), a faint divider above it, the strong command bar divider below
+   -- (not in a window that is too small for the panel: gui.panelH is 0 then and the list takes the room)
+   if gui.panelH > 0 then
    local projects = #Data.project_entries(State.list)
    local time = Data.format_time(State.total_time)
    local noun = projects .. (projects == 1 and " project" or " projects")
@@ -731,12 +719,13 @@ function List.draw()
 
    Theme.set("text", 0.6)
    gfx.rect(0, gfx.h - gui.ctrlPanelSize + gui.statusH, gfx.w, gui.dropIndicatorThickness - 2)
+   end
 
    -- Draw a line indicating where the project would be dropped if dragging
 
    if gui.draggingEntry and gui.dropIdx and (gui.dropDir or gui.dragDirection) then
-      local isDragFarEnough = gui.dropIdx ~= gui.dragEntryListIdx and
-          (gui.dropIdx > gui.dragEntryListIdx or gui.dropIdx < gui.dragEntryListIdx)
+      -- (a linking drop (Shift) onto the neighbour shows the line too, although the entry stays where it is)
+      local isDragFarEnough = gui.dropIdx ~= gui.dragEntryListIdx or gui.dropLink
 
       if isDragFarEnough then
          -- at the end of the entry it is dropped after (dragged down), at the start of the one it is dropped before
@@ -773,10 +762,13 @@ define("GetFollowScrollOffset", function(t)
       { type = ENTRY.PROJECT }, { type = ENTRY.PROJECT }, { type = ENTRY.TEXT },
    }
    t.eq(List.follow_scroll_offset(list, 2, 10), 0, "first project: nothing above it, start at the top")
-   t.eq(List.follow_scroll_offset(list, 5, 10), 1,
-      "previous project (idx 2) goes to the top row, texts below it stay visible")
-   t.eq(List.follow_scroll_offset(list, 6, 10), 4, "directly following project: previous project in top row")
+   t.eq(List.follow_scroll_offset(list, 5, 10), 2,
+      "the free text entries above the project are at the top, the previous project is not shown")
+   t.eq(List.follow_scroll_offset(list, 6, 10), 5, "no text entries above: the project itself is in the top row")
    t.eq(List.follow_scroll_offset(list, 6, 3), 3, "clamped to maxScroll near the end of the list")
+   t.eq(List.follow_scroll_offset({ { type = ENTRY.PROJECT }, { type = ENTRY.TEXT, link = "above" }, { type = ENTRY.TEXT },
+      { type = ENTRY.TEXT, link = "below" }, { type = ENTRY.PROJECT } }, 5, 10), 2,
+      "text entries linked to the project above stay out, the free one and the one linked below are shown")
    t.eq(List.follow_scroll_offset(list, 0, 10), nil, "idx 0 (tab not in list)")
    t.eq(List.follow_scroll_offset(list, 8, 10), nil, "idx past the end")
    t.eq(List.follow_scroll_offset({ { type = ENTRY.TEXT }, { type = ENTRY.PROJECT } }, 2, 0), 0,
@@ -790,8 +782,8 @@ define("GetMaxScroll", function(t)
       return l
    end
    t.eq(List.max_scroll(projects(5), 10), 0, "list that fits never scrolls")
-   t.eq(List.max_scroll(projects(20), 9), 18, "20 projects: last project's predecessor (idx 19) can reach the top row")
-   t.eq(List.max_scroll(projects(12), 10), 10, "list only 2 longer than the window still scrolls far enough")
+   t.eq(List.max_scroll(projects(20), 9), 19, "20 projects: the last project (idx 20) can reach the top row")
+   t.eq(List.max_scroll(projects(12), 10), 11, "list only 2 longer than the window still scrolls far enough")
    local withTexts = projects(3)
    for i = 4, 9 do withTexts[i] = { type = ENTRY.TEXT } end
    t.eq(List.max_scroll(withTexts, 4), 5, "trailing text entries: normal range is enough")
@@ -864,7 +856,7 @@ define("Rows of multi-line entries", function(t)
    t.eq({ List.entry_at_row(list, 0), List.entry_at_row(list, 2), List.entry_at_row(list, 3), List.entry_at_row(list, 6),
       List.entry_at_row(list, 7), List.entry_at_row(list, 99) }, { 1, 2, 3, 4, 5, 5 }, "the entry at a row")
    t.eq(List.follow_scroll_offset({ { type = ENTRY.PROJECT }, { type = ENTRY.TEXT, name = "a\nb" }, { type = ENTRY.PROJECT },
-      { type = ENTRY.PROJECT } }, 4, 100), 3, "follow-scroll counts rows: the previous project of the last one starts at row 3")
+      { type = ENTRY.PROJECT } }, 4, 100), 4, "follow-scroll counts rows: the last project starts at row 4")
    gui.textLineStep = saved_step
 end)
 

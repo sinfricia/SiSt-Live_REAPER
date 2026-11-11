@@ -13,8 +13,9 @@ How Claude works with Sina (approval per step, asking first, explaining in detai
 in ONE place only: the config folder's CLAUDE.md ("Working with Sina"). This section keeps the decisions and their
 reasons, not copies of those rules (2026-11-10, see "Where rules live" below).
 
-- One step = one approval = one commit. Bug fixes that change behaviour: approved and worked through one at a
-  time, never in batch.
+- One step = one approval; one approved piece = one commit (a big step may have several, 2026-11-11). Bug fixes
+  that change show behaviour: approved and worked through one at a time; UI and wording tweaks may be batched
+  (review round 2026-11-11).
 - Order of steps (2026-10-26): what makes sense for our workflow, not urgency. Side project, no hurry: take as
   long as it needs to get it right. Every commit is show-ready (tests green); at a show Sina can use a backup
   copy without the newest features.
@@ -159,8 +160,9 @@ only ever run on demand; lookups only where unavoidable.
 
 - Only code used by MORE THAN ONE package goes into the shared libraries. Every file named for what it does
   (no "Core").
-- Extract when there is a third use, or when copies could drift apart in tricky logic; not before (e.g. marker
-  loop, popup menu: decided 2026-10-20).
+- Shared once two places use it; until then it stays next to its user, even if written in a general way (Sina,
+  2026-11-11; replaces "extract at the third use" from 2026-10-20). Copies of tiny helpers (clamp, first_line) are
+  merged when the code around them is touched anyway.
 - Future shared modules already live in SiSt-Live's lib/ WITHOUT the "SiSt-Live_" prefix and contain nothing
   SiSt-Live-specific, so extracting them later is a pure move.
 - Tools specific to Sina's own setup (e.g. kDrive conflict check) belong in SiSt-Local, not SiSt-Live or the
@@ -244,11 +246,17 @@ only ever run on demand; lookups only where unavoidable.
   closing a project from the list, Reset, Restore and loading always ask (a locked button on stage gets in the way, a
   slip is what the question is for). Deleting list entries (text and missing entries, also several at once) asks nothing:
   Sina found it unnecessary (2026-11-11).
-- A shared module needs two users (Sina, 2026-11-11): code with one user stays next to it, even if it is written in a
-  general way, and moves to lib/Gui when the second window needs it.
+- A shared module needs two users (Sina, 2026-11-11; see Shared code): Setlist code moves to lib/Gui when the second
+  window needs it.
+- Setlist UI (Sina, 2026-11-11): no Esc shortcut to clear the selection (it would take Esc from REAPER's main
+  window; no shortcuts that steal keys from REAPER). The Setlist uses the REAPER theme's regular Roboto
+  (`Theme.use_reaper_font("user_font0")`, from reaper.ini; not Roboto Medium), other windows Theme.FONT_FACE (Arial).
+  Selection: Ctrl+click toggles, Shift+click ranges, a plain click selects a text entry (and clears the selection
+  for a project); selected entries get a square at the left (accent, white for the active project); the active
+  project's white dot shows only while nothing is selected. Closing projects asks once for all selected.
 - The Setlist adapts to the window width in one fixed order (natural, compact, then the last parts left out, with a sign
   that something is hidden), never by wrapping the command bar into rows (Sina, 2026-11-11). The logic is the pure
-  `lib/Gui/Layout.lua`. A floating window is kept from getting smaller than that (`Window:enforce_min_size`, js_ReaScriptAPI).
+  `lib/Gui/Layout.lua`. Below the smallest size the list stays and the command bar is replaced by a "..." menu sign; the window is not forced to a minimum size (a script that resized it made it flicker, Sina, 2026-11-11).
 - A song's length is the position of the last marker, no fallback to `GetProjectLength` (checked 2026-11-11: it is the same
   for projects that have markers; for one without an end marker it only counts media items). "--:--" and the M chip are
   the sign that a project has no end marker.

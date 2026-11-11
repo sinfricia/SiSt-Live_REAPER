@@ -201,7 +201,8 @@ function Actions.drop_selection(selected, dropIdx, direction, copy, link, hovere
          end
       end
    end
-   if moving[list[dropIdx]] then return end -- dropped on itself
+   -- dropped on itself: nothing (but a linking drop (Shift) onto an entry that does not move still links)
+   if moving[list[dropIdx]] and not (link and hoveredIdx and not moving[list[hoveredIdx]]) then return end
 
    local only_texts = true
    for e in pairs(moving) do
@@ -370,8 +371,15 @@ function Actions.drop_entry(dragIdx, dropIdx, direction, duplicate, link, hovere
    else
       -- Any other entry moves alone: after the entry it was dropped on (dragged down) or before it (dragged up). Dropped
       -- between the entries of a project's block it joins that block, anywhere else it is not linked.
-      if dropIdx == dragIdx then return end
       local ref = list[hoveredIdx or dropIdx] -- the entry the mouse is over
+      if dropIdx == dragIdx then
+         -- stays where it is; with link (Shift) it is still linked to the entry it was dropped on
+         if not (link and dragEntry.type == ENTRY.TEXT and ref ~= dragEntry) then return end
+         dragEntry.link = nil
+         link_inserted(list, dragIdx, 1, direction, ref, true)
+         Actions.commit()
+         return
+      end
       table.remove(list, dragIdx)
       local target = direction == 1 and dropIdx + 1 or dropIdx
       if dropIdx > dragIdx then target = target - 1 end
@@ -507,11 +515,9 @@ end
 
 -- Writes the list to a setlist file; its name becomes the window title. Returns true, or false and the reason.
 function Actions.save_to_file(path)
-   local file, err = io.open(path, "w")
-   if not file then return false, err end
    local text = Data.list_to_text(State.list, "\n")
-   file:write(text)
-   file:close()
+   local written, err = Data.write_text_atomic(path, text) -- (a failed save never leaves half a file)
+   if not written then return false, err end
    State.name = path:match("([^/\\]+)$"):gsub("%.%w+$", "")
    State.saved_text = text
    State.modified = false

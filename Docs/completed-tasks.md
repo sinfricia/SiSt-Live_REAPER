@@ -3,6 +3,34 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-11 - Step 4d: review fixes
+From the code review after step 4 (Sina approved the plan and the decision; one commit).
+- **Layout tests:** lib/SiSt-Live_Tests.lua declared `local Layout` twice, so the layout mode effect's tests never ran; the
+  mode effect is now `LayoutEffect`. Both layout components run (16 checks each).
+- **Small docked Setlist (decision A):** the list is always drawn; below the smallest size the status line and the command bar
+  are left out (`gui.small`, `gui.panelH`), a "..." sign in the corner opens all commands as a menu
+  (`CommandArea.draw_compact`), a question is still drawn over the list. "Window Too Small" is gone.
+- **Menu labels:** `Window.menu_label` (used by `Window.build_menu`) turns `|` into a look-alike and puts a space before a
+  leading `#`, `!`, `<`, `>`, so entry texts and project names can no longer shift the menu choices.
+- **Restore button:** `Data.has_autosave` reads the file once and `Data.archive_list` keeps the flag up to date (it was a file
+  read every frame).
+- **Self-test:** a crashing diagnostics function is a failed row, not just an info line (SelfTest.count counts it).
+- **Region Looper:** the marker keeps the final-pass colour from "next pass is final" until the end (it lasted one frame).
+- **No forced minimum size:** `Window:enforce_min_size` (js_ReaScriptAPI, made a floating window bigger again) is removed, it
+  flickered; a window below the smallest size gets the compact view like a docked one.
+- `Sync.plan_load` works on a copy of `remove`; Save Setlist writes through `Data.write_text_atomic`.
+- **Follow-scroll (Sina, 2026-11-11):** the active project goes to the top row together with the text entries right above it
+  that are not linked to the project before; the previous project is no longer shown (`List.follow_scroll_offset`).
+- **Shift-drag linking** works when the entry does not move (dropped on its neighbour), for one entry and for a selection.
+- New: Debug/SiSt-Live_DEBUG Screenshot Setlist.lua (js_ReaScriptAPI GDI/LICE, not installed): saves the Setlist window as
+  Data/SiSt Libraries/Setlist screenshot.png, so Claude can look at drawing changes.
+- **File > Open into an existing tab** keeps the project pointer, so the entry kept its old name: `Sync.is_synced` now compares the
+  tab's file path too (`Sync.project_pointers` returns the paths as a second result) and `Sync.follow_tabs` updates path and name.
+- After testing: the drop line also shows for a Shift drop that does not move the entry; the scroll-to-current arrow sits at the
+  real bottom of the list; zoom 60% to 200%; in a small window text entries do not wrap (long lines get "...") and project lengths
+  go sooner; the "..." sign and the overflow line use the active project's colour.
+- Not needed: `Widgets.wrap_text` already cut at UTF-8 character borders.
+
 ## 2026-11-11 - Step 4 complete (the Setlist)
 - Step 4 = 4b + 4c (current list, autosave, command area), then the redesign 4a in pieces: (a) the split into parts, (b) silent
   sync and the load flow, (c) row indicators, (d) linked and multi-line text entries, (e) multi-selection, (f) responsiveness

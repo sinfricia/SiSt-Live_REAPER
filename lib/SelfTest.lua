@@ -334,7 +334,8 @@ function SelfTest.run_component(c)
   if c.diagnostics then
     local ok, res = xpcall(c.diagnostics, debug.traceback)
     if not ok then
-      add({ kind = "info", name = "diagnostics error", value = tostring(res) })
+      -- a failure (not just information): the summary must not say green when the diagnostics crashed
+      add({ kind = "error", name = "diagnostics crashed: " .. tostring(res), ok = false })
     elseif type(res) == "table" then
       for _, r in ipairs(res) do add({ kind = "info", name = tostring(r[1]), value = tostring(r[2]) }) end
     end
@@ -739,6 +740,8 @@ function SelfTest.self_test()
   local p, f, w = SelfTest.count(rows)
   check("run_component: results, crash caught, diagnostics", p == 1 and f == 2 and w == 1
     and rows[#rows].kind == "info" and rows[#rows].value == "5")
+  check("run_component: a diagnostics error is one failure",
+    select(2, SelfTest.count(SelfTest.run_component({ name = "d", diagnostics = function() error("boom") end }))) == 1)
   check("run_component: a component that failed to load is one failure",
     select(2, SelfTest.count(SelfTest.run_component({ name = "y", error = "missing" }))) == 1)
   check("run_component: a self_test without a result list fails",

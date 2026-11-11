@@ -6,15 +6,29 @@ What's still to do. Reasons and rules: Docs/design-decisions.md. Finished work: 
 ## Status
 
 - Done: step -1, step 0, step 1, step 1b, step 2, step 2b, step 3a, step 3 (2026-11-10, last part: simplify the
-  live test; see completed tasks), step 4 (the Setlist: 4b, 4c, then the redesign 4a, 2026-11-11).
-- Next: step 5.
+  live test; see completed tasks), step 4 (the Setlist: 4b, 4c, then the redesign 4a, 2026-11-11), step 4d (review fixes,
+  2026-11-11).
+- Next: step 4e (Setlist cleanup), then step 5.
 - Bug fix 2026-11-10: Start Show "No" now switches recording off (see completed tasks).
+
+## Step 4e: Setlist cleanup (review round 2026-11-11)
+
+No behaviour change; the Setlist code gets easier to read and change.
+- Split the shared `gui` table (86 fields): mouse state only from Window's `w.mouse`, layout numbers from one
+  per-frame layout function, real state (scroll, drag, selection, zoom) in ViewState.
+- One naming style (snake_case) in the Setlist code.
+- Tests out of the production files (e.g. Setlist/Data.lua) into their own files.
 
 ## Step 5: General repo and SiSt-Local
 
+- Before the ID migration: the config files (.ini) under version control (local git repo in the config folder,
+  only the files we own, allow-list in .gitignore), so the rewrite leaves a history.
 - DECISIONS first: index name and categories (fixes install paths and _RS IDs for good), working copy location,
   SiSt-Local packaging, may SiSt-Local use the SiSt Libraries (then the kDrive check uses Gui popup_menu).
   Needs access to the repo on the main install.
+- DECISION moved here from 6a: namespace for the shared modules (e.g. require("SiSt.Log")), because generic names
+  already collide (two Layout modules). With it, a naming cleanup: three Actions modules (lib/Actions,
+  lib/SiSt-Live_Actions, Setlist/Actions), two Layout modules, generic lib names that could clash on the module path.
 - SiSt-Local into the repo, published via ReaPack.
 - ID migration script: old -> new _RS IDs in custom actions, toolbars, keys, MIDI, mouse modifiers, cycle
   actions. REAPER closed, backup first, once per installation, reference check before and after.
@@ -25,7 +39,7 @@ What's still to do. Reasons and rules: Docs/design-decisions.md. Finished work: 
 ## Step 6: Extract packages
 
 - 6a SiSt Libraries published (pure move + VERSION; Setup checks the repo is installed), with the two global
-  actions. DECISION: namespace for the modules (e.g. require("SiSt.SelfTest")) so generic names can't clash?
+  actions. The module namespace is decided in step 5.
 - 6b SiSt-Live uses them (loader checks VERSION).
 - 6c Batch Project Tools (design approved first): BatchProjects.run_action({cmds}, {projects, restore_tab});
   "Apply action to project tabs" with SEVERAL actions run in the chosen order; "Create 'apply to all' action"
@@ -77,8 +91,10 @@ After step 6: what Setup installs depends on the package split. Ends with the cl
   libraries). Probably becomes a show health monitor (play/rec mode, devices, routing project running, disk space,
   problems from all components); decide what to show after step 8, when we know what Setup checks. Includes the
   old item "reporting channel to the Status Display; possibly run the checks at startup".
-- Setlist: link text entries to projects (2026-11-10): a linked text entry moves with its project when
-  reordering; an unlinked one keeps its place in the list.
+- Pre-commit check script (review round 2026-11-11): `luac -p` on changed files plus a scan for a `local` declared
+  twice in one file (would have caught the Layout test bug). Runs without REAPER.
+- Frame-time check (review round 2026-11-11): in debug mode the Setlist, Toolbar, Status Display and Region Looper
+  log their slowest frame per minute, so per-frame regressions show up.
 - Configuration window (setting descriptions + Gui), replacing the text dialog. The per-mode setting descriptions
   (decided 2026-11-10 to build them together with this window, not before: nothing needs them earlier) declare each
   setting as data (on/off, number with range, choice, custom with "take current"), storage per mode once with the
@@ -88,7 +104,8 @@ After step 6: what Setup installs depends on the package split. Ends with the cl
   tests" incl. the live test; Setup's summary becomes its first section. Only then remove the DEBUG actions from the
   action list, one by one (approval for each; check what points at them first; the files stay in Debug/ so Claude
   can run them). "Check action markers" stays a separate action the user runs (about the open projects, not the
-  config; moves to Batch Project Tools in 6c).
+  config; moves to Batch Project Tools in 6c). Reuses the shared Gui code (Layout, the menu escaping from 4d)
+  instead of own copies.
 - Toolbar button for "Save current look for current mode" (Sina, 2026-11-10: later; reaper-menu.ini, REAPER closed).
 - Workflows (home: Batch Project Tools, 2026-11-10; after 6c and the configuration window): general operations
   with parameters, run through BatchProjects on chosen projects: rename tracks, add tracks, change existing tracks
@@ -105,6 +122,7 @@ After step 6: what Setup installs depends on the package split. Ends with the cl
   "- NO STOP", "- move to previous project") become scripts. Every action marker that calls them (`!_ee13...` etc.
   in the song projects) must be updated to the new IDs, so this needs a marker rewrite over all projects (with the
   readable action markers tool / action-marker check) and the MIDI shortcuts (ch 16 notes 4 and 5) re-pointed.
+  Separate goal from readable action markers; if both come close together, rewrite the markers only once.
 - Shortcuts review (config work, any time, together with Sina): transport shortcuts in edit mode, MIDI editor;
   close to REAPER defaults where sensible. Pairs with the show-protection decision (step 3) and with version
   control for the config files.
@@ -120,16 +138,15 @@ After step 6: what Setup installs depends on the package split. Ends with the cl
 
 - Show control: setlist entries that send MIDI (later OSC), can be triggered by MIDI, and run REAPER actions;
   linkable to projects like text entries. Start MIDI only. Not before step 4 is done.
-- TO BE DISCUSSED: how the config is distributed (whole portable install, config file, ReaPack), and whether the
-  config files (reaper-kb.ini etc.) get version control (today config changes leave no history).
+- TO BE DISCUSSED: how the config is distributed (whole portable install, config file, ReaPack). (Version control
+  for the config files is planned in step 5.)
 
 ## Open decisions (at their step)
 
 - 5: index name + categories, working copy, SiSt-Local packaging, may SiSt-Local use the SiSt Libraries?
-- 6a: namespace for the shared modules?
+  Namespace for the shared modules.
 - 6c: Batch Project Tools design.
 - 6d: Toolbar package name.
 - 7: Start Song start condition (preferred: playhead before =START instead of the "SONG ANNOUNCEMENT" region).
 - 8: can ReaPack's API install single packages?
-- Later: readable action markers design (a or b); what the Status Display shows; config distribution and version
-  control for the config files.
+- Later: readable action markers design (a or b); what the Status Display shows; config distribution.

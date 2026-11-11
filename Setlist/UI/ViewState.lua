@@ -46,8 +46,8 @@ local CFG = {
    projLenTextSize = 16,
    linePadding = 18,
 
-   minZoomLevel = -8,
-   maxZoomLevel = 16,
+   minZoomLevel = -9.6, -- 60% (entry size 14.4 of 24)
+   maxZoomLevel = 24,   -- 200%
    zoomDelay = 0.10, -- seconds between zoom steps while a zoom button is held
 
    activeProjHighlight = { 0.57, 0.97, 0.9, 0.7 },
@@ -102,6 +102,8 @@ local gui = setmetatable({
    -- Derived layout values (calculated in ApplyZoom, OnWindowOpen and Frame)
    lineHeight = 0,
    listH = 0,
+   panelH = CFG.ctrlPanelSize, -- the height of the status line + command bar this frame: 0 in a window that is too small for it
+   small = false,             -- this frame's window is smaller than the command bar can be used in (docked, or no js_ReaScriptAPI)
    entryTextSize = CFG.entryTextSize,
    textEntrySize = math.floor(CFG.entryTextSize * 0.8 + 0.5),
    projLenTextSize = CFG.projLenTextSize,

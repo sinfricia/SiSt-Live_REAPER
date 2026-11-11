@@ -376,10 +376,16 @@ function Data.save_current_list(list)
    end
 end
 
--- True if there is an autosave with something in it (an empty file does not count).
+local autosave_present = nil -- read once, then kept up to date where the autosave is written (archive_list)
+
+-- True if there is an autosave with something in it (an empty file does not count). Called every frame (the Restore
+-- button): the file is only read the first time.
 function Data.has_autosave()
-   local str = Data.read_text(Data.autosave_path())
-   return str ~= nil and str:find("%S") ~= nil
+   if autosave_present == nil then
+      local str = Data.read_text(Data.autosave_path())
+      autosave_present = str ~= nil and str:find("%S") ~= nil
+   end
+   return autosave_present
 end
 
 -- Reads and parses a list file (the current list or the autosave) without touching any projects.
@@ -420,6 +426,7 @@ function Data.archive_list(listStr)
    reaper.RecursiveCreateDirectory(path:match("^(.*)[\\/][^\\/]*$") or "", 0)
    local ok, err = Data.write_text_atomic(path, listStr)
    if ok then
+      autosave_present = listStr:find("%S") ~= nil
       log:info("the replaced list is kept as the autosave (%d entries)", #list)
    else
       reaper.MB("Could not write the autosave:\n" .. path .. "\n\n" .. tostring(err), "Setlist: autosave failed", 0)

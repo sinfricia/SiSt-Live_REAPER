@@ -141,13 +141,14 @@ end
 
 -- All open project tabs, in tab order.
 function Sync.project_pointers()
-   local ptrs = {}
+   local ptrs, paths = {}, {}
    while true do
-      local proj = reaper.EnumProjects(#ptrs)
+      local proj, path = reaper.EnumProjects(#ptrs)
       if not proj then break end
       ptrs[#ptrs + 1] = proj
+      paths[#ptrs] = path
    end
-   return ptrs
+   return ptrs, paths -- (the file paths of the tabs too, "" for an unsaved project)
 end
 
 --- True for a tab that is nothing yet: not saved to a file, no tracks, no unsaved changes (the blank tab REAPER starts
@@ -234,13 +235,24 @@ end
 -- is the same entry, and the same file open twice is simply two entries and two tabs.
 
 --- Cheap check for every frame: do the project entries have exactly the pointers of the open tabs, in tab order?
---- tab_projs: the open projects in tab order (Sync.project_pointers).
-function Sync.is_synced(list, tab_projs)
+--- tab_projs: the open projects in tab order (Sync.project_pointers). tab_paths (its second result, optional): their file
+--- paths, so a file opened into a tab (File > Open keeps the pointer) is noticed too.
+local normalized = {} -- (every frame: the same strings again and again)
+local function same_file(entry_path, tab_path)
+   if tab_path == "" then return entry_path == "Unsaved Project" end
+   if entry_path == tab_path then return true end
+   normalized[entry_path] = normalized[entry_path] or Data.normalize_path(entry_path)
+   normalized[tab_path] = normalized[tab_path] or Data.normalize_path(tab_path)
+   return normalized[entry_path] == normalized[tab_path]
+end
+
+function Sync.is_synced(list, tab_projs, tab_paths)
    local n = 0
    for _, entry in ipairs(list) do
       if entry.type == ENTRY.PROJECT then
          n = n + 1
          if entry.proj == nil or entry.proj ~= tab_projs[n] then return false end
+         if tab_paths and not same_file(entry.path or "", tab_paths[n] or "") then return false end
       end
    end
    return n == #tab_projs
@@ -337,6 +349,9 @@ function Sync.follow_tabs(list, tabs, d)
    local entry_at = {} -- 0-based tab index -> entry
    for _, m in ipairs(d.matched) do
       m.entry.proj = m.tab.proj
+      if not same_file(m.entry.path or "", m.tab.path == "Unsaved Project" and "" or m.tab.path or "") then
+         m.entry.path, m.entry.name = m.tab.path, m.tab.name -- (another file was opened into the tab, or it was saved)
+      end
       entry_at[m.tab_idx] = m.entry
    end
    local ordered = {}
@@ -439,6 +454,10 @@ end
 function Sync.plan_load(loaded, tabs, current, remove, file_exists, is_empty)
    local d = Sync.diff(loaded, tabs)
    local plan = { diff = d, to_open = {}, missing = {}, to_close = {}, list = {} }
+
+   local marked = remove
+   remove = {} -- (a copy: empty tabs are added below, the caller's table stays as it was)
+   for k, v in pairs(marked) do remove[k] = v end
 
    local extra_by_proj = {}
    for _, t in ipairs(d.tab_only) do
@@ -552,6 +571,8 @@ define("is_synced / diff / follow_tabs / duplicates", function(t)
    t.ok(not Sync.is_synced({ proj("a", A), proj("b", B) }, { A }), "is_synced: entry without tab")
    t.ok(not Sync.is_synced({ proj("a", nil) }, { A }), "is_synced: entry without pointer")
    t.ok(Sync.is_synced({ text("t") }, {}), "is_synced: no projects at all")
+   t.ok(Sync.is_synced({ proj("a", A) }, { A }, { "a" }) and not Sync.is_synced({ proj("a", A) }, { A }, { "other" }),
+      "is_synced: the same pointer with another file (File > Open into the tab) is not in sync")
    t.ok(Sync.is_synced({ { type = ENTRY.MISSING, path = "x" }, proj("a", A) }, { A }), "is_synced: missing entries are not projects")
 
    -- diff

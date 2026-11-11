@@ -61,8 +61,8 @@ function ListInput.handle_drop()
 
    log:debug("  Dropped [" .. gui.dragEntryListIdx .. "] at listIdx [" .. gui.dropIdx .. "]")
 
-   -- Perform the swap only if the target index has changed
-   if gui.dropIdx == gui.dragEntryListIdx then end_drag() return end
+   -- Perform the swap only if the target index has changed (a linking drop (Shift) counts even when the entry stays where it is)
+   if gui.dropIdx == gui.dragEntryListIdx and not gui.dropLink then end_drag() return end
 
    -- Ctrl: copy. Shift (dropLink): the text entry is linked to the project at the edge of the entry it is dropped on.
    if gui.dragGroup then
@@ -156,7 +156,11 @@ function ListInput.handle_drag()
          -- With Shift a text entry is linked to the entry the mouse is over; the drop line is where it always is
          gui.dropHover = idxUnderMouse
          gui.dropLink = State.win.mouse.shift and gui.dragTextsOnly
-         if gui.dragGroup and gui.selection[State.list[gui.dropIdx]] then gui.dropIdx = nil end -- (inside the selection)
+         -- (inside the selection: nothing, except linking to an entry outside of it)
+         if gui.dragGroup and gui.selection[State.list[gui.dropIdx]]
+             and not (gui.dropLink and not gui.selection[State.list[gui.dropHover]]) then
+            gui.dropIdx = nil
+         end
       end
 
       ListInput.handle_drop()

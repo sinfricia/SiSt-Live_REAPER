@@ -189,6 +189,14 @@ end
 --- count, greyed out items do, as gfx.showmenu numbers them). A submenu item is { label = "Zoom", submenu = { items } }:
 --- its last entry must be a normal item (gfx.showmenu closes the submenu there). Submenus inside submenus are not
 --- supported.
+--- Labels are data (entry texts, project names): gfx.showmenu cannot escape "|" (it would start another item), so it
+--- becomes the look-alike "¦"; a leading # ! > < would be read as a menu code, so a space goes before it.
+function Window.menu_label(label)
+  label = tostring(label):gsub("|", "¦")
+  if label:find("^[#!<>]") then label = " " .. label end
+  return label
+end
+
 function Window.build_menu(items)
   local parts, actions = {}, {}
   local function add(list, closing)
@@ -196,11 +204,12 @@ function Window.build_menu(items)
       if item.separator then
         parts[#parts + 1] = ""
       elseif item.submenu then
-        parts[#parts + 1] = ">" .. item.label
+        parts[#parts + 1] = ">" .. Window.menu_label(item.label)
         add(item.submenu, "<")
       else
         local last = (i == #list) and closing or ""
-        parts[#parts + 1] = last .. (item.disabled and "#" or "") .. (item.checked and "!" or "") .. item.label
+        parts[#parts + 1] = last .. (item.disabled and "#" or "") .. (item.checked and "!" or "") ..
+            Window.menu_label(item.label)
         actions[#actions + 1] = (not item.disabled) and item.action or false
       end
     end
@@ -464,31 +473,6 @@ function Window:show_context_menu(extra_items)
 end
 
 -- Geometry & lifecycle ----------------------------------------------------------------
-
---- Keeps a floating window from being smaller than min_w x min_h pixels: the window is made bigger again (needs the
---- js_ReaScriptAPI extension; a docked window cannot be resized by a script). Call it every frame. Returns true when the
---- window is at least that big, false when it is not and cannot be changed.
-function Window:enforce_min_size(min_w, min_h)
-  if gfx.w >= min_w and gfx.h >= min_h then return true end
-  if not (reaper.APIExists("JS_Window_Find") and reaper.APIExists("JS_Window_GetRect")
-      and reaper.APIExists("JS_Window_SetPosition")) then return false end
-  local dock = gfx.dock(-1)
-  if is_finite_number(dock) and Window.is_docked_state(dock) then return false end
-
-  local hwnd = self.min_hwnd
-  if not hwnd then
-    hwnd = reaper.JS_Window_Find(self.title, true)
-    self.min_hwnd = hwnd
-  end
-  if not hwnd then return false end
-  local ok, left, top, right, bottom = reaper.JS_Window_GetRect(hwnd)
-  if not ok then self.min_hwnd = nil return false end
-  -- the title bar and borders are part of the rectangle, not of what gfx.w / gfx.h measure
-  local chrome_w, chrome_h = math.abs(right - left) - gfx.w, math.abs(bottom - top) - gfx.h
-  reaper.JS_Window_SetPosition(hwnd, left, math.min(top, bottom), math.max(gfx.w, min_w) + chrome_w,
-    math.max(gfx.h, min_h) + chrome_h)
-  return false
-end
 
 -- Reads position, size and dock state from the open window. Done every frame, because after the
 -- user closed the window these values can no longer be read.
@@ -764,6 +748,12 @@ function Window.self_test()
       sub_menu == "A|>Zoom|In|<Out||B")
     check("build_menu: submenu entries are numbered in menu order, the heading does not count",
       #sub_actions == 4 and sub_actions[2] == "in" and sub_actions[3] == "out" and sub_actions[4] == "b")
+
+    local text_menu, text_actions = Window.build_menu({
+      { label = "a|b", action = "x" }, { label = "#hash", action = "y" }, { label = "!bang", checked = true, action = "z" },
+    })
+    check("build_menu: a | in a label does not start another item, a leading # ! < > is not a menu code",
+      text_menu == "a¦b| #hash|! !bang" and #text_actions == 3)
 
     local events = {}
     ext["H/WindowState"] = "{dockState=0,wx=5,wy=5,ww=500,wh=400}"

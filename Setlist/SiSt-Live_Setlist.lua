@@ -153,16 +153,15 @@ local function frame(w)
       if not m.left and not m.right then gui.draggingScroll = false end
 
 
-      -- The layout for this window width. A floating window is kept from getting smaller than the Setlist is usable in; a
-      -- docked one cannot be (and a missing js_ReaScriptAPI): it says so and nothing else happens.
+      -- The layout for this window width. Below the smallest size the command bar is usable in (a small docked window, or a
+      -- floating one made small): the list stays, the status line and command bar are left out, and a sign in the corner
+      -- opens the commands as a menu (CommandArea.draw_compact). A question stays visible.
       CommandArea.update()
-      if not w:enforce_min_size(gui.minWindowW, gui.minWindowH) then
-         List.draw_too_small()
-         return
-      end
+      gui.small = gfx.w < gui.minWindowW or gfx.h < gui.minWindowH
+      gui.panelH = gui.small and 0 or gui.ctrlPanelSize
 
-      gui.listH = gfx.h - gui.ctrlPanelSize - gui.titleHeight
-      gui.numVisibleEntries = math.floor(gui.listH / gui.lineHeight)
+      gui.listH = gfx.h - gui.panelH - gui.titleHeight
+      gui.numVisibleEntries = math.max(1, math.floor(gui.listH / gui.lineHeight))
       gui.maxScroll = List.manual_max_scroll(State.list, gui.numVisibleEntries)
       gui.followMaxScroll = List.max_scroll(State.list, gui.numVisibleEntries)
 
@@ -220,8 +219,12 @@ local function frame(w)
 
       List.offscreen_indicator()
 
-      CommandArea.draw()
-      CommandArea.draw_status()
+      if gui.small then
+         CommandArea.draw_compact()
+      else
+         CommandArea.draw()
+         CommandArea.draw_status()
+      end
       Theme.set_font(gui.entryTextSize)
 
       if not gui.edit then -- (while a text entry is edited, the mouse belongs to its field)
