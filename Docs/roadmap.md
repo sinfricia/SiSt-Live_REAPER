@@ -6,36 +6,24 @@ What's still to do. Reasons and rules: Docs/design-decisions.md. Finished work: 
 ## Status
 
 - Done: step -1, step 0, step 1, step 1b, step 2, step 2b, step 3a, step 3 (2026-11-10, last part: simplify the
-  live test; see completed tasks), step 4b and 4c (2026-11-11).
-- Next: step 4a (Setlist redesign), then 4d to 4f.
+  live test; see completed tasks), step 4b and 4c (2026-11-11), step 4a piece 1 (the split, 2026-11-11).
+- Next: step 4a pieces 2 to 8 (Setlist redesign; includes the old 4d to 4f).
 - Bug fix 2026-11-10: Start Show "No" now switches recording off (see completed tasks).
 
 ## Step 4: Setlist
 
-### 4a: redesign (design first)
-Sina, 2026-11-11: plan the Setlist from the ground up before building; quiz about design, terminology and UI first. A
-first attempt at the conflict resolver was dropped. What was learned and agreed in it (not binding, re-discuss in the quiz):
-- Tab order is the source of truth while the Setlist runs: the list follows the tabs silently (new tab at its tab position,
-  closed tab's entry removed, moves followed). Only loading a setlist asks: List / Merge / Cancel, with a preview. A
-  project open twice gets its own warning ("keep" remembered until one of those tabs closes). Missing files become MISSING
-  entries without a dialog, with an indicator in the window. Never close a playing / recording project.
-- Open questions: the Setlist's responsiveness to the window width (the command area is fixed for now; a wrapping /
-  collapsing bar and a minimum window size were tried and removed), collision handling in the Gui library (text that
-  shortens with "...", a row placement helper), what the old conflict dialogs (still used by Restore and the restart
-  within a REAPER run) become.
-- First tests recording the current behaviour of the project-tab check (incl. the wrong-removal case).
-- Split into data (parse/serialize/autosave), sync (pure, tested) and view; use win.mouse.
-- Right-click menus use Window.build_menu.
-- Project length: test again whether reaper.GetProjectLength is reliable now (the code says it wasn't; API may
-  have changed) and decide on a fallback for projects without an end marker.
-- The live test loads the test setlist through the Setlist's own loading code.
-
-### 4d-4f: features (each its own commit, decided 2026-11-10)
-- 4d Text entries edited in place in the list, no popup (lib/Gui TextField, built for this).
-- 4e Multi-selection of entries (move / remove several).
-- 4f Indicators per project: loop, no stop at end, no end (manual next), with tooltips. One shared "what does
-  this project do at its end" scan (LOOP regions, which Project End Handler the end marker calls), also used by
-  the action-marker check.
+### 4a: redesign (design decided 2026-11-11: Docs/setlist-design.md; each piece its own commit)
+Build order (piece 1, the split, is done):
+1. Sync: the list follows the tabs silently (open, close, move, replaced project); the duplicate warning with
+   pointer memory; project length check (test again whether reaper.GetProjectLength is reliable, fallback for projects
+   without an end marker). Replaces the old conflict resolver and its dialogs.
+2. Load flow: dialog listing the extra open projects with Close checkboxes (new Gui widget: checkbox); progress in the header; refused while playing or recording;
+   setlist name in the header with the modified marker; the live test loads its setlist through this code.
+3. Missing indicator in the status line.
+4. Row indicators: loop (L2 in the transport slot, loop band), end behaviour chips A / M, tooltips (this is old 4f).
+5. Linked text entries (line on the left), Text entries edited in place (old 4d).
+6. Multi-selection with modifiers (old 4e).
+7. Responsiveness pass (also: IsMouseInRect on win.mouse instead of gfx.mouse_*) and a minimum window size; wrapping of long text entries.
 
 ## Step 5: General repo and SiSt-Local
 

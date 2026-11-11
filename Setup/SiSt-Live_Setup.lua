@@ -55,6 +55,16 @@
 --   [main] ../Modes/SiSt-Live_Save current look for current mode.lua
 --   [main] ../Modes/SiSt-Live_Lock mouse cursor to arrow in arrange view.lua
 --   [main] ../Setlist/SiSt-Live_Setlist.lua
+--   [nomain] ../Setlist/Data.lua
+--   [nomain] ../Setlist/Sync.lua
+--   [nomain] ../Setlist/State.lua
+--   [nomain] ../Setlist/Actions.lua
+--   [nomain] ../Setlist/Resolver.lua
+--   [nomain] ../Setlist/UI/ViewState.lua
+--   [nomain] ../Setlist/UI/Ask.lua
+--   [nomain] ../Setlist/UI/List.lua
+--   [nomain] ../Setlist/UI/ListInput.lua
+--   [nomain] ../Setlist/UI/CommandArea.lua
 --   [main] ../Status Display/SiSt-Live_Status Display.lua
 --   [main] ../Toolbar/SiSt-Live_Toolbar.lua
 --   [main] ../Transport/SiSt-Live_Clear time selection and loop points.lua

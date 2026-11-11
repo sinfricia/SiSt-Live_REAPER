@@ -3,6 +3,21 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-11 - Step 4a (a): the Setlist split into parts
+- The 3,150-line Setlist script is now a 282-line glue script (Init, Frame) plus Setlist/Data.lua (entries, .rsl text
+  format, paths, index math, current-list and autosave files), Sync.lua (REAPER's project tabs, pure comparison),
+  Actions.lua (what the user can do to the list), State.lua (shared state), Resolver.lua (the OLD conflict resolver,
+  temporary) and UI/ViewState, List, ListInput, CommandArea, Ask. Rule: the UI only reads the mouse, draws and asks;
+  it never changes the list or the tabs. Structure and reasons: Docs/setlist-design.md ("Code structure").
+- Tests moved with their code (Data 68, Sync 10, ViewState 17, List 42 checks), registered by the main script. New
+  `SelfTest.cases()` in the shared test library (the `t.eq` / `t.ok` style, with tests).
+- Behaviour: unchanged except Queue Project is gone; the right-click menus use Window.build_menu; the index lookups no
+  longer log. The index lookups are plain functions (no global cache), `Data.text_to_list` takes a callback to find
+  the open tab of an entry.
+- Checked without the window: no undefined globals, every Module.function used exists, a run of drawing, clicks, menus
+  and actions against a fake REAPER. Sina tested the window.
+- Self-test: 478 passed. No live test.
+
 ## 2026-11-11 - Step 4b + 4c: current list, autosave, command area, no locking in show mode
 - Two files in Data/: `SiSt-Live_Setlist_current.rsl` is the live list (written after every change; the old "autosave"),
   `SiSt-Live_Setlist_autosave.rsl` is the list that was replaced, kept for rescue. Written when the whole list is replaced

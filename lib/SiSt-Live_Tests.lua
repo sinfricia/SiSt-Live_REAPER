@@ -101,7 +101,7 @@ for _, script in ipairs({
   "Setup/SiSt-Live_Setup.lua",
 }) do
   for _, c in ipairs(SelfTest.collect_script(root .. (script:gsub("/", sep)))) do
-    c.file = script
+    c.file = c.file or script
     components[#components + 1] = c
   end
 end

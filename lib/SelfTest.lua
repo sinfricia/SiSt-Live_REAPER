@@ -72,6 +72,62 @@ function SelfTest.checker()
   return check, results
 end
 
+--- Test cases that compare values: define(name, fn) and run(). fn(t) gets t.eq(actual, expected, label) (deep
+--- comparison; a failed check shows both values) and t.ok(cond, label). A case that crashes is one failed row.
+--- run(around) returns the list of { name, ok } rows for self_test(); around(go) is optional and wraps the whole run
+--- (for example to silence logging): it must call go().
+---   local define, run = SelfTest.cases()
+---   define("adds", function(t) t.eq(add(1, 2), 3, "one plus two") end)
+---   function MyModule.self_test() return run() end
+function SelfTest.cases()
+  local cases = {}
+  local function define(name, fn) cases[#cases + 1] = { name = name, fn = fn } end
+
+  local function deep_equal(a, b)
+    if type(a) ~= type(b) then return false end
+    if type(a) ~= "table" then return a == b end
+    for k, v in pairs(a) do
+      if not deep_equal(v, b[k]) then return false end
+    end
+    for k in pairs(b) do
+      if a[k] == nil then return false end
+    end
+    return true
+  end
+
+  local function describe(v)
+    if type(v) ~= "table" then return tostring(v) end
+    local parts = {}
+    for k, x in pairs(v) do parts[#parts + 1] = tostring(k) .. "=" .. describe(x) end
+    table.sort(parts)
+    return "{" .. table.concat(parts, ", ") .. "}"
+  end
+
+  local function run(around)
+    local rows = {}
+    local function go()
+      for _, case in ipairs(cases) do
+        local t = {}
+        function t.eq(actual, expected, label)
+          local ok = deep_equal(actual, expected)
+          local name = "[" .. case.name .. "] " .. (label or "")
+          if not ok then
+            name = name .. string.format("  (expected: %s, actual: %s)", describe(expected), describe(actual))
+          end
+          rows[#rows + 1] = { name = name, ok = ok }
+        end
+        function t.ok(cond, label) t.eq(cond and true or false, true, label) end
+        local ok, err = pcall(case.fn, t)
+        if not ok then rows[#rows + 1] = { name = "[" .. case.name .. "] ERROR " .. tostring(err), ok = false } end
+      end
+    end
+    if around then around(go) else go() end
+    return rows
+  end
+
+  return define, run
+end
+
 --- A warning row: shown in the report, counted as a warning (neither passed nor failed).
 function SelfTest.warning(name)
   return { name = name, ok = true, warn = true }
@@ -664,6 +720,17 @@ function SelfTest.self_test()
     and SelfTest.relative_path("C:/R", "C:/R") == "." and SelfTest.relative_path("C:/R", "D:/R") == nil)
 
   check("registry: empty and garbage", #SelfTest.decode_registry("") == 0 and #SelfTest.decode_registry("nonsense|x=y") == 1)
+
+  local define, run = SelfTest.cases()
+  define("passes", function(t) t.eq({ 1, { a = 2 } }, { 1, { a = 2 } }, "deep equal") end)
+  define("fails", function(t) t.eq({ 1 }, { 2 }, "values differ") end)
+  define("crashes", function() error("boom") end)
+  local around_called = false
+  local case_rows = run(function(go) around_called = true; go() end)
+  check("cases: equal tables pass, a difference fails and shows both values, a crash is one failed row",
+    #case_rows == 3 and case_rows[1].ok and not case_rows[2].ok
+    and case_rows[2].name:find("expected: {1=2}, actual: {1=1}", 1, true) ~= nil and not case_rows[3].ok)
+  check("cases: the around function wraps the run", around_called)
 
   local rows = SelfTest.run_component({ name = "x",
     self_test = function() return { { name = "ok", ok = true }, { name = "bad", ok = false }, SelfTest.warning("hm") } end,
