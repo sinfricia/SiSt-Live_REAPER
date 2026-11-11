@@ -95,6 +95,8 @@ local gui = setmetatable({
    -- Saved with the window (Window extra_keys, copied in OnWindowOpen / OnWindowClose)
    zoomLevel = 0,
    scrollOffset = 0,
+   selection = {},      -- the selected entries (set: entry -> true), Ctrl+click / Shift+click
+   selAnchor = nil,     -- the entry a Shift+click selects from (the last one clicked)
 
    -- Derived layout values (calculated in ApplyZoom, OnWindowOpen and Frame)
    lineHeight = 0,

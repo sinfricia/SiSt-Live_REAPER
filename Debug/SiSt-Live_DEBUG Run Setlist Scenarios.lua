@@ -266,11 +266,257 @@ local function scenarios()
     Actions.drop_entry(n, target, n < target and 1 or -1, false)
     check("dragging the note alone: it moves and loses its link", note.link == nil and idx_of("Alpha note") ~= idx_of("Alpha") + 1,
       names(State.list))
+    local ic = idx_of("Charlie")
+    Actions.drop_entry(idx_of("Alpha note"), ic, -1, false, true)
+    check("dropped with Shift on the top half of Charlie: right above it, linked to it",
+      State.list[idx_of("Alpha note")].link == "below" and idx_of("Alpha note") == idx_of("Charlie") - 1, names(State.list))
+    -- several selected entries move together; a selected project takes its linked text entry along
+    local note_idx = idx_of("Alpha note")
+    local group = { State.list[idx_of("Alpha")], State.list[idx_of("Charlie")] }
+    local echo_idx = idx_of("Echo")
+    local alpha_first = idx_of("Alpha") < idx_of("Charlie")
+    Actions.drop_selection(group, echo_idx, 1, false)
+    refresh()
+    check("two selected projects dropped after Echo: both are behind it, in their old order",
+      idx_of("Alpha") > idx_of("Echo") and idx_of("Charlie") > idx_of("Echo")
+      and (idx_of("Alpha") < idx_of("Charlie")) == alpha_first, names(State.list))
+    check("... Charlie's linked note moved with it", idx_of("Alpha note") == idx_of("Charlie") - 1, names(State.list))
+    check("... and the tabs are in the new order", Sync.is_synced(State.list, Sync.project_pointers()))
+    local before_names = names(State.list)
+    Actions.drop_selection({ State.list[idx_of("Echo")], State.list[idx_of("Alpha")] }, idx_of("Alpha"), 1, false)
+    check("dropped on one of the moving entries: nothing happens", names(State.list) == before_names, names(State.list))
     local ib = idx_of("Charlie")
     Actions.drop_entry(ib, ib, 1, false)
     check("dropping an entry on itself changes nothing", idx_of("Charlie") == ib)
   else
     check("(scenario 5 needs Alpha and Echo in the list)", false, names(State.list))
+  end
+
+  -- 6. several selected projects, many selections and drop spots, with and without the active project among them,
+  -- against a plain model of where they have to end up ----------------------------------------------------------------
+  do
+    local drop = {}
+    for _, e in ipairs(State.list) do
+      if e.type ~= Data.ENTRY.PROJECT then drop[#drop + 1] = e end
+    end
+    Actions.delete_entries(drop)
+    State.list = State.read_open_projects()
+    Actions.commit()
+    refresh()
+    local n = #State.list
+    local failures, cases, moved_active = {}, 0, 0
+    local selections = { { 1 }, { n }, { 1, n }, { 2, 3 }, { 2, 4 }, { 1, 3, 5 }, { n - 1, n }, { 1, 2, 3 } }
+    for _, positions in ipairs(selections) do
+      for _, active_mode in ipairs({ "selected", "other" }) do
+        for ref_pos = 1, n do
+          for _, dir in ipairs({ -1, 1 }) do
+            local list = State.list
+            local sel, selset, ok_sel = {}, {}, true
+            for _, p in ipairs(positions) do
+              if list[p] and not selset[list[p]] then sel[#sel + 1] = list[p]; selset[list[p]] = true end
+            end
+            if #sel == 0 or #sel >= n or selset[list[ref_pos]] then ok_sel = false end
+            if ok_sel then
+              -- the active project: one of the selected ones, or one that is not selected (not the drop target if possible)
+              local active
+              for _, e in ipairs(list) do
+                if (active_mode == "selected") == (selset[e] == true) then active = e break end
+              end
+              if active then reaper.SelectProjectInstance(active.proj) end
+              refresh()
+
+              local rest, moved, at = {}, {}, nil
+              for _, e in ipairs(list) do
+                if selset[e] then moved[#moved + 1] = e else rest[#rest + 1] = e end
+              end
+              for i, e in ipairs(rest) do if e == list[ref_pos] then at = i end end
+              local pos = dir == 1 and at + 1 or at
+              local expected = {}
+              for i = 1, pos - 1 do expected[#expected + 1] = rest[i] end
+              for _, m in ipairs(moved) do expected[#expected + 1] = m end
+              for i = pos, #rest do expected[#expected + 1] = rest[i] end
+
+              local before = {}
+              for _, e in ipairs(list) do before[#before + 1] = e.name end
+              local active_before = reaper.EnumProjects(-1)
+              Actions.drop_selection(sel, ref_pos, dir, false)
+              local active_after = reaper.EnumProjects(-1)
+              if active_before ~= active_after then moved_active = moved_active + 1 end
+              refresh()
+              cases = cases + 1
+              local same = #State.list == #expected
+              for i, e in ipairs(expected) do if State.list[i] ~= e then same = false end end
+              local synced = Sync.is_synced(State.list, Sync.project_pointers())
+              if not (same and synced) then
+                local got = {}
+                for _, e in ipairs(State.list) do got[#got + 1] = e.name end
+                failures[#failures + 1] = string.format("sel {%s} active=%s drop %s %d: %s | before %s | got %s",
+                  table.concat(positions, ","), active_mode, dir == 1 and "after" or "before", ref_pos,
+                  same and "tabs differ from list" or "wrong order", table.concat(before, ","), table.concat(got, ","))
+              end
+            end
+          end
+        end
+      end
+    end
+    check("group drops: " .. cases .. " cases, all in the expected order and with the tabs in the list's order",
+      #failures == 0 and cases > 0, table.concat(failures, "\n      ", 1, math.min(#failures, 4)))
+    check("... and the active tab stays the active tab (" .. moved_active .. " of " .. cases .. " cases changed it)",
+      moved_active == 0)
+  end
+
+  -- 7. the same with text entries linked to the projects: random selections of projects and text entries ----------------
+  do
+    local ENTRY = Data.ENTRY
+    local base = State.read_open_projects()
+    local list = {}
+    for i, p in ipairs(base) do
+      if i % 3 == 0 then list[#list + 1] = { type = ENTRY.TEXT, name = "B" .. i, path = "B" .. i, link = "below" } end
+      list[#list + 1] = p
+      if i % 2 == 1 then list[#list + 1] = { type = ENTRY.TEXT, name = "A" .. i, path = "A" .. i, link = "above" } end
+      if i == 2 then list[#list + 1] = { type = ENTRY.TEXT, name = "F", path = "F" } end
+    end
+    State.list = list
+    Actions.commit()
+    refresh()
+
+    local seed = 12345
+    local function rnd() seed = (seed * 1103515245 + 12345) % 2147483648 return seed / 2147483648 end
+
+    local function attachments() -- project entry -> set of the text entries linked to it
+      local out = {}
+      for i, e in ipairs(State.list) do
+        if e.type == ENTRY.PROJECT then
+          local set = {}
+          local first, last = Data.link_block(State.list, i)
+          for k = first, last do if k ~= i then set[State.list[k]] = true end end
+          out[e] = set
+        end
+      end
+      return out
+    end
+
+    local failures, cases = {}, 0
+    for _ = 1, 150 do
+      local cur = State.list
+      local sel, selset = {}, {}
+      for _, e in ipairs(cur) do
+        if rnd() < 0.35 then sel[#sel + 1] = e; selset[e] = true end
+      end
+      local ref_pos = math.floor(rnd() * #cur) + 1
+      local dir = rnd() < 0.5 and -1 or 1
+      if #sel > 0 and #sel < #cur and not selset[cur[ref_pos]] then
+        local before_att = attachments()
+        -- what moves: the selected entries and the text entries linked to a selected project
+        local moving, expected_att = {}, {}
+        for i, e in ipairs(cur) do
+          if selset[e] then
+            moving[e] = true
+            if e.type == ENTRY.PROJECT then
+              local first, last = Data.link_block(cur, i)
+              for k = first, last do moving[cur[k]] = true end
+            end
+          end
+        end
+        for p, set in pairs(before_att) do
+          expected_att[p] = {}
+          for t in pairs(set) do
+            if not (selset[t] and not selset[p]) then expected_att[p][t] = true end -- (a selected text leaves a project that stays)
+          end
+        end
+        local rest_before = {}
+        for _, e in ipairs(cur) do if not moving[e] then rest_before[#rest_before + 1] = e end end
+        local count_before = #cur
+
+        Actions.drop_selection(sel, ref_pos, dir, false)
+        refresh()
+        cases = cases + 1
+
+        local problems = {}
+        if #State.list ~= count_before then problems[#problems + 1] = "entries lost or added" end
+        if not Sync.is_synced(State.list, Sync.project_pointers()) then problems[#problems + 1] = "tabs differ from the list" end
+        local rest_after = {}
+        for _, e in ipairs(State.list) do if not moving[e] then rest_after[#rest_after + 1] = e end end
+        for i, e in ipairs(rest_before) do
+          if rest_after[i] ~= e then problems[#problems + 1] = "the entries that stay changed their order" break end
+        end
+        local after_att = attachments()
+        for p, set in pairs(expected_att) do
+          for t in pairs(set) do
+            if not (after_att[p] and after_att[p][t]) then problems[#problems + 1] = "'" .. t.name .. "' lost its project " .. p.name end
+          end
+          for t in pairs(after_att[p] or {}) do
+            if not set[t] then problems[#problems + 1] = "'" .. t.name .. "' joined " .. p.name .. " without being linked" end
+          end
+        end
+        for i, e in ipairs(State.list) do
+          if e.type == ENTRY.TEXT and e.link and not Data.block_of(State.list, i) then
+            problems[#problems + 1] = "'" .. e.name .. "' has a link that reaches no project"
+          end
+        end
+        if #problems > 0 then
+          local names_sel = {}
+          for _, e in ipairs(sel) do names_sel[#names_sel + 1] = e.name end
+          failures[#failures + 1] = string.format("select {%s} drop %s '%s': %s", table.concat(names_sel, ","),
+            dir == 1 and "after" or "before", cur[ref_pos] and cur[ref_pos].name or "?", table.concat(problems, "; "))
+        end
+      end
+    end
+    check("group drops with linked text entries: " .. cases .. " random cases keep every link and the tab order",
+      #failures == 0 and cases > 0, table.concat(failures, "\n      ", 1, math.min(#failures, 4)))
+  end
+
+  -- 8. text entries only: linked with Shift, joining a block, copied ----------------------------------------------------
+  do
+    local ENTRY = Data.ENTRY
+    State.list = State.read_open_projects()
+    local first_proj = State.list[1]
+    local x1 = { type = ENTRY.TEXT, name = "X1", path = "X1" }
+    local x2 = { type = ENTRY.TEXT, name = "X2", path = "X2" }
+    local a1 = { type = ENTRY.TEXT, name = "N1", path = "N1", link = "above" }
+    local a2 = { type = ENTRY.TEXT, name = "N2", path = "N2", link = "above" }
+    table.insert(State.list, 2, a1)
+    table.insert(State.list, 3, a2)
+    State.list[#State.list + 1] = x1
+    State.list[#State.list + 1] = x2
+    Actions.commit()
+    local function pos(e) for i, v in ipairs(State.list) do if v == e then return i end end end
+
+    -- Shift: both go right below the project in the last row (the drop is below it), linked to it
+    local last_proj_idx
+    for i, e in ipairs(State.list) do if e.type == ENTRY.PROJECT then last_proj_idx = i end end
+    local last_proj = State.list[last_proj_idx]
+    Actions.drop_selection({ x1, x2 }, last_proj_idx, 1, false, true, last_proj_idx)
+    check("two text entries dropped with Shift below a project: right below it, both linked to it",
+      pos(x1) == pos(last_proj) + 1 and pos(x2) == pos(last_proj) + 2 and x1.link == "above" and x2.link == "above",
+      tostring(pos(x1)) .. "," .. tostring(pos(x2)) .. " links " .. tostring(x1.link) .. "," .. tostring(x2.link))
+
+    -- no Shift, dropped between the two entries of the first project's block: they join it
+    local y1 = { type = ENTRY.TEXT, name = "Y1", path = "Y1" }
+    local y2 = { type = ENTRY.TEXT, name = "Y2", path = "Y2" }
+    State.list[#State.list + 1] = y1
+    State.list[#State.list + 1] = y2
+    Actions.commit()
+    Actions.drop_selection({ y1, y2 }, pos(a1), 1, false, false, pos(a1))
+    check("two text entries dropped between the entries of a block join it",
+      y1.link == "above" and y2.link == "above" and pos(y1) == pos(a1) + 1 and pos(y2) == pos(a1) + 2,
+      tostring(y1.link) .. "," .. tostring(y2.link))
+    local first_idx = pos(first_proj)
+    local f, l = Data.link_block(State.list, first_idx)
+    check("... and the block of the project has them", l - f + 1 == 5, "block " .. f .. "-" .. l)
+
+    -- Ctrl+Shift: copies, linked
+    local z = { type = ENTRY.TEXT, name = "Z", path = "Z" }
+    State.list[#State.list + 1] = z
+    Actions.commit()
+    local before = #State.list
+    local lp = pos(last_proj)
+    Actions.drop_selection({ z }, lp, -1, true, true, lp)
+    local copy
+    for _, e in ipairs(State.list) do if e.name == "Z" and e ~= z then copy = e end end
+    check("a copy dropped with Shift above a project: the original stays, the copy is linked to the project",
+      #State.list == before + 1 and copy and copy.link == "below" and pos(copy) == pos(last_proj) - 1,
+      copy and tostring(copy.link) or "no copy")
   end
 end
 

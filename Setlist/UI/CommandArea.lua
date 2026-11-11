@@ -226,7 +226,7 @@ end
 -- The left part of the status line: the chip with the number of missing entries (a click scrolls to the first one) and
 -- the notice (State.notice; a click on it restores the previous list). The right part holds the counts and the time.
 function CommandArea.draw_status()
-   local x, y, h = 12, gfx.h - gui.ctrlPanelSize + 2, gui.statusH - 4
+   local x = 0 -- (where the next chip goes: flush with the left edge)
    Theme.set_font(15)
 
    local missing, first = Data.missing_entries(State.list)

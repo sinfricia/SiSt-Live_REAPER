@@ -442,15 +442,25 @@ local function draw_entry(y, entry)
    local h = List.entry_rows(entry) * gui.lineHeight -- (a text entry with several lines is several rows high)
    local indent = List.link_indent(entry)
 
-   if gui.draggingEntry and entry.listIdx == gui.dragEntryListIdx and gui.dragThreshReached then
-      highlight = gui.dragHighlight
-   elseif entry.proj == State.current_proj and not gui.currProjDrawn then
-      highlight = gui.activeProjHighlight
+   -- the current project and the one after it are found whatever else the row is (a dragged current project must not
+   -- lose the "next project" mark of the entry after it)
+   local is_current, is_next = false, false
+   if entry.proj ~= nil and entry.proj == State.current_proj and not gui.currProjDrawn then
+      is_current = true
       gui.currProjDrawn = true
       gui.isNextProj = true
    elseif gui.isNextProj and entry.type == ENTRY.PROJECT then
-      highlight = gui.nextProjHighlight
+      is_next = true
       gui.isNextProj = false
+   end
+
+   if gui.draggingEntry and gui.dragThreshReached and
+       (entry.listIdx == gui.dragEntryListIdx or (gui.dragGroup and gui.selection[entry])) then
+      highlight = gui.dragHighlight
+   elseif is_current then
+      highlight = gui.activeProjHighlight
+   elseif is_next then
+      highlight = gui.nextProjHighlight
    end
 
    highlight = highlight or gui.entryHighlights[entry.type]
@@ -458,6 +468,13 @@ local function draw_entry(y, entry)
    if highlight then
       gfx.set(table.unpack(highlight))
       gfx.rect(gui.leftBorder + indent, y + 2, gfx.w - gui.scrollW - indent, h - 4)
+   end
+
+   if gui.selection[entry] then -- selected: a tint and a border in the accent colour
+      Theme.set("accent", 0.2)
+      gfx.rect(gui.leftBorder + indent, y + 2, gfx.w - gui.scrollW - indent, h - 4)
+      Theme.set("accent", 0.9)
+      gfx.rect(gui.leftBorder + indent, y + 2, gfx.w - gui.scrollW - indent, h - 4, false)
    end
 
    Theme.set("line")
@@ -478,6 +495,25 @@ local function draw_entry(y, entry)
       end
    end
 
+   -- The marks at the left, over the link line: the white dot of the active project; with a selection it is the selected
+   -- entries that are marked (a square in the colour of the border, white for the active project), the active project
+   -- keeps no dot then
+   do
+      local radius = gui.leftBorder / 2
+      -- centred on the left edge of the entry (after its indent), where the dot of the active project always was
+      local cx = gui.leftBorder + indent
+      local cy = y + (gui.lineHeight - radius * 2) / 2 + 1
+      local active = entry.proj ~= nil and entry.proj == State.current_proj
+      if gui.selection[entry] then
+         if active then Theme.set("text") else Theme.set("accent") end
+         local size = gui.leftBorder + 1
+         gfx.rect(math.floor(cx - size / 2), math.floor(cy - size / 2), size, size)
+      elseif active and next(gui.selection) == nil then
+         Theme.set("text")
+         gfx.circle(cx, cy, radius, true, true)
+      end
+   end
+
    -- what the song's markers say (the chips before the length: end handler, loop regions)
    local info =entry.type == ENTRY.PROJECT and not entry.name:find("_.*ROUTING") and entry.path ~= "Unsaved Project"
        and ProjectInfo.read(entry.proj) or nil
@@ -494,11 +530,6 @@ local function draw_entry(y, entry)
       displayIdx = List.pad_number(displayIdx, math.floor(math.log(State.tab_count, 10) + 1)) .. ". "
 
       --draw selected project indicator
-      if entry.proj == State.current_proj then
-         Theme.set("text")
-         local radius = gui.leftBorder / 2
-         gfx.circle(gui.leftBorder, y + (gui.lineHeight - radius * 2) / 2 + 1, radius, true, true)
-      end
 
 
       -- (a tab closed a moment ago has a stale pointer until the list has followed the tabs)
@@ -666,7 +697,7 @@ function List.draw()
       Widgets.header("", 3, 3, gfx.w - 6, headerH, "accent")
       Widgets.box(3, 3, math.floor((gfx.w - 6) * State.job.done / math.max(1, State.job.total)), headerH, "accent", 0.6)
       Widgets.text(string.format("Loading %d / %d", State.job.done, State.job.total), 3, 3, gfx.w - 6, headerH,
-         { size = Widgets.header_text_size(headerH), align = "center", color = "text" })
+         { size = Widgets.header_text_size(headerH), align = "center", color = "text", face = Theme.TITLE_FACE })
    else
       local title = State.name and ((State.modified and "*" or "") .. State.name) or TITLE
       Widgets.header(title, 3, 3, gfx.w - 6, headerH, "accent")
@@ -688,7 +719,7 @@ function List.draw()
 
    -- Draw a line indicating where the project would be dropped if dragging
 
-   if gui.draggingEntry and gui.dropIdx and gui.dragDirection then
+   if gui.draggingEntry and gui.dropIdx and (gui.dropDir or gui.dragDirection) then
       local isDragFarEnough = gui.dropIdx ~= gui.dragEntryListIdx and
           (gui.dropIdx > gui.dragEntryListIdx or gui.dropIdx < gui.dragEntryListIdx)
 
@@ -696,11 +727,11 @@ function List.draw()
          -- at the end of the entry it is dropped after (dragged down), at the start of the one it is dropped before
          local starts = List.layout(State.list)
          local row = starts[gui.dropIdx] or 0
-         if gui.dragDirection == 1 and gui.dropIdx > 1 then row = row + List.entry_rows(State.list[gui.dropIdx]) end
+         if (gui.dropDir or gui.dragDirection) == 1 and gui.dropIdx > 1 then row = row + List.entry_rows(State.list[gui.dropIdx]) end
          local dropYstart = gui.titleHeight + (row - gui.scrollOffset) * gui.lineHeight
 
-         -- Draw drop indicator line as a rectangle
-         Theme.set("text", 0.6)
+         -- Draw drop indicator line as a rectangle (in the colour of the link line when the drop will link)
+         if gui.dropLink then Theme.set("accent", 0.95) else Theme.set("text", 0.6) end
          gfx.rect(5, dropYstart - 2, gfx.w - 10, gui.dropIndicatorThickness)
       end
    end

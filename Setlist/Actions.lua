@@ -109,6 +109,155 @@ function Actions.delete_entry(idx)
    Actions.commit()
 end
 
+-- The k text entries now at list[at .. at+k-1] (without a link) get linked: dropped between two entries of a project's block
+-- they join that block; otherwise, with link (Shift), they are linked to the entry the mouse is over (ref, which the drop
+-- line is next to): the group of that text entry, or the project on the side of the drop line, through the text entries
+-- in between (above the entry they link to: "below", and the other way round).
+local function link_inserted(list, at, k, direction, ref, link)
+   for _, dir in ipairs({ "above", "below" }) do
+      for i = at, at + k - 1 do list[i].link = dir end
+      local first, last = Data.block_of(list, at)
+      if first and first < at and at + k - 1 < last then return end
+   end
+   for i = at, at + k - 1 do list[i].link = nil end
+   if not link then return end
+
+   if ref and ref.type == ENTRY.TEXT and ref.link then
+      for i = at, at + k - 1 do list[i].link = ref.link end
+      if Data.block_of(list, at) and Data.block_of(list, at + k - 1) then return end
+      for i = at, at + k - 1 do list[i].link = nil end
+   end
+
+   local side = direction == -1 and "below" or "above"
+   if list[at + k] == ref then side = "below" elseif list[at - 1] == ref then side = "above" end
+   local from, to, step = at, at + k - 1, 1
+   if side == "below" then from, to, step = at + k - 1, at, -1 end -- nearest to the project first
+   for i = from, to, step do
+      for _, j in ipairs(Data.link_chain(list, i, side) or {}) do list[j].link = side end
+   end
+end
+
+-- Several entries at once (entries: entry tables) -----------------------------------------------------------------
+
+function Actions.color_texts(entries, r, g, b)
+   for _, e in ipairs(entries) do
+      if e.type == ENTRY.TEXT then e.highlight = { r, g, b, 0.4 } end
+   end
+   Actions.commit()
+end
+
+function Actions.unlink_texts(entries)
+   for _, e in ipairs(entries) do e.link = nil end
+   Actions.commit()
+end
+
+-- Removes these entries from the list (text and missing entries; projects are closed with close_projects).
+function Actions.delete_entries(entries)
+   local gone = {}
+   for _, e in ipairs(entries) do gone[e] = true end
+   local kept = {}
+   for _, e in ipairs(State.list) do
+      if not gone[e] then kept[#kept + 1] = e end
+   end
+   State.list = kept
+   Actions.commit()
+end
+
+-- A drag and drop of several selected entries (selected: entry tables) to where dropIdx / direction say (see drop_entry).
+-- A selected project takes the text entries linked to it along; a selected text entry whose project does not move loses
+-- its link. Dropped on one of the moving entries: nothing happens. copy: only the text entries are copied. The tabs follow.
+function Actions.drop_selection(selected, dropIdx, direction, copy, link, hoveredIdx)
+   local list = State.list
+   local sel = {}
+   for _, e in ipairs(selected) do sel[e] = true end
+
+   if copy then
+      local copies = {}
+      for _, e in ipairs(list) do
+         if sel[e] and e.type == ENTRY.TEXT then
+            local c = Data.copy_table(e)
+            c.link = nil
+            copies[#copies + 1] = c
+         end
+      end
+      local ref = list[hoveredIdx or dropIdx]
+      local at = direction == 1 and dropIdx + 1 or dropIdx
+      for i, c in ipairs(copies) do table.insert(list, at + i - 1, c) end
+      if #copies > 0 then link_inserted(list, at, #copies, direction, ref, link) end
+      Actions.commit()
+      return
+   end
+
+   local moving, via_block = {}, {}
+   for i, e in ipairs(list) do
+      if sel[e] then
+         moving[e] = true
+         if e.type == ENTRY.PROJECT then
+            local first, last = Data.link_block(list, i)
+            for k = first, last do
+               moving[list[k]] = true
+               if k ~= i then via_block[list[k]] = true end
+            end
+         end
+      end
+   end
+   if moving[list[dropIdx]] then return end -- dropped on itself
+
+   local only_texts = true
+   for e in pairs(moving) do
+      if e.type ~= ENTRY.TEXT then only_texts = false break end
+   end
+   if only_texts then
+      -- text entries only: dropped between the entries of a block they join it, with Shift they are linked to the entry
+      -- the mouse is over (see link_inserted)
+      local ref = list[hoveredIdx or dropIdx]
+      local target = direction == 1 and dropIdx + 1 or dropIdx
+      local moved, kept, before = {}, {}, 0
+      for i, e in ipairs(list) do
+         if moving[e] then
+            moved[#moved + 1] = e
+            e.link = nil
+            if i < target then before = before + 1 end
+         else
+            kept[#kept + 1] = e
+         end
+      end
+      local at = target - before
+      for i, e in ipairs(moved) do table.insert(kept, at + i - 1, e) end
+      State.list = kept
+      link_inserted(kept, at, #moved, direction, ref, link)
+      Actions.commit()
+      return
+   end
+
+   -- outside of the block of the entry it is dropped on
+   local bfirst, blast = Data.block_of(list, dropIdx)
+   local target = direction == 1 and (blast or dropIdx) + 1 or (bfirst or dropIdx)
+
+   local moved, kept, before = {}, {}, 0
+   for i, e in ipairs(list) do
+      if moving[e] then
+         moved[#moved + 1] = e
+         if i < target then before = before + 1 end
+         if e.type == ENTRY.TEXT and not via_block[e] then e.link = nil end
+      else
+         kept[#kept + 1] = e
+      end
+   end
+   local at = target - before
+   for i, e in ipairs(moved) do table.insert(kept, at + i - 1, e) end
+   State.list = kept
+
+   Actions.commit() -- (the indexes)
+   for _, e in ipairs(moved) do
+      if e.type == ENTRY.PROJECT then
+         Sync.order_tabs(State.list, State.tab_count)
+         break
+      end
+   end
+   Actions.commit()
+end
+
 -- Projects ------------------------------------------------------------------------------------------------------
 
 -- Closes the tab. The list follows the tabs by itself (see the sync check in Frame).
@@ -166,7 +315,9 @@ end
 
 -- A drag and drop in the list. dragIdx: the entry that was dragged, dropIdx: where it was dropped, direction: 1 when it
 -- was dragged down the list, -1 up. duplicate: copy a text entry instead of moving it. A project entry also moves its tab.
-function Actions.drop_entry(dragIdx, dropIdx, direction, duplicate)
+-- link: a text entry is linked to the entry the mouse is over (hoveredIdx, the drop line is next to it): the project it is,
+-- or the group of the text entry it is, or else the project on the side of the drop line.
+function Actions.drop_entry(dragIdx, dropIdx, direction, duplicate, link, hoveredIdx)
    local list = State.list
    local dragEntry = list[dragIdx]
 
@@ -174,9 +325,10 @@ function Actions.drop_entry(dragIdx, dropIdx, direction, duplicate)
       log:debug("Duplicating Text Item: " .. dragEntry.name)
       local copy = Data.copy_table(dragEntry)
       copy.link = nil
+      local ref = list[hoveredIdx or dropIdx]
       local at = direction == 1 and dropIdx + 1 or dropIdx
       table.insert(list, at, copy)
-      Data.join_block(list, at) -- dropped between linked entries: linked as well
+      link_inserted(list, at, 1, direction, ref, link)
       log:debug("Inserted duplicate at idx " .. at)
    elseif dragEntry.type == ENTRY.PROJECT then
       -- A project moves with the text entries linked to it, and never into another project's block.
@@ -219,11 +371,12 @@ function Actions.drop_entry(dragIdx, dropIdx, direction, duplicate)
       -- Any other entry moves alone: after the entry it was dropped on (dragged down) or before it (dragged up). Dropped
       -- between the entries of a project's block it joins that block, anywhere else it is not linked.
       if dropIdx == dragIdx then return end
+      local ref = list[hoveredIdx or dropIdx] -- the entry the mouse is over
       table.remove(list, dragIdx)
       local target = direction == 1 and dropIdx + 1 or dropIdx
       if dropIdx > dragIdx then target = target - 1 end
       table.insert(list, target, dragEntry)
-      Data.join_block(list, target)
+      link_inserted(list, target, 1, direction, ref, link)
    end
 
    Actions.commit()

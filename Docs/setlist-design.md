@@ -73,7 +73,19 @@ instructions. They look the same; the user colors them (no default color, only a
   scrollbar, follow-scroll and drag positions work on `List.layout`.
 
 **Jumping:** a click on a project entry selects its tab, in both modes. "Queue Project" goes away for now.
-**Selection (4e):** Ctrl+click / Shift+click with a clear selected state; plain click still jumps. Multi selection should allow batch reording, coloring, closing (deleting for text items)
+**Selection:** Ctrl+click toggles an entry, Shift+click selects the range from the last clicked entry (Ctrl+Shift adds it);
+neither jumps. A plain click on a project jumps and clears the selection, on a text entry it selects only that entry; a click
+anywhere else in the window (header, buttons, status line, empty space) clears it. A press (plain, Ctrl or Shift) on one of
+several selected entries waits to see whether it is a drag (the jump or the toggle happens on release). Selected rows: accent tint and border and a square at the
+left (accent; white for the active project). The active project's white dot only shows while nothing is selected. Dragging a selected entry moves the whole
+selection in list order (`Actions.drop_selection`): a selected project takes its linked text entries along, other selected
+text entries lose their link, Ctrl copies the text entries, the tabs follow. Right-click on a selected entry with several
+selected: Color Entries, Unlink, Close Projects, Delete Text Entries, each with one confirmation for all. No Esc shortcut
+(it would take Esc from REAPER's main window).
+**Drag with Shift (text entries only: one, or a selection of them):** the drop line is where it always is; they are linked
+to the entry the mouse is over (the project it is, the group of the text entry it is, else the project on the side of the
+drop line); the line turns the accent colour. Dropped between the entries of a group they join it, with or without Shift.
+Ctrl copies (the text entries), also together with Shift (the copies are linked).
 
 ## Look
 
@@ -95,6 +107,12 @@ instructions. They look the same; the user colors them (no default color, only a
     project has one or more loop regions). The normal end stays unmarked. Hover tooltips explain them.
   - Tooltips (`Widgets.tooltip_begin / tooltip / tooltip_end`): a light box with a thin dark border, shown after the mouse
     rests 0.6 s.
+- **Marks:** the white dot of the active project sits in the gap between the left edge of the entry and its text (after the
+  indent of a linked text entry); while something is selected the active project has no dot, selected entries have a square
+  there (accent, white for the active project). The link line is at the left edge (1 px in, 2 px wide).
+- **Fonts:** the REAPER theme's regular Roboto (`Theme.use_reaper_font("user_font0")`) for the Setlist, the medium one
+  (`lb_font`) for the title (`Theme.TITLE_FACE`); read from reaper.ini, since REAPER has no API for it. Widgets.text centers
+  the text vertically itself (the drawstr flag centers differently with Roboto).
 - **Text entries:** "--" where a project has its number, the text 80% of the project font size, starting where project
   names start; a linked one is indented by the number column (its "--" lines up with the names). A line at the left edge
   joins a block, with a hook into its first and last entry (option C of the quiz).

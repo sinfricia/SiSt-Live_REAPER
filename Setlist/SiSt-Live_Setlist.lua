@@ -226,6 +226,8 @@ end
 
 local function init()
    if not check_dependencies() then return false end
+   Theme.use_reaper_font("user_font0") -- the font of the REAPER theme (the regular Roboto) for the whole Setlist
+   Theme.TITLE_FACE = Theme.reaper_font_face("lb_font") -- and the medium one for its title
 
    -- Starts following the shared edit/show mode (Mode.watch calls on_shared_mode_changed once right away).
    pollMode = Mode.watch(ViewState.on_shared_mode_changed) -- sets the list mode before the first frame

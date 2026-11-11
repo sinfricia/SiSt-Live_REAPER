@@ -3,6 +3,20 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-11 - Step 4a (e): multi-selection, Shift-drag linking
+- Selection (`gui.selection`): Ctrl+click, Shift+click, accent tint and border, batch right-click menu (Color, Unlink, Close
+  Projects, Delete Text Entries; one confirmation each), group drag (`Actions.drop_selection`, tabs follow, Ctrl copies the
+  text entries). Entries that disappear leave the selection.
+- Shift while dragging a text entry links it to the entry the mouse is over (`Actions.drop_entry` link / hoveredIdx); the drop
+  line takes the link colour. Fixed: a drop at the very top or the end of the list (and in the empty space below) works.
+- Later in the same session: a click anywhere clears the selection; Ctrl / Shift on a selected entry waits for a drag (Ctrl+drag
+  copies a selection, Shift+drag links text entries, also several); text groups dropped inside a link group join it; delete
+  confirmations dropped (text and missing entries, batch); the active project's dot is replaced by squares while something
+  is selected; fixed the drag highlight hiding the "next project" mark and a press on a selected project jumping to it.
+- The Setlist uses the theme's regular Roboto (title: Medium); button labels are centered by `Widgets.text` itself.
+- Self-test: 652 passed; scenarios: 49 (group drag with real tabs: 192 cases against a model, 98 random cases with linked
+  text entries, Shift drops, text groups).
+
 ## 2026-11-11 - Step 4a (d): linked text entries, editing in place, several lines
 - Linked text entries (`link` field "above" / "below", `Data.link_chain / link_block / block_of / join_block`): linking
   through text entries in between, blocks that move with their project in drag and drop and in the tab order, joining by

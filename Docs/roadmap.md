@@ -6,7 +6,7 @@ What's still to do. Reasons and rules: Docs/design-decisions.md. Finished work: 
 ## Status
 
 - Done: step -1, step 0, step 1, step 1b, step 2, step 2b, step 3a, step 3 (2026-11-10, last part: simplify the
-  live test; see completed tasks), step 4b and 4c (2026-11-11), step 4a (a) the split, (b) sync and load flow, (c) row indicators and (d) linked and multi-line text entries (2026-11-11).
+  live test; see completed tasks), step 4b and 4c (2026-11-11), step 4a (a) the split, (b) sync and load flow, (c) row indicators (d) linked and multi-line text entries and (e) multi-selection (2026-11-11).
 - Next: step 4a, the rest (Setlist redesign; includes the old 4d to 4f).
 - Bug fix 2026-11-10: Start Show "No" now switches recording off (see completed tasks).
 
@@ -17,8 +17,7 @@ Done: (a) the split into Data / Sync / Actions / UI, (b) the silent sync with th
 its dialog, progress, setlist name and modified marker, (c) the row indicators, tooltips, missing chip and restart notice
 chip, (d) linked text entries, editing in place, several lines with wrapping (see completed tasks). Still to do, in this
 order:
-1. Multi-selection with modifiers (old 4e).
-2. Responsiveness pass and a minimum window size (also: IsMouseInRect on win.mouse instead of gfx.mouse_*, the list's
+1. Responsiveness pass and a minimum window size (also: IsMouseInRect on win.mouse instead of gfx.mouse_*, the list's
    15 px margin against the 12 px of the rest).
 Also open: the project length check (test again whether reaper.GetProjectLength is reliable, fallback for projects without
 an end marker); the live test loading its setlist through the Setlist's own load code.

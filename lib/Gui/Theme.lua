@@ -26,7 +26,9 @@ Where the colors come from:
 Adding a role: add one line to ROLES or DERIVED. Check the result with Theme.diagnostics()
 (the status display logs it at startup when SiSt-Live debug logging is on).
 
-Fonts: REAPER has no API to read the theme's fonts, so the face is set here, in one place.
+Fonts: the shared face is set here, in one place (Theme.FONT_FACE, Arial). REAPER has no API for the theme's fonts, but it
+keeps them in reaper.ini as LOGFONT structures in hex (lb_font = the list box font, user_font1 ... ): a window that wants
+the font of the REAPER theme calls Theme.use_reaper_font() once at its start.
 
 Self test: Theme.self_test() returns a list of { name, ok }. Uses fake REAPER functions (SelfTest.with_reaper).
 ]]
@@ -158,9 +160,51 @@ function Theme.set(c, alpha)
   gfx.set(col[1], col[2], col[3], alpha or col[4] or 1)
 end
 
-function Theme.set_font(size, flags)
-  gfx.setfont(Theme.FONT_SLOT, Theme.FONT_FACE, size, flags)
+--- face (optional): another face than the shared one, e.g. Theme.TITLE_FACE for a title.
+function Theme.set_font(size, flags, face)
+  gfx.setfont(Theme.FONT_SLOT, face or Theme.FONT_FACE, size, flags)
 end
+
+--- Pure. The face name inside a LOGFONT structure written as hex (as reaper.ini stores the theme's fonts): 28 bytes of
+--- sizes and flags, then the zero-terminated name. nil when there is none.
+function Theme.face_from_logfont(hex)
+  if type(hex) ~= "string" or #hex < 58 then return nil end
+  local face = {}
+  for i = 57, #hex - 1, 2 do
+    local byte = tonumber(hex:sub(i, i + 1), 16)
+    if not byte or byte == 0 then break end
+    face[#face + 1] = string.char(byte)
+  end
+  local name = table.concat(face)
+  return name ~= "" and name or nil
+end
+
+--- The face the REAPER theme uses for key (a reaper.ini entry, "lb_font" = the list box font by default), or nil.
+function Theme.reaper_font_face(key)
+  key = key or "lb_font"
+  local file = io.open(reaper.get_ini_file(), "rb")
+  if not file then return nil end
+  local face = nil
+  for line in file:lines() do
+    local hex = line:match("^" .. key .. "=(%x+)")
+    if hex then
+      face = Theme.face_from_logfont(hex)
+      break
+    end
+  end
+  file:close()
+  return face
+end
+
+--- Makes the shared font the one the REAPER theme uses for key. Returns the face, or nil when it is not found (the face
+--- stays as it was).
+function Theme.use_reaper_font(key)
+  local face = Theme.reaper_font_face(key)
+  if face then Theme.FONT_FACE = face end
+  return face
+end
+
+Theme.TITLE_FACE = nil -- a face for headers (Widgets.header), nil = the shared one
 
 function Theme.clear_color()
   return Theme.to_clear_color(Theme.color("background"))
@@ -220,6 +264,11 @@ function Theme.self_test()
   check("to_clear_color: red is the low byte, blue the high byte",
     Theme.to_clear_color({ 1, 0, 0 }) == 0xFF and Theme.to_clear_color({ 0, 0, 1 }) == 0xFF0000)
   check("to_clear_color: values outside 0..1 are clamped", Theme.to_clear_color({ 2, -1, 0 }) == 0xFF)
+
+  check("face_from_logfont: the name inside reaper.ini's hex font entry",
+    Theme.face_from_logfont("F7FFFFFF000000000000000000000000F40100000000000003020102526F626F746F204D656469756D00656400726966000000000000000000000000F1") == "Roboto Medium")
+  check("face_from_logfont: nothing or junk", Theme.face_from_logfont(nil) == nil and Theme.face_from_logfont("") == nil
+    and Theme.face_from_logfont("F7FFFFFF") == nil)
 
   return results
 end

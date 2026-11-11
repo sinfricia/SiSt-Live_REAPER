@@ -44,6 +44,7 @@ local function end_drag()
       gui.dragStartY = nil
       gui.dropIdx = nil
       gui.dragDirection = nil
+      gui.dropDir, gui.dropLink, gui.dropHover, gui.dragGroup, gui.dragTextsOnly = nil, nil, nil, nil, nil
       gui.dragThreshReached = nil
    end
 end
@@ -63,7 +64,14 @@ function ListInput.handle_drop()
    -- Perform the swap only if the target index has changed
    if gui.dropIdx == gui.dragEntryListIdx then end_drag() return end
 
-   Actions.drop_entry(gui.dragEntryListIdx, gui.dropIdx, gui.dragDirection, modifier_down(MOD.CTRL)) -- Ctrl: copy
+   -- Ctrl: copy. Shift (dropLink): the text entry is linked to the project at the edge of the entry it is dropped on.
+   if gui.dragGroup then
+      Actions.drop_selection(ListInput.selected_entries(), gui.dropIdx, gui.dragDirection, modifier_down(MOD.CTRL),
+         gui.dropLink, gui.dropHover)
+   else
+      Actions.drop_entry(gui.dragEntryListIdx, gui.dropIdx, gui.dropDir or gui.dragDirection, modifier_down(MOD.CTRL),
+         gui.dropLink, gui.dropHover)
+   end
 
    end_drag()
 end
@@ -84,6 +92,12 @@ function ListInput.handle_drag()
       gui.dragEntryListIdx = idxUnderMouse
       gui.dragStartY = gfx.mouse_y
       gui.draggingEntry = true
+      local selected = ListInput.selected_entries()
+      gui.dragGroup = gui.selection[entryUnderMouse] and #selected > 1 -- the whole selection moves
+      gui.dragTextsOnly = true -- (only text entries can be linked by the drag)
+      for _, e in ipairs(gui.dragGroup and selected or { entryUnderMouse }) do
+         if e.type ~= ENTRY.TEXT then gui.dragTextsOnly = false end
+      end
       log:debug("Dragging started for: %s", State.list[gui.dragEntryListIdx].name)
    elseif gui.draggingEntry and gui.dragThreshReached then
       gui.dragDirection = 1
@@ -108,6 +122,19 @@ function ListInput.handle_drag()
 
       local entryUnderMouse, idxUnderMouse = List.entry_at_mouse()
 
+      if not entryUnderMouse then
+         -- below the last entry (empty space in the list): the drop goes to the end of the list
+         local _, totalRows = List.layout(State.list)
+         local endY = gui.titleHeight + (totalRows - gui.scrollOffset) * gui.lineHeight
+         if gfx.mouse_y > endY and gfx.mouse_y < gui.titleHeight + gui.listH and gfx.mouse_x < gfx.w - gui.scrollW then
+            gui.dropIdx = #State.list
+            gui.dropDir, gui.dropHover = 1, #State.list
+            gui.dropLink = State.win.mouse.shift and gui.dragTextsOnly
+            ListInput.handle_drop()
+            return
+         end
+      end
+
       if not entryUnderMouse or idxUnderMouse == gui.dragEntryListIdx then
          gui.dropIdx = nil
          ListInput.handle_drop() -- (on release this ends the drag: before, the entry stayed in its "dragged" look)
@@ -121,9 +148,15 @@ function ListInput.handle_drag()
          local row = (gfx.mouse_y + (gui.lineHeight / 3 * gui.dragDirection) - gui.titleHeight) / gui.lineHeight +
              gui.scrollOffset
          local _, totalRows = List.layout(State.list)
-         local hovered = List.entry_at_row(State.list, clamp(row, 0, totalRows - 0.001))
+         -- (above the first entry: 0, below the last one: past the end, so a drop at either end is possible)
+         local hovered = row < 0 and 0 or (row >= totalRows and #State.list + 1 or List.entry_at_row(State.list, row))
 
          gui.dropIdx = clamp(hovered - gui.dragDirection, 1, #State.list)
+         gui.dropDir = gui.dragDirection
+         -- With Shift a text entry is linked to the entry the mouse is over; the drop line is where it always is
+         gui.dropHover = idxUnderMouse
+         gui.dropLink = State.win.mouse.shift and gui.dragTextsOnly
+         if gui.dragGroup and gui.selection[State.list[gui.dropIdx]] then gui.dropIdx = nil end -- (inside the selection)
       end
 
       ListInput.handle_drop()
@@ -158,9 +191,50 @@ function ListInput.end_edit()
    gui.edit, gui.editEvent = nil, nil
 end
 
+-- Selection --------------------------------------------------------------------------------------------------------
+
+--- The selected entries in list order.
+function ListInput.selected_entries()
+   local out = {}
+   for _, e in ipairs(State.list) do
+      if gui.selection[e] then out[#out + 1] = e end
+   end
+   return out
+end
+
+local function clear_selection(anchor)
+   gui.selection = {}
+   gui.selAnchor = anchor
+end
+
+-- Ctrl+click toggles the entry, Shift+click selects the range from the last clicked entry (Ctrl+Shift adds it).
+local function modify_selection(entry, idx, ctrl, shift)
+   if shift then
+      local from = nil
+      for i, e in ipairs(State.list) do
+         if e == gui.selAnchor then from = i break end
+      end
+      from = from or idx
+      if not ctrl then gui.selection = {} end
+      for i = math.min(from, idx), math.max(from, idx) do gui.selection[State.list[i]] = true end
+   else
+      gui.selection[entry] = not gui.selection[entry] or nil
+      gui.selAnchor = entry
+   end
+end
+
 --- Once per frame after the list is drawn: acts on what the field reported. Enter or a click elsewhere keeps the new text
 --- (an empty one is not kept), Esc drops it.
 function ListInput.handle_edit()
+   -- entries that are gone leave the selection
+   if next(gui.selection) then
+      local present = {}
+      for _, e in ipairs(State.list) do present[e] = true end
+      for e in pairs(gui.selection) do
+         if not present[e] then gui.selection[e] = nil end
+      end
+   end
+
    local edit = gui.edit
    if not edit then return end
 
@@ -185,9 +259,7 @@ function ListInput.handle_edit()
 end
 
 local function delete_text(entry, idx)
-   if Ask.confirm("Delete the text entry '" .. entry.name .. "'?", "Delete Text Entry") then
-      Actions.delete_entry(idx)
-   end
+   Actions.delete_entry(idx)
 end
 
 local function replace_project(entry)
@@ -215,6 +287,51 @@ local function show_text_menu(entry, idx)
    })
 end
 
+-- The menu for several selected entries: every action applies to the entries it fits, one confirmation for all of them.
+local function show_selection_menu()
+   local entries = ListInput.selected_entries()
+   local texts, projects, linked = {}, {}, 0
+   for _, e in ipairs(entries) do
+      if e.type == ENTRY.TEXT then
+         texts[#texts + 1] = e
+         if e.link then linked = linked + 1 end
+      elseif e.type == ENTRY.PROJECT then
+         projects[#projects + 1] = e
+      end
+   end
+
+   local items = { { label = #entries .. " Entries Selected", disabled = true }, { separator = true } }
+   if #texts > 0 then
+      items[#items + 1] = { label = "Color Entries", action = function()
+         local r, g, b = Ask.color()
+         if r then Actions.color_texts(texts, r, g, b) end
+      end }
+   end
+   if linked > 0 then
+      items[#items + 1] = { label = "Unlink", action = function() Actions.unlink_texts(texts) end }
+   end
+   items[#items + 1] = { separator = true }
+   if #projects > 0 then
+      items[#items + 1] = { label = "Close Projects", action = function()
+         if Ask.confirm("Close the " .. #projects .. " selected projects?", "Close Projects") then
+            local pointers = {}
+            for _, e in ipairs(projects) do pointers[#pointers + 1] = e.proj end
+            local closed = Actions.close_projects(pointers)
+            if closed < #projects then
+               reaper.MB((#projects - closed) .. " of the projects were not closed: they play, record, or are the last " ..
+                  "open project.", "Close Projects", 0)
+            end
+         end
+      end }
+   end
+   if #texts > 0 then
+      items[#items + 1] = { label = "Delete Text Entries", action = function()
+         Actions.delete_entries(texts)
+      end }
+   end
+   show_menu(items)
+end
+
 local function show_project_menu(entry)
    show_menu({
       { label = tostring(entry.tabIdx or "?") .. ". " .. entry.name, disabled = true },
@@ -234,9 +351,7 @@ local function show_missing_menu(entry, idx)
       { separator = true },
       { label = "Find Project", action = function() replace_project(entry) end },
       { label = "Remove Project", action = function()
-         if Ask.confirm("Remove '" .. entry.name .. "' from the setlist?", "Remove Entry") then
-            Actions.delete_entry(idx)
-         end
+         Actions.delete_entry(idx)
       end },
    })
 end
@@ -244,6 +359,37 @@ end
 -- Clicks, wheel and scrollbar -----------------------------------------------------------------------------------
 
 function ListInput.handle_click()
+   -- a click anywhere that is not on an entry (or a Ctrl / Shift click) ends the selection
+   local mouse = State.win.mouse
+   if mouse.left_pressed and not (mouse.ctrl or mouse.shift) and not List.entry_at_mouse(true) then
+      clear_selection(nil)
+   end
+
+   -- Ctrl / Shift pressed on a selected entry waited to see whether it is a drag (of the whole selection: a copy with
+   -- Ctrl, linked with Shift); a click applies it
+   if gui.pendingMod and not gui.leftClick then
+      local pending = gui.pendingMod
+      gui.pendingMod = nil
+      if not gui.dragThreshReached then
+         for i, e in ipairs(State.list) do
+            if e == pending.entry then modify_selection(e, i, pending.ctrl, pending.shift) break end
+         end
+      end
+   end
+
+   -- a plain press on one of several selected entries waited to see whether it is a drag; a click ends the selection
+   if gui.pendingClear and not gui.leftClick then
+      local entry = gui.pendingClear
+      gui.pendingClear = nil
+      if not gui.dragThreshReached then -- it was a click, not a drag: it ends the selection, and a project is jumped to
+         clear_selection(entry)
+         if entry.type == ENTRY.PROJECT and entry.proj and reaper.ValidatePtr(entry.proj, "ReaProject*") then
+            if entry.proj ~= State.current_proj then gui.listClickTarget = entry.proj end
+            reaper.SelectProjectInstance(entry.proj)
+         end
+      end
+   end
+
    if (gui.leftClickHandled and gui.rightClickHandled) or gui.draggingEntry or gui.draggingScroll then
       return
    end
@@ -267,7 +413,24 @@ function ListInput.handle_click()
 
       log:debug("Handling left click on entry at listIdx [" .. idx .. "]" .. (isDouble and " (double)" or ""))
 
-      if entry.type == ENTRY.TEXT then
+      if mouse.ctrl or mouse.shift then
+         if gui.selection[entry] then
+            gui.pendingMod = { entry = entry, ctrl = mouse.ctrl, shift = mouse.shift } -- (a drag moves the selection)
+         else
+            modify_selection(entry, idx, mouse.ctrl, mouse.shift) -- selecting: no jump, no editing
+         end
+      elseif gui.selection[entry] and #ListInput.selected_entries() > 1 then
+         gui.pendingClear = entry -- (it may be the start of a drag of the whole selection)
+      else
+         clear_selection(entry)
+         if entry.type == ENTRY.TEXT then gui.selection[entry] = true end -- a text entry is selected by a plain click
+      end
+
+      if mouse.ctrl or mouse.shift then
+         -- (nothing else happens)
+      elseif gui.pendingClear == entry then
+         -- (waiting: a drag moves the whole selection and must not switch the active project; a click does, on release)
+      elseif entry.type == ENTRY.TEXT then
          if isDouble then
             ListInput.start_edit(entry)
          elseif modifier_down(MOD.ALT) then
@@ -286,7 +449,9 @@ function ListInput.handle_click()
    if gui.rightClick and not gui.rightClickHandled then
       log:debug("Handling right click on entry " .. entry.name .. " at index " .. idx)
 
-      if entry.type == ENTRY.TEXT then
+      if gui.selection[entry] and #ListInput.selected_entries() > 1 then
+         show_selection_menu()
+      elseif entry.type == ENTRY.TEXT then
          show_text_menu(entry, idx)
       elseif entry.type == ENTRY.PROJECT then
          show_project_menu(entry)

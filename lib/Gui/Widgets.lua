@@ -71,8 +71,9 @@ function Widgets.is_inside(px, py, x, y, w, h)
   return px ~= nil and py ~= nil and px >= x and px < x + w and py >= y and py < y + h
 end
 
--- gfx.drawstr flags: 4 = center vertically, plus 1 = center / 2 = right horizontally
-local ALIGN_FLAGS = { left = 4, center = 5, right = 6 }
+-- gfx.drawstr flags: 1 = center / 2 = right horizontally (the vertical centering is done by Widgets.text: the flag for it
+-- does not center the way the lists do with every font)
+local ALIGN_FLAGS = { left = 0, center = 1, right = 2 }
 function Widgets.drawstr_flags(align)
   return ALIGN_FLAGS[align or "left"] or ALIGN_FLAGS.left
 end
@@ -134,12 +135,13 @@ function Widgets.box(x, y, w, h, color, alpha)
   gfx.rect(x, y, w, h, true)
 end
 
---- opts: size, color (role, accent or table), alpha, align ("left", "center", "right"), flags (font)
+--- opts: size, color (role, accent or table), alpha, align ("left", "center", "right"), flags (font), face (font)
 function Widgets.text(str, x, y, w, h, opts)
   opts = opts or {}
-  Theme.set_font(opts.size or Widgets.TEXT_SIZE, opts.flags)
+  Theme.set_font(opts.size or Widgets.TEXT_SIZE, opts.flags, opts.face)
   Theme.set(opts.color or "text", opts.alpha)
-  gfx.x, gfx.y = x, y
+  local _, text_h = gfx.measurestr(tostring(str))
+  gfx.x, gfx.y = x, y + math.floor((h - text_h) / 2 + 0.5)
   gfx.drawstr(tostring(str), Widgets.drawstr_flags(opts.align), x + w, y + h)
 end
 
@@ -159,7 +161,8 @@ function Widgets.header(label, x, y, w, h, accent, text_w)
   Widgets.text(label, x, y, text_w or w, h, {
     size = math.floor(h * Widgets.HEADER_TEXT_RATIO + 0.5),
     align = "center",
-    color = text_color
+    color = text_color,
+    face = Theme.TITLE_FACE
   })
 end
 
