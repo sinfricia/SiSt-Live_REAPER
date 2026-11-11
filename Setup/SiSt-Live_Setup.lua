@@ -58,6 +58,7 @@
 --   [nomain] ../Setlist/Data.lua
 --   [nomain] ../Setlist/Sync.lua
 --   [nomain] ../Setlist/State.lua
+--   [nomain] ../Setlist/ProjectInfo.lua
 --   [nomain] ../Setlist/Actions.lua
 --   [nomain] ../Setlist/UI/ViewState.lua
 --   [nomain] ../Setlist/UI/Ask.lua
@@ -72,6 +73,7 @@
 --   [main] ../Debug/SiSt-Live_DEBUG Toggle Logging.lua
 --   [main] ../Debug/SiSt-Live_DEBUG Run Self-Test.lua
 --   [main] ../Debug/SiSt-Live_DEBUG Run Setlist Scenarios.lua
+--   [main] ../Debug/SiSt-Live_DEBUG Looper State.lua
 --   [nomain] ../lib/Log.lua
 --   [nomain] ../lib/SiSt-Live_Log.lua
 --   [nomain] ../lib/SiSt-Live_Button.lua

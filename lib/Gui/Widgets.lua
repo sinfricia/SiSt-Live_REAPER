@@ -10,6 +10,10 @@ again, it draws itself and tells you what happened. No widget objects to keep tr
   if Widgets.button(win, "Retry", x, y, w, h) then ... end
   if Widgets.hold_button(win, "Hold to switch", x, y, w, h) then ... end -- fires after holding 0.5 s
   Widgets.header("REAPER SETLIST", x, y, w, h)            -- window header bar
+  Widgets.tooltip_begin(win) ... Widgets.tooltip(win, "Text", x, y, w, h) ... Widgets.tooltip_end(win)
+                                                          -- tooltips: begin at the start of the frame, register the
+                                                          -- hover while drawing (a button does it for opts.tooltip),
+                                                          -- end as the last thing of the frame
   Widgets.list_view(win, state, rows, x, y, w, h)         -- scrollable rows { text, style, note, note_style, checked,
                                                           -- bg, header, on_toggle }: state = {} kept by the caller
                                                           -- (state.scroll = first row); a row with `checked` has a
@@ -181,11 +185,12 @@ function Widgets.header_button_face(accent)
   return Theme.mix(header, Theme.color("text"), 0.14)
 end
 
---- Returns true in the frame the button is clicked. opts: size, disabled, repeat_every, id, toggle,
+--- Returns true in the frame the button is clicked. opts: size, disabled, repeat_every, id, toggle, tooltip (text shown after the mouse rested on the button),
 --- face (base color instead of the "button" role, e.g. Widgets.header_button_face for a header button)
 --- (id: only needed for two repeating buttons with the same label)
 function Widgets.button(win, label, x, y, w, h, opts)
   opts = opts or {}
+  Widgets.tooltip(win, opts.tooltip, x, y, w, h)
   local over, held, clicked = Widgets.button_state(win.mouse, x, y, w, h, opts.disabled)
   if opts.repeat_every and not opts.disabled then
     win.widget_timers = win.widget_timers or {}
@@ -233,6 +238,74 @@ function Widgets.hold_button(win, label, x, y, w, h, opts)
   if progress > 0 then Widgets.box(x, y, math.floor(w * progress + 0.5), h, opts.fill_color or "toggle", 0.55) end
   Widgets.text(label, x, y, w, h, { size = opts.size, align = "center", alpha = alpha })
   return fired
+end
+
+--- Pure. str shortened with "..." so that it is at most max_w wide; measure(s) returns the width of s.
+function Widgets.fit_text(str, max_w, measure)
+  if measure(str) <= max_w then return str end
+  local lo, hi = 0, #str -- the longest prefix that fits together with the dots
+  while lo < hi do
+    local mid = math.ceil((lo + hi) / 2)
+    if measure(str:sub(1, mid) .. "...") <= max_w then lo = mid else hi = mid - 1 end
+  end
+  return str:sub(1, lo) .. "..."
+end
+
+-- Tooltips ----------------------------------------------------------------------------------
+
+Widgets.TOOLTIP_DELAY = 0.6 -- seconds the mouse has to rest on something before its tooltip appears
+--- Pure. Whether a tooltip is due: the same text has to be hovered for `delay` seconds. state: a table kept per window
+--- ({} at first); text: the hovered text, or nil when nothing with a tooltip is hovered.
+function Widgets.tooltip_step(state, text, now, delay)
+  if not text then
+    state.text, state.since = nil, nil
+    return false
+  end
+  if state.text ~= text then state.text, state.since = text, now end
+  return now - state.since >= delay
+end
+
+--- Pure. Where the box of a tooltip goes: below and to the right of the mouse, moved inside the window if it would stick
+--- out (above the mouse when there is no room below). Returns x, y.
+function Widgets.tooltip_pos(box_w, box_h, mouse_x, mouse_y, win_w, win_h)
+  local x, y = mouse_x + 14, mouse_y + 22
+  if x + box_w > win_w - 4 then x = win_w - 4 - box_w end
+  if y + box_h > win_h - 4 then y = mouse_y - 8 - box_h end
+  return math.max(4, x), math.max(4, y)
+end
+
+--- Call first in every frame.
+function Widgets.tooltip_begin(win)
+  win.tip_text = nil
+end
+
+--- While drawing something that has a tooltip: registers the text when the mouse is inside x, y, w, h.
+function Widgets.tooltip(win, text, x, y, w, h)
+  if text and Widgets.is_inside(win.mouse.x, win.mouse.y, x, y, w, h) then win.tip_text = text end
+end
+
+--- Call last in every frame: draws the tooltip when it is due. No tooltip while a mouse button is down.
+function Widgets.tooltip_end(win)
+  win.tip_state = win.tip_state or {}
+  local text = (not win.mouse.left and not win.mouse.right) and win.tip_text or nil
+  if not Widgets.tooltip_step(win.tip_state, text, reaper.time_precise(), Widgets.TOOLTIP_DELAY) then return end
+
+  local size, pad_x, pad_y = 15, 7, 4
+  Theme.set_font(size)
+  local lines, text_w = {}, 0
+  for line in (text .. "\n"):gmatch("([^\n]*)\n") do
+    lines[#lines + 1] = line
+    text_w = math.max(text_w, (gfx.measurestr(line)))
+  end
+  local line_h = size + 3
+  local box_w, box_h = text_w + 2 * pad_x, #lines * line_h + 2 * pad_y
+  local x, y = Widgets.tooltip_pos(box_w, box_h, win.mouse.x, win.mouse.y, gfx.w, gfx.h)
+  -- the look of REAPER's own tooltips: a light box with a thin dark border and dark text
+  Widgets.box(x - 1, y - 1, box_w + 2, box_h + 2, { 0.35, 0.35, 0.35 })
+  Widgets.box(x, y, box_w, box_h, { 0.96, 0.96, 0.96 })
+  for i, line in ipairs(lines) do
+    Widgets.text(line, x + pad_x, y + pad_y + (i - 1) * line_h, text_w, line_h, { size = size, color = { 0.05, 0.05, 0.05 } })
+  end
 end
 
 -- Scrolling list ---------------------------------------------------------------------------
@@ -412,6 +485,23 @@ function Widgets.self_test()
   check("repeat: again after the interval", Widgets.repeat_fire(timers, "z", true, false, 0.1, 0.1))
   check("repeat: never on release", not Widgets.repeat_fire(timers, "z", false, false, 0.5, 0.1)
     and timers.z == nil)
+
+  local function m(s) return #s * 10 end
+  check("fit_text: fits as it is", Widgets.fit_text("abc", 30, m) == "abc")
+  check("fit_text: shortened with dots", Widgets.fit_text("abcdefghij", 70, m) == "abcd...")
+  check("fit_text: nothing fits", Widgets.fit_text("abcdef", 20, m) == "...")
+
+  local ts = {}
+  check("tooltip: not due right away", not Widgets.tooltip_step(ts, "a", 10, 0.6))
+  check("tooltip: due after the delay", Widgets.tooltip_step(ts, "a", 10.7, 0.6))
+  check("tooltip: another text starts over", not Widgets.tooltip_step(ts, "b", 11, 0.6) and Widgets.tooltip_step(ts, "b", 11.7, 0.6))
+  check("tooltip: nothing hovered clears it", not Widgets.tooltip_step(ts, nil, 12, 0.6) and not Widgets.tooltip_step(ts, "b", 12.1, 0.6))
+  local tx, ty = Widgets.tooltip_pos(100, 30, 50, 50, 400, 300)
+  check("tooltip_pos: below and right of the mouse", tx == 64 and ty == 72)
+  tx, ty = Widgets.tooltip_pos(100, 30, 380, 50, 400, 300)
+  check("tooltip_pos: moved left to stay inside", tx + 100 <= 396)
+  tx, ty = Widgets.tooltip_pos(100, 30, 50, 290, 400, 300)
+  check("tooltip_pos: above the mouse when there is no room below", ty + 30 <= 290)
 
   local visible, max_scroll = Widgets.list_limits(10, 24, 100)
   check("list_limits: whole rows only", visible == 4 and max_scroll == 6)

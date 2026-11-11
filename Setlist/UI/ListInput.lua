@@ -55,12 +55,12 @@ function ListInput.handle_drop()
 
    gui.draggingEntry = false
 
-   if not gui.dropIdx then return end
+   if not gui.dropIdx then end_drag() return end -- (released over nothing, or over the dragged entry itself)
 
    log:debug("  Dropped [" .. gui.dragEntryListIdx .. "] at listIdx [" .. gui.dropIdx .. "]")
 
    -- Perform the swap only if the target index has changed
-   if gui.dropIdx == gui.dragEntryListIdx then return end
+   if gui.dropIdx == gui.dragEntryListIdx then end_drag() return end
 
    Actions.drop_entry(gui.dragEntryListIdx, gui.dropIdx, gui.dragDirection, modifier_down(MOD.CTRL)) -- Ctrl: copy
 
@@ -109,6 +109,7 @@ function ListInput.handle_drag()
 
       if not entryUnderMouse or idxUnderMouse == gui.dragEntryListIdx then
          gui.dropIdx = nil
+         ListInput.handle_drop() -- (on release this ends the drag: before, the entry stayed in its "dragged" look)
          return
       end
 

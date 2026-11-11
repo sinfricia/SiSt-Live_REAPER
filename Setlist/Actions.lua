@@ -52,7 +52,12 @@ end
 -- Text entries --------------------------------------------------------------------------------------------------
 
 function Actions.insert_text(name)
-   table.insert(State.list, { name = name, path = name, type = ENTRY.TEXT })
+   -- after the active project (at the end when there is none)
+   local at = #State.list + 1
+   for i, entry in ipairs(State.list) do
+      if entry.proj and entry.proj == State.current_proj then at = i + 1 break end
+   end
+   table.insert(State.list, at, { name = name, path = name, type = ENTRY.TEXT })
    Actions.commit()
 end
 

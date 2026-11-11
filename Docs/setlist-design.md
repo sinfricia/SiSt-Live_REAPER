@@ -45,8 +45,7 @@ points are at the end. Build order: Docs/roadmap.md, step 4a. Rules and reasons 
 - The loaded file's text entries are kept. The replaced list becomes the autosave. The projects open one per frame and
   the closing is a step as well: the header fills with the accent color ("Loading 3 / 12") until everything is done.
 - Missing files become **missing entries** without a dialog (an entry saved as missing whose file exists again becomes a
-  project when a list is loaded); the status line shows a red "N missing" chip that scrolls to the first one when clicked
-  (not built yet).
+  project when a list is loaded); the status line shows a red "N Missing" chip at its left that scrolls to the first one when clicked.
 - **Restore** goes through the same dialog with the autosave as the loaded setlist (the current list becomes the
   autosave, so a second Restore goes back). **Reset** asks for confirmation. First start in a new REAPER run: the list starts
   from the open projects, the last run's list becomes the autosave; a restart of the Setlist within a REAPER run keeps the
@@ -72,12 +71,17 @@ custom text entry widget (multi-line later).
   -), names centered, a divider after each section. Fixed layout for now.
 - **Row:** number or transport indicator, name, then the indicator slot, then the length (mm:ss, "--:--" without an end
   marker). Highlights: current project, next project, text entries, drag.
-  - Transport: green triangle = playing, red dot = recording (as today). **Looping**: the same slot shows `L2` (loop pass
-    count) instead, in green while playing and red while recording. The loop region is also drawn as a faint yellow
-    band on the row's progress track (the row is the project's timeline), also when no loop is running.
-  - Indicator slot, only what differs from normal, as chips: `A` = no stop at the end (continues on its own), `M` =
-    manual (no end handler, nothing happens at the end), each with a down arrow drawn as a shape. The normal end stays
-    unmarked. Hover tooltips explain them.
+  - Transport: green triangle = playing, red dot = recording (as today). **Looping**: the same slot shows `L2` (loop pass)
+    instead, yellow while playing and red while recording; once the loop was stopped (the current or next pass is the
+    last) `L →`. The title moves right when the label is wider than the number slot. No tooltip there. The Region Looper
+    publishes the pass as "<pass>/<passes>[!]" in the project's ExtState `SiSt-Live` / `LoopPass` (`!` = stopped);
+    `ProjectInfo.loop_pass` reads it. (Tried and dropped: a bar for the loop region on the row's timeline, a number of
+    passes: too much noise.)
+  - Chips before the length, in the size of the length text, only what differs from normal: `A` (no stop at the end, with
+    a small down arrow), `M` (manual: no end handler, nothing happens at the end, with the arrow), `L` (yellow: the
+    project has one or more loop regions). The normal end stays unmarked. Hover tooltips explain them.
+  - Tooltips (`Widgets.tooltip_begin / tooltip / tooltip_end`): a light box with a thin dark border, shown after the mouse
+    rests 0.6 s.
 - **Linked text entries:** a thin colored line on the left joins the linked rows (option C of the quiz).
 - Text sizes and spacing: one rhythm (margin 12, buttons 8 apart, sections 28 apart).
 

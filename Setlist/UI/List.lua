@@ -23,6 +23,7 @@ local Theme, Widgets = require("Gui.Theme"), require("Gui.Widgets")
 local Data = require("Setlist.Data")
 local Sync = require("Setlist.Sync")
 local State = require("Setlist.State")
+local ProjectInfo = require("Setlist.ProjectInfo")
 local ViewState = require("Setlist.UI.ViewState")
 
 local gui, CFG, MODE = ViewState.gui, ViewState.CFG, ViewState.MODE
@@ -34,6 +35,47 @@ local List = {}
 
 local function clamp(val, min, max)
    return math.max(min, math.min(max, val))
+end
+
+-- The chips right before a row's length: how the song ends. Only what differs from the normal case is shown.
+local END_CHIPS = {
+   no_stop = {
+      arrow = true,
+      letter = "A",
+      color = { 0.25, 0.67, 0.60 },
+      tip = "A: Automatic. At the end of the song the next song starts without stopping (Project End Handler - NO STOP)."
+   },
+   manual = {
+      arrow = true,
+      letter = "M",
+      color = { 1.0, 0.6, 0.2 },
+      tip = "M: Manual. Nothing happens at the end of this song, the next one has to be started by hand."
+   },
+}
+
+-- Draws the chip of a row (a down arrow and the letter); returns its left edge. right: where the chip ends.
+local function draw_chip(chip, right, y)
+   Theme.set_font(gui.projLenTextSize) -- the size of the length next to it
+   local lw, lh = gfx.measurestr(chip.letter or "M")
+   local h = lh + 4
+   local as = chip.arrow and math.max(3, math.floor(lh / 4)) or 0
+   local w = 6 + (chip.arrow and (as * 2 + 4) or 0) + lw + 6
+   local x, cy = right - w, y + math.floor((gui.lineHeight - h) / 2)
+   Widgets.box(x, cy, w, h, chip.color, 0.4)
+   gfx.set(chip.color[1], chip.color[2], chip.color[3], 1)
+   gfx.rect(x, cy, w, 1)
+   gfx.rect(x, cy + h - 1, w, 1)
+   Theme.set("text")
+   local tx = x + 6
+   if chip.arrow then -- the arrow, close to the letter
+      gfx.triangle(tx, cy + math.floor(h / 2) - math.floor(as / 2), tx + as * 2, cy + math.floor(h / 2) - math.floor(as / 2),
+         tx + as, cy + math.floor(h / 2) + math.ceil(as / 2) + 1)
+      tx = tx + as * 2 + 4
+   end
+   gfx.x, gfx.y = tx, cy + math.floor((h - lh) / 2)
+   gfx.drawstr(chip.letter)
+   Widgets.tooltip(State.win, chip.tip, x, cy, w, h)
+   return x
 end
 
 function List.pad_number(numberStr, numDigits)
@@ -221,7 +263,8 @@ end
 function List.offscreen_indicator()
    if gui.draggingEntry then return end
 
-   local dir = List.offscreen_direction(List.find_project_row(State.list, State.current_proj), gui.scrollOffset, gui.numVisibleEntries)
+   local dir = List.offscreen_direction(List.find_project_row(State.list, State.current_proj), gui.scrollOffset,
+      gui.numVisibleEntries)
    if dir == 0 then return end
 
    local w, h = gui.offscreenIndicatorW, gui.offscreenIndicatorH
@@ -296,6 +339,10 @@ local function draw_entry(y, entry)
    Theme.set("line")
    gfx.line(gui.leftBorder, y + gui.lineHeight, gfx.w - gui.scrollW, y + gui.lineHeight - 1)
 
+   -- what the song's markers say (the chips before the length: end handler, loop regions)
+   local info = entry.type == ENTRY.PROJECT and not entry.name:find("_.*ROUTING") and entry.path ~= "Unsaved Project"
+       and ProjectInfo.read(entry.proj) or nil
+
    -------------------
    -- draw entry text
    local textAlpha -- text uses the theme's text color, nil = not drawn
@@ -316,7 +363,8 @@ local function draw_entry(y, entry)
 
 
       -- (a tab closed a moment ago has a stale pointer until the list has followed the tabs)
-      local playState = entry.proj and reaper.ValidatePtr(entry.proj, "ReaProject*") and reaper.GetPlayStateEx(entry.proj) or 0
+      local playState = entry.proj and reaper.ValidatePtr(entry.proj, "ReaProject*") and
+      reaper.GetPlayStateEx(entry.proj) or 0
       if playState > 0 then
          -- draw pos indicator
          local projLen = Sync.project_length(entry.proj)
@@ -339,7 +387,20 @@ local function draw_entry(y, entry)
          -- draw project playstate indicator
          local displayIdxWidth = gfx.measurestr(displayIdx)
 
-         if playState == 1 then
+         local pass, passes, stopped = ProjectInfo.loop_pass(entry.proj)
+         if pass and (playState == 1 or playState == 5) then
+            -- looping: "L2" in place of the symbol, yellow when playing (red when recording); "L3→" once the loop was
+            -- stopped (the song moves on after this pass). The title starts after it, so a long label pushes it right.
+            local x0 = gui.leftBorder + gui.entryIndent
+            local label = stopped and "L →" or ("L" .. pass)
+            local color = playState == 5 and gui.transportColors[5] or { 1.0, 0.82, 0.05, 1 }
+            gfx.set(table.unpack(color))
+            local labelW, labelH = gfx.measurestr(label)
+            gfx.x, gfx.y = x0, y + (gui.lineHeight - labelH) / 2
+            gfx.drawstr(label)
+            gfx.x = x0 + math.max(displayIdxWidth, labelW + 8)
+            displayIdx = ""
+         elseif playState == 1 then
             gfx.x = gfx.x + displayIdxWidth
             displayIdx = ""
             gfx.set(table.unpack(gui.transportColors[playState]))
@@ -394,10 +455,19 @@ local function draw_entry(y, entry)
 
       Theme.set_font(gui.projLenTextSize)
       local strW, strH = gfx.measurestr(projLenStr)
-      gfx.x = gfx.w - gui.scrollW - strW - gui.entryIndent
+      local lengthX = gfx.w - gui.scrollW - strW - gui.entryIndent
+      gfx.x = lengthX
       gfx.y = y + (gui.lineHeight - strH) / 2
 
       gfx.drawstr(projLenStr)
+
+      local right = lengthX - 10
+      local chip = info and END_CHIPS[info.end_kind]
+      if chip then right = draw_chip(chip, right, y) - 6 end
+      if info and #info.loops > 0 then
+         draw_chip({ letter = "L", color = { 1.0, 0.82, 0.05 }, tip = "This project has one or more loop regions." },
+            right, y)
+      end
    end
 end
 
@@ -504,7 +574,8 @@ define("GetFollowScrollOffset", function(t)
    t.eq(List.follow_scroll_offset(list, 6, 3), 3, "clamped to maxScroll near the end of the list")
    t.eq(List.follow_scroll_offset(list, 0, 10), nil, "idx 0 (tab not in list)")
    t.eq(List.follow_scroll_offset(list, 8, 10), nil, "idx past the end")
-   t.eq(List.follow_scroll_offset({ { type = ENTRY.TEXT }, { type = ENTRY.PROJECT } }, 2, 0), 0, "short list: maxScroll 0")
+   t.eq(List.follow_scroll_offset({ { type = ENTRY.TEXT }, { type = ENTRY.PROJECT } }, 2, 0), 0,
+      "short list: maxScroll 0")
 end)
 
 define("GetMaxScroll", function(t)

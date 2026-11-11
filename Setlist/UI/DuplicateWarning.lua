@@ -20,8 +20,36 @@ local Actions = require("Setlist.Actions")
 
 local DuplicateWarning = {}
 
-local kept = {}          -- duplicates the user chose to keep: a list of sets { [proj] = true }, each with at least two tabs
+-- Duplicates the user chose to keep: a list of sets { [proj] = true }, each with at least two tabs. Kept in REAPER's
+-- non-persistent ExtState as well (the pointers as text), so closing and reopening the Setlist does not ask again.
+local kept = nil
 local checked_count = nil -- the number of tabs the check last ran for
+
+local EXT_SECTION, EXT_KEY = "SiSt-Live_Setlist", "KeptDuplicates"
+
+local function save_kept()
+   local sets = {}
+   for _, set in ipairs(kept) do
+      local ptrs = {}
+      for proj in pairs(set) do ptrs[#ptrs + 1] = tostring(proj) end
+      sets[#sets + 1] = table.concat(ptrs, ",")
+   end
+   reaper.SetExtState(EXT_SECTION, EXT_KEY, table.concat(sets, ";"), false)
+end
+
+-- The kept sets from the ExtState; tabs: Sync.open_projects() (to turn the pointer texts back into pointers).
+local function load_kept(tabs)
+   local by_text = {}
+   for _, tab in ipairs(tabs) do by_text[tostring(tab.proj)] = tab.proj end
+   kept = {}
+   for group in reaper.GetExtState(EXT_SECTION, EXT_KEY):gmatch("[^;]+") do
+      local set = {}
+      for ptr in group:gmatch("[^,]+") do
+         if by_text[ptr] then set[by_text[ptr]] = true end
+      end
+      kept[#kept + 1] = set
+   end
+end
 
 -- The projects of a duplicate group (Sync.duplicates), as a set.
 local function proj_set(group, tabs)
@@ -49,6 +77,7 @@ function DuplicateWarning.check()
 
    local tabs = Sync.open_projects()
    local groups = Sync.duplicates(tabs)
+   if not kept then load_kept(tabs) end
 
    -- a kept set shrinks to the tabs that are still open and is forgotten when fewer than two are left; a group is
    -- known when all its tabs are in a kept set (a new tab of the same file makes it a new group to ask about)
@@ -61,6 +90,7 @@ function DuplicateWarning.check()
       if shared(set, set) >= 2 then still[#still + 1] = set end
    end
    kept = still
+   save_kept()
 
    local fresh = {}
    for _, g in ipairs(groups) do
@@ -95,6 +125,7 @@ function DuplicateWarning.check()
          State.dialog = nil
          if id == "keep" then
             for _, g in ipairs(fresh) do kept[#kept + 1] = proj_set(g, tabs) end
+            save_kept()
             return
          end
          local extra = {}

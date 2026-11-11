@@ -10,7 +10,7 @@ in; nothing in this file keeps state of its own, except the "warn once" flag of 
   Paths        normalize_path, sanitize_path, project_name, find_next_to_setlist
   Text format  list_to_text, text_to_list (the .rsl format: "key=value; key=value;" per line, values percent-encoded)
   Files        the current list and the autosave in the REAPER Data folder, the atomic write, the startup decision
-  List         project_entries, update_indexes, tab_to_list_idx, list_to_tab_idx, describe_list, format_time
+  List         project_entries, missing_entries, update_indexes, tab_to_list_idx, list_to_tab_idx, describe_list, format_time
 
 Two files in the REAPER resource folder (separate from the user's own setlist files, which only "Save" writes):
   CURRENT LIST  the live state of the Setlist, written after every change, so it survives closing and reopening.
@@ -455,6 +455,18 @@ function Data.describe_list(list)
    return str .. ")"
 end
 
+-- How many missing entries the list has, and the list position of the first one (nil if none).
+function Data.missing_entries(list)
+   local count, first = 0, nil
+   for i, entry in ipairs(list) do
+      if entry.type == ENTRY.MISSING then
+         count = count + 1
+         first = first or i
+      end
+   end
+   return count, first
+end
+
 function Data.project_entries(list)
    local projEntriesInList = {}
    for _, entry in ipairs(list) do
@@ -639,6 +651,14 @@ define("List index <-> tab index", function(t)
    t.eq(Data.tab_to_list_idx(list, 2), 5, "past the last tab: one past the end of the list")
    t.eq(Data.tab_to_list_idx(list, -1), 0, "before the first tab: 0")
    t.eq(Data.tab_to_list_idx({}, 0), 1, "empty list: position 1")
+end)
+
+define("missing_entries", function(t)
+   local list = { { type = ENTRY.PROJECT }, { type = ENTRY.MISSING }, { type = ENTRY.TEXT }, { type = ENTRY.MISSING } }
+   local count, first = Data.missing_entries(list)
+   t.eq({ count, first }, { 2, 2 }, "two missing entries, the first at position 2")
+   local none, nothing = Data.missing_entries({ { type = ENTRY.PROJECT } })
+   t.eq({ none, nothing }, { 0, nil }, "none")
 end)
 
 define("Data.update_indexes / Data.project_entries", function(t)

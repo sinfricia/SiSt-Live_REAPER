@@ -3,6 +3,21 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-11 - Step 4a (c): row indicators, tooltips and status chips
+- Rows: chips before the length (`A` no stop, `M` manual, `L` loop regions; `UI/List.lua`, reading `Setlist/ProjectInfo.lua`
+  which parses a project's markers and regions, cached by the project's state change count). While looping, the transport
+  slot shows `L<pass>` (yellow playing, red recording) and `L →` on the last pass.
+- Region Looper edited (Sina agreed): publishes the pass to the project ExtState (`SiSt-Live` / `LoopPass`, "2/3", "!" =
+  stopped); also fixed the loop marker in the project, which never got its pass number (it was passed the wrong object).
+  The running Looper action must be toggled off and on to load the change. New "SiSt-Live: DEBUG Looper State" action
+  writes what the Looper publishes to Data/SiSt Libraries/Looper state.txt.
+- Tooltip system in lib/Gui/Widgets (rest 0.6 s, native-looking box); used for the chips and the command buttons.
+- Status line: red "N Missing" chip (click scrolls to the first), the restart notice as a teal chip "Projects Changed
+  While Setlist Closed: ..." (click restores the previous list; stays when the restore is refused, e.g. while playing).
+- Duplicate warning: the "keep open" choice survives closing and reopening the Setlist. A new text entry is inserted after
+  the active project. Fixed: an entry stayed orange after a drag was released over itself.
+- Self-test: 576 passed. No live test (Setlist only).
+
 ## 2026-11-11 - Step 4a (b): silent sync and the load flow
 - The old conflict resolver (380 lines, four chained dialogs) is gone. While the Setlist runs, the open tabs are the truth:
   `Sync.diff` / `Sync.follow_tabs` (pure, tested) make the list follow opened, closed, moved and replaced projects in the

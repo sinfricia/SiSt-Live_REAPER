@@ -75,6 +75,14 @@ function IsReaperRendering()
   end
 end
 
+-- Tells the Setlist where the loop is: "<pass>/<passes>" in the project's ExtState (passes -1: until stopped), with a
+-- trailing "!" once the loop was stopped (the current or next pass is the last); empty when not looping.
+function PublishLoopPass(playingProj)
+   local text = playingProj.looping and (playingProj.loopCount .. "/" .. playingProj.numLoops ..
+      ((playingProj.isLastPass or playingProj.finalPassAdded) and "!" or "")) or ""
+   r.SetProjExtState(playingProj.proj, extname, "LoopPass", text)
+end
+
 function InitializePlayingProjTable(proj)
    local playingProj = {}
    playingProj.proj = proj
@@ -234,6 +242,7 @@ function PostLoopCleanup(playingProj)
    playingProj.isLastPass = false
    playingProj.prevPlayPos = 0
    r.SetProjExtState(proj, extname, key, "false")
+   PublishLoopPass(playingProj)
 
    for i = 1, #playingProj.trToProcess do
       r.SetMediaTrackInfo_Value(playingProj.trToProcess[i].tr, "B_MUTE", playingProj.trToProcess[i].value)
@@ -341,6 +350,7 @@ function ProcessLoop(playingProj)
          playingProj.loopStart = startPos
          playingProj.loopEnd = endPos
          r.SetProjExtState(proj, extname, key, "true")
+         PublishLoopPass(playingProj)
 
          for i = 1, #playingProj.trToProcess do
             r.SetMediaTrackInfo_Value(playingProj.trToProcess[i].tr, "B_MUTE", 1)
@@ -360,6 +370,7 @@ function ProcessLoop(playingProj)
          end
 
          playingProj.loopMarkerIdx = r.AddProjectMarker2(proj, false, startPos, 0, "1", loopMarkerIdx, loopMarkerColor)
+         playingProj.appliedMarkerName, playingProj.appliedMarkerColor = "1", loopMarkerColor
       end
    else
       -- Currently looping
@@ -390,12 +401,14 @@ function ProcessLoop(playingProj)
             newLoopMarkerName = tostring(playingProj.loopCount) .. " - Next pass is final!"
             newMarkerColor = finalPassMarkerColor
             playingProj.finalPassAdded = true
+            PublishLoopPass(playingProj)
             Msg("Repeat disabled manually or via extState")
             Msg("Next pass is final!")
          elseif not addFinalLoopPass or extStateVal == "true" then
             Msg("Loop disabled! Exiting after current pass.")
             r.GetSetRepeatEx(proj, 0)
             playingProj.isLastPass = true
+            PublishLoopPass(playingProj)
          end
       end
 
@@ -410,6 +423,7 @@ function ProcessLoop(playingProj)
          end
 
          newLoopMarkerName = tostring(playingProj.loopCount)
+         PublishLoopPass(playingProj)
          -- Advance REC-folder item takes on each repetition (only when playing, not recording)
          if r.GetPlayStateEx(proj) == 1 and playingProj.loopItems and ENABLE_TAKE_SWITCHING_FOR_REC_ITEMS then
             SetItemsActiveTake(playingProj.loopItems, playingProj.loopCount - 1)
@@ -429,8 +443,13 @@ function ProcessLoop(playingProj)
          newLoopMarkerName = tostring(playingProj.loopCount) .. " - playing last pass"
       end
 
-      r.SetProjectMarker3(playingProj, playingProj.loopMarkerIdx, false, playingProj.loopStart, 0,
-         newLoopMarkerName, newMarkerColor)
+      -- (the marker keeps its name between passes: only write when there is a new name or colour)
+      if newLoopMarkerName == "" then newLoopMarkerName = playingProj.appliedMarkerName or "1" end
+      if newLoopMarkerName ~= playingProj.appliedMarkerName or newMarkerColor ~= playingProj.appliedMarkerColor then
+         r.SetProjectMarker3(proj, playingProj.loopMarkerIdx, false, playingProj.loopStart, 0,
+            newLoopMarkerName, newMarkerColor)
+         playingProj.appliedMarkerName, playingProj.appliedMarkerColor = newLoopMarkerName, newMarkerColor
+      end
    end
 
    playingProj.prevPlayPos = playPos

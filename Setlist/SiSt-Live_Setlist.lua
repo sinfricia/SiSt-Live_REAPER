@@ -39,12 +39,13 @@ package.path = scriptDir .. "../lib/?.lua;" .. scriptDir .. "../?.lua;" .. packa
 -- Shared SiSt-Live libraries (part of the package: Setup and the self-test check that they are all there)
 local Log = require("SiSt-Live_Log")
 local log = Log.get("Setlist")
-local Theme, Window = require("Gui.Theme"), require("Gui.Window")
+local Theme, Window, Widgets = require("Gui.Theme"), require("Gui.Window"), require("Gui.Widgets")
 local Mode = require("SiSt-Live_Mode")
 
 local Data = require("Setlist.Data")
 local Sync = require("Setlist.Sync")
 local State = require("Setlist.State")
+local ProjectInfo = require("Setlist.ProjectInfo")
 local Actions = require("Setlist.Actions")
 local ViewState = require("Setlist.UI.ViewState")
 local List = require("Setlist.UI.List")
@@ -111,6 +112,7 @@ local function frame(w)
       log:info("closing %s", WINDOW_TITLE)
       w:request_close()
    else
+      Widgets.tooltip_begin(w)
       State.last_project = State.current_proj
       State.current_proj = reaper.EnumProjects(-1)
 
@@ -202,17 +204,19 @@ local function frame(w)
             local choice = State.dialog.draw(w)
             if choice then State.dialog.on_choice(choice) end
          end
+         Widgets.tooltip_end(w)
          return
       end
 
       List.offscreen_indicator()
 
       CommandArea.draw()
-      CommandArea.draw_notice()
+      CommandArea.draw_status()
       Theme.set_font(gui.entryTextSize)
 
       ListInput.handle_click()
       ListInput.handle_drag()
+      Widgets.tooltip_end(w)
    end
 end
 
@@ -245,9 +249,14 @@ local function init()
       -- Setlist was closed, the list as it was stays available as the autosave, and the status line says so.
       Ask.invalid_entries(current, invalid, source)
       State.list = current
-      local changes = Sync.change_summary(Sync.diff(current, State.read_open_projects()))
-      if changes and Data.archive_list(currentStr) then
-         State.notice = "Open projects changed while the Setlist was closed (" .. changes .. "). Click to restore the previous list."
+      local tabs = {} -- unsaved projects are never saved in the list, so they are no change
+      for _, tab in ipairs(State.read_open_projects()) do
+         if tab.path ~= "Unsaved Project" then tabs[#tabs + 1] = tab end
+      end
+      local changes = Sync.change_summary(Sync.diff(current, tabs))
+      if changes then
+         State.notice_restorable = Data.archive_list(currentStr)
+         State.notice = "Projects Changed While Setlist Closed: " .. changes
       end
       if next(State.list) then Actions.follow_tabs() end
    elseif firstRun and next(current) then
@@ -285,6 +294,7 @@ if rawget(_G, "SELFTEST_COLLECT") then
       { "Setlist sync", "Setlist/Sync.lua", Sync },
       { "Setlist view state", "Setlist/UI/ViewState.lua", ViewState },
       { "Setlist list", "Setlist/UI/List.lua", List },
+      { "Setlist project info", "Setlist/ProjectInfo.lua", ProjectInfo },
    }) do
       table.insert(SELFTEST_COLLECT, { name = part[1], file = part[2], self_test = part[3].self_test })
    end

@@ -15,7 +15,8 @@ What the Setlist's parts share while it runs. One table, required by every part 
   job           a load that is still opening projects, one per frame: { plan, queue, total, done, name, prev } or nil
   dialog        the question that is open, or nil: { draw = function(win) -> choice id or nil, on_choice = function(id) }.
                 While it is open the window only reacts to it.
-  notice        text for the status line, or nil (e.g. "Open projects changed while the Setlist was closed: 2 new")
+  notice        text for the status line, or nil (e.g. "Changed while the Setlist was closed: 2 new."); notice_restorable:
+                a click on it restores the previous list (it was kept as the autosave)
 
 The view's own state (scrolling, zoom, dragging, colors) is in UI/ViewState.lua.
 ]]
@@ -36,6 +37,7 @@ local State = {
    job = nil,
    dialog = nil,
    notice = nil,
+   notice_restorable = false,
 }
 State.last_project = State.current_proj
 

@@ -35,51 +35,55 @@ local function save()
    else
       reaper.MB("Failed to open file for writing:\n" .. path, "Save Setlist to File", 0)
    end
+   return ok
 end
 
--- Loading and resetting replace the whole list: not while a project plays or records.
-local function refuse_while_playing(what)
-   local playing = Actions.playback_blocker()
-   if not playing then return false end
-   reaper.MB("Stop '" .. playing .. "' before " .. what .. ".", "A Project Is Playing or Recording", 0)
+-- Loading, restoring and resetting replace the whole list: not while a project plays or records.
+local function refuse_while_playing()
+   if not Actions.playback_blocker() then return false end
+   reaper.MB("Playback or recording is still running.\n\nStop the transport in all projects first, then try again.",
+      "Transport Is Running", 0)
    return true
 end
 
 local function load()
-   if refuse_while_playing("loading a setlist") then return end
+   if refuse_while_playing() then return false end
    local path = Ask.open_file("Open Setlist", SETLIST_FILTER)
-   if not path then return end
+   if not path then return false end
    local loaded, invalid = Actions.read_setlist_file(path)
    if not loaded then
       reaper.MB("Failed to open file:\n" .. path, "Load Setlist from File", 0)
-      return
+      return false
    end
    Ask.invalid_entries(loaded, invalid, "from " .. path)
-   if not next(loaded) then return end
+   if not next(loaded) then return false end
    LoadDialog.open(loaded, (path:match("([^/\\]+)$"):gsub("%.%w+$", "")))
+   return true
 end
 
 local function reset()
-   if refuse_while_playing("resetting the setlist") then return end
+   if refuse_while_playing() then return false end
    local open = State.read_open_projects()
    if not Ask.confirm("Reset the setlist?\n\nYour current list (" .. Data.describe_list(State.list) ..
-      ") is replaced by the " .. #open .. " open projects.\nYou can bring it back with Restore.", "Reset Setlist") then
-      return
+          ") is replaced by the " .. #open .. " open projects.\nYou can bring it back with Restore.", "Reset Setlist") then
+      return false
    end
    Actions.reset()
    gui.followPending = true
+   return true
 end
 
 local function restore()
-   if refuse_while_playing("restoring the autosave") then return end
+   if refuse_while_playing() then return false end
    local list, invalid, source = Actions.read_autosave()
    if not next(list) then
       reaper.MB("There is no autosave to load.", "Restore", 0)
-      return
+      return false
    end
    Ask.invalid_entries(list, invalid, "from the " .. source)
-   if not next(list) then return end
+   if not next(list) then return false end
    LoadDialog.open(list, nil)
+   return true
 end
 
 local function insert_text()
@@ -88,16 +92,25 @@ local function insert_text()
 end
 
 local function run(id)
-   if id == "restore" or id == "reset" or id == "save" or id == "load" then State.notice = nil end
-   if id == "restore" then restore()
-   elseif id == "reset" then reset()
-   elseif id == "save" then save()
-   elseif id == "load" then load()
-   elseif id == "text" then insert_text()
-   elseif id == "zoom_out" then List.zoom_step(-1)
-   elseif id == "zoom_in" then List.zoom_step(1)
-   elseif id == "zoom_reset" then List.apply_zoom(0)
+   local did -- the list commands report whether they went through (a refusal leaves the notice in place)
+   if id == "restore" then
+      did = restore()
+   elseif id == "reset" then
+      did = reset()
+   elseif id == "save" then
+      did = save()
+   elseif id == "load" then
+      did = load()
+   elseif id == "text" then
+      insert_text()
+   elseif id == "zoom_out" then
+      List.zoom_step(-1)
+   elseif id == "zoom_in" then
+      List.zoom_step(1)
+   elseif id == "zoom_reset" then
+      List.apply_zoom(0)
    end
+   if did then State.notice, State.notice_restorable = nil, false end
 end
 
 -- Layout --------------------------------------------------------------------------------------------------------
@@ -109,20 +122,36 @@ end
 -- half = 1 / 2: the item is the upper / lower half of a stacked pair (same column, half the height each)
 local function groups()
    return {
-      { title = "List", items = {
-         { id = "save", label = "Save" },
-         { id = "load", label = "Load" },
-         { id = "reset", label = "Reset" },
-         { id = "restore", label = "Restore", disabled = not Data.has_autosave() },
-      } },
-      { title = "Insert", items = {
-         { id = "text", label = "Text Entry" },
-      } },
-      { title = "Zoom", align = "right", items = {
-         { id = "zoom_reset", label = zoom_percent_label(), w = 68 },
-         { id = "zoom_in", label = "+", w = 34, half = 1, repeat_every = gui.zoomDelay },
-         { id = "zoom_out", label = "-", w = 34, half = 2, repeat_every = gui.zoomDelay },
-      } },
+      {
+         title = "List",
+         items = {
+            { id = "save",  label = "Save",  tip = "Save the setlist to a file." },
+            { id = "load",  label = "Load",  tip = "Load a setlist from a file." },
+            { id = "reset", label = "Reset", tip = "Replace the list with the open projects." },
+            {
+               id = "restore",
+               label = "Restore",
+               disabled = not Data.has_autosave(),
+               tip =
+               "Bring back the list that was replaced last.\nThe current list takes its place, so a second Restore goes back."
+            },
+         }
+      },
+      {
+         title = "Insert",
+         items = {
+            { id = "text", label = "Text Entry", tip = "Insert text entry after current project." },
+         }
+      },
+      {
+         title = "Zoom",
+         align = "right",
+         items = {
+            { id = "zoom_reset", label = zoom_percent_label(), w = 68, tip = "Reset Zoom." },
+            { id = "zoom_in",    label = "+",                  w = 34, half = 1,           repeat_every = gui.zoomDelay, tip = "Zoom in." },
+            { id = "zoom_out",   label = "-",                  w = 34, half = 2,           repeat_every = gui.zoomDelay, tip = "Zoom out." },
+         }
+      },
    }
 end
 
@@ -163,7 +192,13 @@ function CommandArea.draw()
       Widgets.text(g.title, gx, top, g.w, gui.headingH - 4, { size = 15, color = "muted", align = "center" })
       local bx = gx
       for _, it in ipairs(g.items) do
-         local opts = { size = gui.buttonFontSize, disabled = it.disabled, repeat_every = it.repeat_every }
+         local opts = {
+            size = gui.buttonFontSize,
+            disabled = it.disabled,
+            repeat_every = it.repeat_every,
+            tooltip = it
+                .tip
+         }
          local by, bh = y, h
          if it.half then
             opts.size = gui.buttonFontSize * 0.9
@@ -185,19 +220,51 @@ function CommandArea.draw()
    end
 end
 
--- The notice in the status line (State.notice), left-aligned. A click on it restores the previous list.
-function CommandArea.draw_notice()
-   if not State.notice then return end
+-- The left part of the status line: the chip with the number of missing entries (a click scrolls to the first one) and
+-- the notice (State.notice; a click on it restores the previous list). The right part holds the counts and the time.
+function CommandArea.draw_status()
    local x, y, h = 12, gfx.h - gui.ctrlPanelSize + 2, gui.statusH - 4
    Theme.set_font(15)
-   local w = math.min(gfx.measurestr(State.notice) + 4, gfx.w - 260) -- the right part holds the counts and the time
-   local over, held, clicked = Widgets.button_state(State.win.mouse, x, y, w, h)
-   Theme.set("accent", over and 1 or 0.85)
-   gfx.x, gfx.y = x, y + 3
-   gfx.drawstr(State.notice, 0, x + w, y + h) -- 0: no wrapping; cut off at the right limit
-   if clicked then
-      State.notice = nil
-      restore()
+
+   local missing, first = Data.missing_entries(State.list)
+   if missing > 0 then
+      -- flush with the left edge of the window and the full height of the status line, red like a missing entry in the list
+      local label = missing .. " Missing"
+      local w = gfx.measurestr(label) + 24
+      local cy, ch = gfx.h - gui.ctrlPanelSize + 1, gui.statusH - 1
+      local over, _, clicked = Widgets.button_state(State.win.mouse, 0, cy, w, ch)
+      local red = gui.entryHighlights[Data.ENTRY.MISSING]
+      Widgets.box(0, cy, w, ch, red, over and 0.85 or red[4])
+      Widgets.text(label, 0, cy, w, ch, { size = 15, align = "center" })
+      if clicked then
+         gui.scrollOffset = math.max(0, math.min(gui.maxScroll, first - 1))
+         gui.followPending = false
+      end
+      x = w + 6
+   end
+
+   if State.notice then
+      -- a chip like the missing one, in the accent colour; a click restores the previous list (when it was kept) or
+      -- dismisses the notice. A refused restore (something plays) keeps it.
+      local room = gfx.w - 200 - x -- the right part holds the counts and the time
+      if room < 80 then return end
+      local cy, ch = gfx.h - gui.ctrlPanelSize + 1, gui.statusH - 1
+      local text = Widgets.fit_text(State.notice, room - 24, function(s) return (gfx.measurestr(s)) end)
+      local w = gfx.measurestr(text) + 24
+      local over, _, clicked = Widgets.button_state(State.win.mouse, x, cy, w, ch)
+      local teal = { 0.25, 0.67, 0.60 }
+      Widgets.box(x, cy, w, ch, teal, over and 0.8 or 0.55)
+      Widgets.text(text, x, cy, w, ch, { size = 15, align = "center" })
+      Widgets.tooltip(State.win,
+         State.notice_restorable and "The previous list was kept as the autosave.\nClick to restore it."
+         or "Click to dismiss.", x, cy, w, ch)
+      if clicked then
+         if State.notice_restorable then
+            if restore() then State.notice, State.notice_restorable = nil, false end
+         else
+            State.notice = nil
+         end
+      end
    end
 end
 
