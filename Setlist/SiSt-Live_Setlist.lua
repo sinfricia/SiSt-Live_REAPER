@@ -25,8 +25,8 @@
 --   Setup and the self-test check that all of them are there.
 --
 --   Edit/show mode: the list follows the current project in both modes, except when you click a project in the
---   list in edit mode. Switching to show mode also jumps to it. Nothing is locked in show mode; destructive
---   actions (removing entries, closing projects, Reset, loading) ask for confirmation there. An arrow at the list edge
+--   list in edit mode. Switching to show mode also jumps to it. Nothing is locked in either mode;
+--   destructive actions (removing entries, closing projects, Reset, loading) always ask for confirmation. An arrow at the list edge
 --   points to the current project when it is out of view.
 --
 --   Parts (all in Setlist/): Data.lua (entries, text format, files), Sync.lua (REAPER's project tabs), Actions.lua (what

@@ -7,7 +7,6 @@ questions, text input, the color picker and the file dialogs. Each function retu
 cancelled.
 
   confirm(text, title)                      true for Yes
-  confirm_in_show_mode(text, title)         asks only in show mode (a slip on stage); in edit mode it just says yes
   text(title, label, default)               a non-empty text, or nil
   color()                                   r, g, b as 0..1 floats, or nil
   open_file(title, extensions)              the chosen path, or nil
@@ -15,17 +14,10 @@ cancelled.
   parent_dir()                              the folder above the current project's folder (where the dialogs start)
 ]]
 
-local ViewState = require("Setlist.UI.ViewState")
-
 local Ask = {}
 
 function Ask.confirm(text, title)
    return reaper.MB(text, title, 4) == 6
-end
-
-function Ask.confirm_in_show_mode(text, title)
-   if ViewState.gui.mode ~= ViewState.MODE.SHOW then return true end
-   return Ask.confirm(text, title)
 end
 
 function Ask.text(title, label, default)

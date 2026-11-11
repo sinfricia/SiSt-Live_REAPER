@@ -37,7 +37,7 @@ local function save()
 end
 
 local function load()
-   if not Ask.confirm_in_show_mode("Load a setlist from a file?\n\nYour current list is replaced (it is kept as the autosave).",
+   if not Ask.confirm("Load a setlist from a file?\n\nYour current list is replaced (it is kept as the autosave).",
       "Load setlist") then
       return
    end

@@ -240,8 +240,9 @@ only ever run on demand; lookups only where unavoidable.
   the AUTOSAVE is a list that was replaced, kept so "Restore" can bring it back (`..._autosave.rsl`). Replacing the whole
   list (Reset, Restore, Load Setlist, first start in a new REAPER run) always keeps the old one as the autosave, unless it
   is empty or would overwrite an autosave that has text entries with a list that has none.
-- Nothing is locked in show mode; destructive actions ask for confirmation there instead (a locked button on stage
-  gets in the way, a slip is what the question is for).
+- Nothing is locked in show mode, and the Setlist makes no difference between edit and show mode for confirmations:
+  destructive actions (removing or deleting entries, closing a project from the list, Reset, Restore, loading) always
+  ask (a locked button on stage gets in the way, a slip is what the question is for; Sina, 2026-11-11).
 - A shared module needs two users (Sina, 2026-11-11): code with one user stays next to it, even if it is written in a
   general way, and moves to lib/Gui when the second window needs it.
 - The Setlist's command area is a fixed layout for now; responsiveness waits for the redesign.

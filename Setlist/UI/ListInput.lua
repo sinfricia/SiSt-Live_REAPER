@@ -143,7 +143,7 @@ local function rename_text(entry)
 end
 
 local function delete_text(entry, idx)
-   if Ask.confirm_in_show_mode("Delete the text entry '" .. entry.name .. "'?", "Delete text entry") then
+   if Ask.confirm("Delete the text entry '" .. entry.name .. "'?", "Delete text entry") then
       Actions.delete_entry(idx)
    end
 end
@@ -173,7 +173,7 @@ local function show_project_menu(entry)
       { separator = true },
       { label = "Replace Project", action = function() replace_project(entry) end },
       { label = "Close Project", action = function()
-         if Ask.confirm_in_show_mode("Close the project '" .. entry.name .. "'?", "Close project") then
+         if Ask.confirm("Close the project '" .. entry.name .. "'?", "Close project") then
             Actions.close_project(entry)
          end
       end },
@@ -186,7 +186,7 @@ local function show_missing_menu(entry, idx)
       { separator = true },
       { label = "Find Project", action = function() replace_project(entry) end },
       { label = "Remove Project", action = function()
-         if Ask.confirm_in_show_mode("Remove '" .. entry.name .. "' from the setlist?", "Remove entry") then
+         if Ask.confirm("Remove '" .. entry.name .. "' from the setlist?", "Remove entry") then
             Actions.delete_entry(idx)
          end
       end },
