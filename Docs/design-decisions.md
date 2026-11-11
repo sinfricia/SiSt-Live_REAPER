@@ -234,6 +234,18 @@ only ever run on demand; lookups only where unavoidable.
   WM_SETCURSOR through js_ReaScriptAPI; Windows first). Custom cursor images can't follow the mode (.cur files in the
   Cursors folder need a REAPER restart).
 
+## Setlist lists and show mode (2026-11-11)
+
+- Terms: the CURRENT LIST is the live state of the Setlist (survives closing and reopening, file `..._current.rsl`);
+  the AUTOSAVE is a list that was replaced, kept so "Restore" can bring it back (`..._autosave.rsl`). Replacing the whole
+  list (Reset, Restore, Load Setlist, first start in a new REAPER run) always keeps the old one as the autosave, unless it
+  is empty or would overwrite an autosave that has text entries with a list that has none.
+- Nothing is locked in show mode; destructive actions ask for confirmation there instead (a locked button on stage
+  gets in the way, a slip is what the question is for).
+- A shared module needs two users (Sina, 2026-11-11): code with one user stays next to it, even if it is written in a
+  general way, and moves to lib/Gui when the second window needs it.
+- The Setlist's command area is a fixed layout for now; responsiveness waits for the redesign.
+
 ## Naming (2026-10-19)
 
 - A window is named after what it IS (a noun), never after a mode: "Show"/"Edit" only ever mean the mode.

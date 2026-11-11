@@ -4,16 +4,18 @@
 --   # SiSt-Live Setlist
 --   A Tool to manage REAPER project tabs. Designed to be used as a setlist manager in a live environment.
 --
---   Startup modifiers: hold Ctrl to ignore the saved window state, Shift to ignore the autosave,
---   Alt to run the built-in self tests (results in the REAPER console).
---
 --   Logging: the shared SiSt-Live log (lib/SiSt-Live_Log.lua), component "Setlist". Debug lines appear
 --   while "DEBUG Toggle Logging" is on. Warnings always go to <resource path>/Data/SiSt-Live/SiSt-Live.log,
 --   and to the console too, except in show mode.
 --
---   Autosave: the setlist is saved to <resource path>/Data/SiSt-Live_Setlist_autosave.rsl after every change.
---   On the first start after REAPER was opened you are asked whether to load it. If you start with a clean
---   slate instead, the old autosave is kept as SiSt-Live_Setlist_autosave_backup.rsl (open it with Load Setlist).
+--   Current list and autosave (both in <resource path>/Data): the current list (SiSt-Live_Setlist_current.rsl) is the
+--   live state, written after every change; closing and reopening the Setlist within a REAPER run keeps it. The first
+--   start in a new REAPER run starts from the open projects. Every time the whole list is replaced (that start,
+--   Reset, Restore, Load Setlist) the old list is kept as the autosave (SiSt-Live_Setlist_autosave.rsl), and
+--   "Restore" brings it back (it swaps, so a second press goes back).
+--
+--   Below the list: a status line (number of projects, total time) and the command area, groups of buttons (LIST, ADD,
+--   ZOOM) with a divider between them.
 --
 --   Window: right-click on an entry for the entry's menu, anywhere else for the window menu (docking and the
 --   default position). The window remembers its position per edit/show mode: put it where you want it in
@@ -23,8 +25,8 @@
 --   Setup and the self-test check that all of them are there.
 --
 --   Edit/show mode: the list follows the current project in both modes, except when you click a project in the
---   list in edit mode. Switching to show mode also jumps to it. Show mode locks all editing of the setlist
---   (Queue Project still works). An arrow at the list edge points to the current project when it is out of view.
+--   list in edit mode. Switching to show mode also jumps to it. Nothing is locked in show mode; destructive
+--   actions (removing entries, closing projects, Reset, loading) ask for confirmation there. An arrow at the list edge points to the current project when it is out of view.
 
 package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "") .. "../lib/?.lua;" .. package.path
 
@@ -93,7 +95,6 @@ local MAX_RESOLVE_ATTEMPTS = 3
 
 --- EXT STATE ---
 local ExtStateSection = scriptName -- also the Window's section: its "WindowState" key is the same as before
-local ExtKeySetlist = "Setlist"
 local ExtKeySessionMarker = "StartedInThisSession" -- never persisted: empty again after a REAPER restart
 -- Test mode, set by "SiSt-Live: DEBUG Run Live Test" (never persisted): the autosave is neither read nor written,
 -- so a test never asks about it and never replaces the real setlist with the test projects.
@@ -112,8 +113,8 @@ local lastProject = currentProj
 --- GUI CONFIG ---
 -- Constants only. Never written to at runtime. Reads of gui.<key> fall through to this table.
 local CFG = {
-   ctrlPanelSize = 90,
-   buttonFontSize = 18,
+   ctrlPanelSize = 112, -- status line + command area (STATUS_H + CMD_PAD + HEADING_H + buttonH + CMD_PAD)
+   buttonFontSize = 17,
    titleHeight = 56,
    leftBorder = 5,
    entryIndent = 10,
@@ -163,7 +164,7 @@ local CFG = {
    offscreenIndicatorColor = { 0.57, 0.97, 0.9, 0.9 },
 
    buttonW = 140,
-   buttonH = 30,
+   buttonH = 40,
 }
 
 --- GUI STATE ---
@@ -405,11 +406,6 @@ function StartModeWatch()
    log:info("following the shared mode - list mode: %s", gui.mode)
 end
 
--- One line for the self test report.
-function DescribeSharedLibState()
-   return "Shared mode: " .. tostring(Mode.get()) .. ", list mode: " .. tostring(gui.mode)
-end
-
 -- True if the given modifier key (MOD.CTRL, MOD.SHIFT, MOD.ALT) is currently held.
 -- Works before gfx.init, which gfx.mouse_cap does not.
 function IsModifierDown(mask)
@@ -619,10 +615,13 @@ function ParseSetlistString(setlistStr, separator)
    return parsedSetlist, invalidEntries
 end
 
--- AUTOSAVE: the working state is written to a file in the REAPER resource folder after every change.
--- This is separate from the user's own setlist files (.rsl), which are only written by "Save Setlist".
+-- Two files in the REAPER resource folder (separate from the user's own setlist files, which only "Save Setlist"
+-- writes):
+--   CURRENT LIST  the live state of the Setlist, written after every change, so it survives closing and reopening.
+--   AUTOSAVE      a list that was replaced (Reset, Restore, Load Setlist, or the first start in a new REAPER
+--                 run), kept so "Restore" can bring it back. Written only at those moments.
+local CURRENT_FILENAME = "SiSt-Live_Setlist_current.rsl"
 local AUTOSAVE_FILENAME = "SiSt-Live_Setlist_autosave.rsl"
-local AUTOSAVE_BACKUP_FILENAME = "SiSt-Live_Setlist_autosave_backup.rsl" -- old autosave after a clean start
 local autosaveErrorShown = false
 
 function GetDataFilePath(fileName)
@@ -630,12 +629,12 @@ function GetDataFilePath(fileName)
    return reaper.GetResourcePath() .. sep .. "Data" .. sep .. fileName
 end
 
-function GetAutosavePath()
-   return GetDataFilePath(AUTOSAVE_FILENAME)
+function GetCurrentListPath()
+   return GetDataFilePath(CURRENT_FILENAME)
 end
 
-function GetAutosaveBackupPath()
-   return GetDataFilePath(AUTOSAVE_BACKUP_FILENAME)
+function GetAutosavePath()
+   return GetDataFilePath(AUTOSAVE_FILENAME)
 end
 
 function ReadTextFile(path)
@@ -727,45 +726,80 @@ function IsTestMode()
    return reaper.GetExtState(ExtStateSection, ExtKeyTestMode) == "1"
 end
 
-function SaveAutosave()
+-- Writes the current list. Called after every change (CommitSetlist).
+function SaveCurrentList()
    if IsTestMode() then
-      log:debug("test mode: autosave not written")
+      log:debug("test mode: current list not written")
       return
    end
-   log:debug("Saving autosave")
-   local path = GetAutosavePath()
+   log:debug("Saving current list")
+   local path = GetCurrentListPath()
    reaper.RecursiveCreateDirectory(path:match("^(.*)[\\/][^\\/]*$") or "", 0) -- make sure the Data folder exists
    local ok, err = WriteTextFileAtomic(path, CreateSetlistString(setlist, "\n"))
    if not ok then
-      log:warn("autosave failed: %s", tostring(err))
+      log:warn("saving the current list failed: %s", tostring(err))
       if not autosaveErrorShown then -- warn once, not on every change
          autosaveErrorShown = true
-         reaper.MB("Could not write the autosave file:\n" .. GetAutosavePath() .. "\n\n" .. tostring(err),
-            "Setlist autosave failed", 0)
+         reaper.MB("Could not write the current list to:\n" .. path .. "\n\n" .. tostring(err),
+            "Setlist: saving failed", 0)
       end
    end
 end
 
--- Reads and parses the autosave without touching any projects.
--- Returns parsedEntries, invalidEntryStrings, rawString, sourceDescription.
-function ReadAutosave()
-   local setlistStr = ReadTextFile(GetAutosavePath())
-   local source = "autosave file"
-
-   if not setlistStr then -- no file yet: fall back to the old in-session ExtState (previous script versions)
-      setlistStr = reaper.GetExtState(ExtStateSection, ExtKeySetlist)
-      source = "EXT_STATE"
-   end
-
-   log:debug("Retrieving from " .. source .. ": ")
-   local list, invalidEntries = ParseSetlistString(setlistStr, "\n")
-   log:debug("Retrieved " .. #list .. " entries")
-   return list, invalidEntries, setlistStr, source
+-- True if there is an autosave with something in it (an empty file does not count).
+function HasAutosave()
+   local str = ReadTextFile(GetAutosavePath())
+   return str ~= nil and str:find("%S") ~= nil
 end
 
--- Uses a parsed autosave: reports invalid entries, then checks it against the open projects
--- (opens missing projects, asks about conflicts). Returns the resulting setlist.
-function ApplyAutosave(list, invalidEntries, source)
+-- Reads and parses a list file (the current list or the autosave) without touching any projects.
+-- Returns parsedEntries, invalidEntryStrings, rawString, sourceDescription. Nothing there: an empty list.
+function ReadListFile(path, what)
+   local setlistStr = ReadTextFile(path)
+   if not setlistStr then return {}, {}, "", what end
+   log:debug("Reading the " .. what)
+   local list, invalidEntries = ParseSetlistString(setlistStr, "\n")
+   log:debug("Read " .. #list .. " entries")
+   return list, invalidEntries, setlistStr, what
+end
+
+-- Pure function. Whether a list that is about to be replaced is worth keeping as the autosave: not an empty one,
+-- and not one without text entries when the existing autosave has some (a plain list of projects is easy to
+-- rebuild, the text entries are not).
+function WorthArchiving(list, existingAutosaveList)
+   if #list == 0 then return false end
+   local function hasText(l)
+      for _, e in ipairs(l) do if e.type == ENTRY.TEXT then return true end end
+      return false
+   end
+   if hasText(existingAutosaveList) and not hasText(list) then return false end
+   return true
+end
+
+-- Keeps the list that is about to be replaced as the autosave (if it is worth it, see WorthArchiving).
+-- listStr: CreateSetlistString of that list. Returns true if the autosave now holds it.
+function ArchiveList(listStr)
+   if IsTestMode() then return false end
+   local list = ParseSetlistString(listStr, "\n")
+   local existing = ReadListFile(GetAutosavePath(), "autosave")
+   if not WorthArchiving(list, existing) then
+      log:info("the replaced list is not worth keeping: the autosave is left as it is")
+      return false
+   end
+   local path = GetAutosavePath()
+   reaper.RecursiveCreateDirectory(path:match("^(.*)[\\/][^\\/]*$") or "", 0)
+   local ok, err = WriteTextFileAtomic(path, listStr)
+   if ok then
+      log:info("the replaced list is kept as the autosave (%d entries)", #list)
+   else
+      reaper.MB("Could not write the autosave:\n" .. path .. "\n\n" .. tostring(err), "Setlist: autosave failed", 0)
+   end
+   return ok
+end
+
+-- Uses a parsed list file (current list or autosave): reports invalid entries, then checks it against the open
+-- projects (opens missing projects, asks about conflicts). Returns the resulting setlist.
+function ApplyListFromFile(list, invalidEntries, source)
    if next(invalidEntries) then
       HandleInvalidSetlistStringEntries(list, invalidEntries, "from " .. source)
    end
@@ -774,19 +808,6 @@ function ApplyAutosave(list, invalidEntries, source)
       return ResolveConflictsWithOpenProj(list, false)
    end
    return {}
-end
-
--- Keeps a copy of the autosave before a clean start overwrites it. Returns true on success.
-function BackupAutosave(setlistStr)
-   if IsTestMode() then return true end -- test mode: the real autosave is left alone
-   local ok, err = WriteTextFileAtomic(GetAutosaveBackupPath(), setlistStr or "")
-   if ok then
-      log:info("old autosave backed up to %s", GetAutosaveBackupPath())
-   else
-      reaper.MB("Could not back up the old autosave to:\n" .. GetAutosaveBackupPath() .. "\n\n" .. tostring(err),
-         "Setlist autosave backup failed", 0)
-   end
-   return ok
 end
 
 -- True if this is the first start of the script since REAPER was opened (non-persistent ExtState marker).
@@ -798,13 +819,11 @@ function MarkSessionStarted()
    reaper.SetExtState(ExtStateSection, ExtKeySessionMarker, "1", false)
 end
 
--- Pure function. What to do with the autosave at startup:
--- "ignore" = start from the open projects, "ask" = first start since REAPER was opened,
--- "load" = script restarted in the same REAPER session.
-function GetStartupAutosaveAction(hasAutosave, firstRunInSession, ignoreRequested)
-   if ignoreRequested or not hasAutosave then return "ignore" end
-   if firstRunInSession then return "ask" end
-   return "load"
+-- Pure function. What the Setlist starts from: "keep" = the current list (the script was restarted in the same REAPER
+-- run), "fresh" = the open projects (first start since REAPER was opened, nothing saved, or test mode).
+function GetStartupAction(hasCurrentList, firstRunInSession, testMode)
+   if testMode or not hasCurrentList or firstRunInSession then return "fresh" end
+   return "keep"
 end
 
 -- Pure function. Short summary of a setlist for dialogs, e.g. "47 entries (25 projects, 22 text notes)".
@@ -819,21 +838,6 @@ function DescribeSetlistContents(list)
       str = str .. ", " .. counts[ENTRY.MISSING] .. " missing"
    end
    return str .. ")"
-end
-
--- Asks whether to load the autosave. Returns "load", "clean" or "cancel".
-function AskLoadAutosave(list)
-   local ret = reaper.MB("Found the autosaved setlist from your last session:\n" ..
-      DescribeSetlistContents(list) .. "\n\n" ..
-      "Yes: load it and check which projects need to be opened.\n" ..
-      "No: start with a clean slate (only the currently open projects).\n" ..
-      "      The old autosave is kept as a backup.\n" ..
-      "Cancel: don't start the setlist.",
-      "Setlist: load autosave?", 3)
-
-   if ret == 6 then return "load" end
-   if ret == 7 then return "clean" end
-   return "cancel"
 end
 
 function SaveSetlistToFile()
@@ -1555,7 +1559,7 @@ end
 -- It refreshes the index fields and saves, so a crash never loses edits.
 function CommitSetlist()
    UpdateTabAndListIdx()
-   SaveAutosave()
+   SaveCurrentList()
 end
 
 -- All open project tabs, in tab order.
@@ -1749,15 +1753,6 @@ function ShouldFollowProjectChange(mode, changedFromList)
    return not (mode == MODE.EDIT and changedFromList)
 end
 
--- Pure function. Editing is locked in show mode, but only if the mode switch exists (otherwise the setlist
--- could never be edited).
-function IsEditLocked(mode, modeSwitchActive)
-   return modeSwitchActive == true and mode == MODE.SHOW
-end
-
-function IsEditingLocked()
-   return IsEditLocked(gui.mode, Mode ~= nil)
-end
 
 -- Pure function. List index of the first project entry for proj, or nil.
 function FindProjListIdx(list, proj)
@@ -1788,15 +1783,6 @@ function StepSmoothScroll(current, target, dt, timeConstant)
    return new
 end
 
--- Pure function. A gfx.showmenu item, greyed out (not selectable) when disabled.
-function MenuItem(label, enabled)
-   return (enabled and "" or "#") .. label
-end
-
--- Pure function. The (greyed) header line of a context menu, with a note while editing is locked.
-function MenuTitle(text, locked)
-   return "#" .. text .. (locked and "  (locked in show mode)" or "")
-end
 
 -- Pure function. Maps a value of the shared Mode library to MODE. Anything unknown gives nil.
 -- lib: the library's constants ({ SHOW = ..., EDIT = ... }). Defaults to "show" / "edit".
@@ -1840,42 +1826,166 @@ function InsertTextEntry()
 end
 
 function LoadSetlistButtonAction()
-   setlist = LoadSetlistFromFile() or setlist
+   if not ConfirmInShowMode("Load a setlist from a file?\n\nYour current list is replaced (it is kept as the autosave).",
+      "Load setlist") then
+      return
+   end
+   local oldStr = CreateSetlistString(setlist, "\n")
+   local loaded = LoadSetlistFromFile() -- the same table when the dialog was cancelled, nil when the file failed
+   if loaded and loaded ~= setlist then
+      if not terminate then ArchiveList(oldStr) end
+      setlist = loaded
+   end
    if not terminate then CommitSetlist() end
    gui.followPending = true
 end
 
+-- Yes / No question. Returns true for Yes.
+local function Confirm(text, title)
+   return reaper.MB(text, title, 4) == 6
+end
+
+-- Destructive actions ask in show mode (a slip on stage), and just happen in edit mode.
+function ConfirmInShowMode(text, title)
+   if gui.mode ~= MODE.SHOW then return true end
+   return Confirm(text, title)
+end
+
+function ResetSetlist()
+   local open = GetOpenProjectList()
+   if not Confirm("Reset the setlist?\n\nYour current list (" .. DescribeSetlistContents(setlist) ..
+      ") is replaced by the " .. #open .. " open projects.\nYou can bring it back with Restore.", "Reset setlist") then
+      return
+   end
+   ArchiveList(CreateSetlistString(setlist, "\n"))
+   setlist = open
+   CommitSetlist()
+   gui.followPending = true
+end
+
+function LoadAutosaveAction()
+   local list, invalid, _, source = ReadListFile(GetAutosavePath(), "autosave")
+   if not next(list) then
+      reaper.MB("There is no autosave to load.", "Restore", 0)
+      return
+   end
+   if not Confirm("Load the autosave?\n\nYour current list (" .. DescribeSetlistContents(setlist) ..
+      ") is replaced by the autosave (" .. DescribeSetlistContents(list) ..
+      ").\nYou can bring your current list back with Restore.", "Restore") then
+      return
+   end
+   local oldStr = CreateSetlistString(setlist, "\n")
+   local loaded = ApplyListFromFile(list, invalid, source) or {}
+   if terminate then return end
+   ArchiveList(oldStr)
+   setlist = loaded
+   CommitSetlist()
+   gui.followPending = true
+end
+
+-- Command area, under the list and its status line: groups of buttons with a centered section name above each and a
+-- divider after each group. The layout is fixed (no wrapping): the zoom group sits at the right edge.
+local STATUS_H = 24    -- status line right under the list
+local CMD_PAD = 12     -- space above the section names and below the buttons
+local HEADING_H = 24   -- section names (20 px of text row, 4 px to the buttons)
+
+local function ZoomPercentLabel()
+   return math.floor(gui.entryTextSize / CFG.entryTextSize * 100 + 0.5) .. "%"
+end
+
+-- half = 1 / 2: the item is the upper / lower half of a stacked pair (same column, half the height each)
+local function CommandGroups()
+   return {
+      { title = "LIST", items = {
+         { id = "save", label = "Save" },
+         { id = "load", label = "Load" },
+         { id = "reset", label = "Reset" },
+         { id = "restore", label = "Restore", disabled = not HasAutosave() },
+      } },
+      { title = "INSERT", items = {
+         { id = "text", label = "Text Entry" },
+      } },
+      { title = "ZOOM", align = "right", items = {
+         { id = "zoom_reset", label = ZoomPercentLabel(), w = 68 },
+         { id = "zoom_in", label = "+", w = 34, half = 1, repeat_every = gui.zoomDelay },
+         { id = "zoom_out", label = "-", w = 34, half = 2, repeat_every = gui.zoomDelay },
+      } },
+   }
+end
+
+local function RunCommand(id)
+   if id == "restore" then LoadAutosaveAction()
+   elseif id == "reset" then ResetSetlist()
+   elseif id == "save" then SaveSetlistToFile()
+   elseif id == "load" then LoadSetlistButtonAction()
+   elseif id == "text" then InsertTextEntry()
+   elseif id == "zoom_out" then ZoomStep(-1)
+   elseif id == "zoom_in" then ZoomStep(1)
+   elseif id == "zoom_reset" then ApplyZoom(0)
+   end
+end
+
+-- Proportions: one rhythm for everything. Margin 12, buttons 8 apart, sections 28 apart with the divider in the middle,
+-- buttons of a group equally wide, 12 px above the section names and below the buttons. Fixed: no adapting to the
+-- window width yet.
 function HandleControlPanel()
-   local pad = gui.entryIndent
-   local bW, bH = gui.buttonW, gui.buttonH
-   local y = gfx.h - bH - gui.titleHeight / 2
-   local normal = { size = gui.buttonFontSize }
-   local locked = { size = gui.buttonFontSize, disabled = IsEditingLocked() } -- show mode
+   local margin, gap, groupGap = 12, 8, 28
+   local top = gfx.h - gui.ctrlPanelSize + STATUS_H + CMD_PAD
+   local y = top + HEADING_H
+   local h = gui.buttonH
+   Theme.set_font(gui.buttonFontSize)
 
-   if Widgets.button(win, "Save Setlist", pad, y, bW, bH, normal) then SaveSetlistToFile() end
-   if Widgets.button(win, "Load Setlist", pad * 2 + bW, y, bW, bH, locked) then LoadSetlistButtonAction() end
-   if Widgets.button(win, "Insert Text", pad * 3 + bW * 2, y, bW, bH, locked) then InsertTextEntry() end
+   local groups = CommandGroups()
+   -- natural text widths; buttons without a fixed width get the widest one of their group
+   for _, g in ipairs(groups) do
+      g.textW = 0
+      for _, it in ipairs(g.items) do
+         if not it.w then g.textW = math.max(g.textW, gfx.measurestr(it.label)) end
+      end
+   end
+   local pad = 11 -- space left and right of the text inside a button
+   for _, g in ipairs(groups) do
+      g.w = 0
+      local first = true
+      for _, it in ipairs(g.items) do
+         it.bw = it.w or math.floor(g.textW + pad * 2)
+         if it.half ~= 2 then -- the lower half shares the column of the upper one
+            g.w = g.w + it.bw + (first and 0 or gap)
+            first = false
+         end
+      end
+   end
 
-   -- Zoom buttons (right aligned). They repeat while held, Alt+click resets the zoom.
-   local zW, zH = bW / 5, bH * 0.8
-   local zY = gfx.h - zH - gui.titleHeight / 2
-   local zoom = { size = gui.buttonFontSize * 1.2, repeat_every = gui.zoomDelay }
-
-   if Widgets.button(win, "-", gfx.w - pad - zW, zY, zW, zH, zoom) then ZoomStep(-1) end
-   if Widgets.button(win, "+", gfx.w - pad - pad / 2 - zW * 2, zY, zW, zH, zoom) then ZoomStep(1) end
+   local x = margin
+   for gi, g in ipairs(groups) do
+      local gx = g.align == "right" and (gfx.w - margin - g.w) or x
+      Widgets.text(g.title, gx, top, g.w, HEADING_H - 4, { size = 15, color = "muted", align = "center" })
+      local bx = gx
+      for _, it in ipairs(g.items) do
+         local opts = { size = gui.buttonFontSize, disabled = it.disabled, repeat_every = it.repeat_every }
+         local by, bh = y, h
+         if it.half then
+            opts.size = gui.buttonFontSize * 0.9
+            bh = math.floor((h - 2) / 2)
+            if it.half == 2 then by = y + bh + 2 end
+            bx = it.half == 2 and (bx - it.bw - gap) or bx -- the lower half goes under the upper one
+         end
+         if Widgets.button(win, it.label, bx, by, it.bw, bh, opts) then RunCommand(it.id) end
+         bx = bx + it.bw + gap
+      end
+      if g.align ~= "right" then
+         x = gx + g.w + groupGap
+         if gi < #groups then
+            -- divider at the end of the section, in the middle of the gap
+            Theme.set("line")
+            gfx.rect(gx + g.w + groupGap / 2, top, 1, HEADING_H + h)
+         end
+      end
+   end
 end
 
 function HandleDraggingEntry()
    if #setlist < 2 then return end
-
-   if IsEditingLocked() then
-      if gui.draggingEntry then -- the mode switched to show in the middle of a drag: cancel it
-         gui.draggingEntry = false
-         gui.dropIdx = nil
-         log:debug("Drag cancelled: editing is locked in show mode")
-      end
-      return
-   end
 
    if gui.leftClick then
       gui.dragThreshReached = math.abs(gfx.mouse_y - gui.lastClickDownPos.y) > gui.dragThreshold
@@ -2018,12 +2128,8 @@ function QueueProject(entry)
 end
 
 function ShowTextEntryMenu(entry, idx)
-   local locked = IsEditingLocked()
    gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
-   local choice = gfx.showmenu(MenuTitle("-- " .. entry.name, locked) .. "||" ..
-      MenuItem("Rename", not locked) .. "|" .. MenuItem("Color Entry", not locked) .. "|" ..
-      MenuItem("Duplicate", not locked) .. "|" .. MenuItem("Delete Text Entry", not locked))
-   if locked then return end -- every item is greyed out anyway
+   local choice = gfx.showmenu("#-- " .. entry.name .. "||Rename|Color Entry|Duplicate|Delete Text Entry")
 
    if choice == 2 then
       RenameTextEntry(entry)
@@ -2034,17 +2140,17 @@ function ShowTextEntryMenu(entry, idx)
       table.insert(setlist, idx + 1, CopyTable(entry))
       CommitSetlist()
    elseif choice == 5 then
-      table.remove(setlist, idx)
-      CommitSetlist()
+      if ConfirmInShowMode("Delete the text entry '" .. entry.name .. "'?", "Delete text entry") then
+         table.remove(setlist, idx)
+         CommitSetlist()
+      end
    end
 end
 
 function ShowProjectEntryMenu(entry)
-   local locked = IsEditingLocked()
    gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
-   local choice = gfx.showmenu(MenuTitle(tostring(entry.tabIdx or "?") .. ". " .. entry.name, locked) ..
-      "||Queue Project||" .. MenuItem("Replace Project", not locked) .. "|" .. MenuItem("Close Project", not locked))
-   if locked and choice ~= 2 then return end -- Queue Project stays available during the show
+   local choice = gfx.showmenu("#" .. tostring(entry.tabIdx or "?") .. ". " .. entry.name ..
+      "||Queue Project||Replace Project|Close Project")
 
    if choice == 2 then
       QueueProject(entry)
@@ -2052,24 +2158,25 @@ function ShowProjectEntryMenu(entry)
       ReplaceProjEntry(setlist, entry)
       CommitSetlist()
    elseif choice == 4 then
-      CloseProject(entry.proj)
+      if ConfirmInShowMode("Close the project '" .. entry.name .. "'?", "Close project") then
+         CloseProject(entry.proj)
+      end
    end
 end
 
 function ShowMissingEntryMenu(entry, idx)
-   local locked = IsEditingLocked()
    gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
-   local choice = gfx.showmenu(MenuTitle("MISSING", locked) .. "||" ..
-      MenuItem("Find Project", not locked) .. "|" .. MenuItem("Remove Project", not locked))
-   if locked then return end
+   local choice = gfx.showmenu("#MISSING||Find Project|Remove Project")
 
    if choice == 2 then
       ReplaceProjEntry(setlist, entry)
       CommitSetlist()
    elseif choice == 3 then
-      log:debug("Removing [" .. idx .. "]: " .. entry.path)
-      table.remove(setlist, idx)
-      CommitSetlist()
+      if ConfirmInShowMode("Remove '" .. entry.name .. "' from the setlist?", "Remove entry") then
+         log:debug("Removing [" .. idx .. "]: " .. entry.path)
+         table.remove(setlist, idx)
+         CommitSetlist()
+      end
    end
 end
 
@@ -2098,14 +2205,14 @@ function HandleEntryClick()
       log:debug("Handling left click on entry at listIdx [" .. idx .. "]" .. (isDouble and " (double)" or ""))
 
       if entry.type == ENTRY.TEXT then
-         if IsEditingLocked() then
-            -- show mode: no renaming or deleting
-         elseif isDouble then
+         if isDouble then
             RenameTextEntry(entry)
          elseif IsModifierDown(MOD.ALT) then
-            log:debug("Deleting Text Entry: " .. entry.name)
-            table.remove(setlist, idx)
-            CommitSetlist()
+            if ConfirmInShowMode("Delete the text entry '" .. entry.name .. "'?", "Delete text entry") then
+               log:debug("Deleting Text Entry: " .. entry.name)
+               table.remove(setlist, idx)
+               CommitSetlist()
+            end
          end
       elseif entry.type == ENTRY.PROJECT then
          if entry.proj ~= currentProj then
@@ -2397,22 +2504,19 @@ function DisplaySetlist()
    -- Draw Title: the shared SiSt-Live header (teal, fixed size: gui.titleHeight - 12 = Widgets.HEADER_H)
    Widgets.header(TITLE_TEXT, 3, 3, gfx.w - 6, gui.titleHeight - 12, "accent")
 
-   -- Draw Total Setlist Time
-
-   local time = FormatTimeMMSS(setlistTotalTime)
-   local str = "Total Setlist Time: " .. time
-
-   Theme.set_font(gui.projLenTextSize - gui.zoomLevel / 2)
-
-   local strW, strH = gfx.measurestr(str)
-
-   gfx.x = gfx.w - gui.entryIndent - strW
-   gfx.y = gfx.h - gui.ctrlPanelSize + gui.entryIndent * 0.7
+   -- Status line under the list (what the list holds), a faint divider above it, the strong command bar divider below
+   local projects = #GetProjEntriesInList(setlist)
+   local str = projects .. (projects == 1 and " project" or " projects") .. "  |  " ..
+       FormatTimeMMSS(setlistTotalTime) .. " total"
+   Theme.set("line")
+   gfx.rect(0, gfx.h - gui.ctrlPanelSize, gfx.w, 1)
+   Theme.set_font(15)
+   Theme.set("muted")
+   gfx.x, gfx.y = gfx.w - 12 - gfx.measurestr(str), gfx.h - gui.ctrlPanelSize + 5
    gfx.drawstr(str)
 
-   -- draw ctrlPanel divider
    Theme.set("text", 0.6)
-   gfx.rect(0, gfx.h - gui.ctrlPanelSize, gfx.w, gui.dropIndicatorThickness - 2)
+   gfx.rect(0, gfx.h - gui.ctrlPanelSize + STATUS_H, gfx.w, gui.dropIndicatorThickness - 2)
 
    -- Draw a line indicating where the project would be dropped if dragging
 
@@ -2448,7 +2552,7 @@ end
 function OnWindowClose(w)
    w.state.zoomLevel = gui.zoomLevel
    w.state.scrollOffset = gui.scrollOffset
-   if not terminate then SaveAutosave() end
+   if not terminate then SaveCurrentList() end
 end
 
 --------------------------
@@ -2513,22 +2617,6 @@ function SelfTestResults()
    return rows
 end
 
--- Alt start: runs all tests, prints the failures and a summary to the console, returns the number of failures.
-function RunSelfTests()
-   local function out(s) reaper.ShowConsoleMsg(s .. "\n") end
-   out("=== " .. WINDOW_TITLE .. " self tests ===")
-   local passed, failed = 0, 0
-   for _, r in ipairs(SelfTestResults()) do
-      if r.ok then
-         passed = passed + 1
-      else
-         failed = failed + 1
-         out("  FAIL " .. r.name)
-      end
-   end
-   out(string.format("=== %d passed, %d failed ===", passed, failed))
-   return failed
-end
 
 DefineTest("FormatTimeMMSS", function(t)
    t.eq(FormatTimeMMSS(59.9), "00:59", "fraction is floored")
@@ -2780,12 +2868,21 @@ DefineTest("Manual scrolling range", function(t)
    t.eq(ApplyManualScroll(11, 1, 11), 11, "manual maximum is a hard stop once reached")
 end)
 
-DefineTest("GetStartupAutosaveAction", function(t)
-   t.eq(GetStartupAutosaveAction(true, true, false), "ask", "first start after opening REAPER")
-   t.eq(GetStartupAutosaveAction(true, false, false), "load", "restart in the same session: no question")
-   t.eq(GetStartupAutosaveAction(false, true, false), "ignore", "no autosave: nothing to ask")
-   t.eq(GetStartupAutosaveAction(true, true, true), "ignore", "shift held: autosave ignored, no question")
-   t.eq(GetStartupAutosaveAction(true, false, true), "ignore", "shift held in the same session")
+DefineTest("GetStartupAction", function(t)
+   t.eq(GetStartupAction(true, true, false), "fresh", "first start after opening REAPER: the open projects")
+   t.eq(GetStartupAction(true, false, false), "keep", "restart in the same REAPER run: the list is kept")
+   t.eq(GetStartupAction(false, false, false), "fresh", "nothing saved: the open projects")
+   t.eq(GetStartupAction(true, false, true), "fresh", "test mode never reads the saved list")
+end)
+
+DefineTest("WorthArchiving", function(t)
+   local P = { type = ENTRY.PROJECT, path = "a" }
+   local T = { type = ENTRY.TEXT, path = "break" }
+   t.ok(not WorthArchiving({}, {}), "an empty list is not kept")
+   t.ok(WorthArchiving({ P }, {}), "a list of projects is kept when there is no autosave")
+   t.ok(WorthArchiving({ P, T }, { P, T }), "a list with text replaces an autosave with text")
+   t.ok(WorthArchiving({ P, T }, { P }), "a list with text replaces a plain autosave")
+   t.ok(not WorthArchiving({ P }, { P, T }), "a plain list never replaces an autosave that has text entries")
 end)
 
 DefineTest("DescribeSetlistContents", function(t)
@@ -2802,12 +2899,6 @@ DefineTest("ShouldFollowProjectChange", function(t)
    t.ok(ShouldFollowProjectChange(MODE.SHOW, true), "show mode, clicked in the list")
    t.ok(ShouldFollowProjectChange(MODE.EDIT, false), "edit mode, tab changed in REAPER")
    t.ok(not ShouldFollowProjectChange(MODE.EDIT, true), "edit mode, clicked in the list: list stays")
-end)
-
-DefineTest("IsEditLocked", function(t)
-   t.ok(IsEditLocked(MODE.SHOW, true), "show mode locks")
-   t.ok(not IsEditLocked(MODE.SHOW, false), "no mode library: never locked")
-   t.ok(not IsEditLocked(MODE.SHOW, nil), "nil counts as no mode library")
 end)
 
 DefineTest("FindProjListIdx / GetOffscreenDirection", function(t)
@@ -2837,10 +2928,6 @@ DefineTest("StepSmoothScroll", function(t)
    for _ = 1, 120 do x = StepSmoothScroll(x, 10, 1 / 60, 0.08) end
    t.eq(x, 10, "settles exactly on the target within two seconds")
    t.eq(StepSmoothScroll(9.995, 10, 0.016, 0.08), 10, "snaps when closer than 0.01 rows")
-end)
-
-DefineTest("MenuItem / MenuTitle", function(t)
-   t.eq(MenuTitle("Song", true), "#Song  (locked in show mode)", "title while locked")
 end)
 
 DefineTest("ToListMode", function(t)
@@ -2919,7 +3006,7 @@ function Frame(w)
          -- no project check while rendering (see IsRendering)
       elseif openProjCount ~= numProjInList then
          setlist = ResolveConflictsWithOpenProj(setlist, true) or GetOpenProjectList()
-         if not terminate then SaveAutosave() end
+         if not terminate then SaveCurrentList() end
       elseif not IsListOrderInSync(setlist, tabProjs) then
          -- The user rearranged the project tabs in REAPER: make the list follow
          local reordered, ok = ReorderProjectsByTabOrder(setlist, tabProjs)
@@ -3000,57 +3087,38 @@ end
 function Init()
    if not CheckDependencies() then return false end
 
-   -- Hold Alt while launching to run the self tests (debug output: "DEBUG Toggle Logging")
-   local runTests = IsModifierDown(MOD.ALT)
-   if runTests then
-      reaper.ClearConsole()
-   end
-
    StartModeWatch() -- sets the list mode before the first frame
 
    CountOpenProjects()
 
    local testMode = IsTestMode()
-   local ignoreAutosave = IsModifierDown(MOD.SHIFT) or testMode
    local firstRun = IsFirstRunInSession()
-   local saved, invalid, savedStr, source = {}, {}, "", ""
+   local current, invalid, currentStr, source = {}, {}, "", ""
 
-   if ignoreAutosave then
-      log:info(testMode and "test mode (live test): the autosave is neither read nor written"
-         or "started with Shift held: ignoring the autosave")
+   if testMode then
+      log:info("test mode (live test): the saved lists are neither read nor written")
    else
-      saved, invalid, savedStr, source = ReadAutosave()
+      current, invalid, currentStr, source = ReadListFile(GetCurrentListPath(), "current list")
    end
 
-   local action = GetStartupAutosaveAction(next(saved) ~= nil, firstRun, ignoreAutosave)
-   log:info("autosave at startup: " .. action .. (firstRun and " (first start since REAPER was opened)" or ""))
-
-   local cleanStart = false
-   if action == "ask" then
-      local answer = AskLoadAutosave(saved)
-      if answer == "cancel" then
-         log:info("start cancelled by the user")
-         return false -- not marked as started: the next start asks again
-      end
-      cleanStart = answer == "clean"
-      action = cleanStart and "ignore" or "load"
-   end
+   local action = GetStartupAction(next(current) ~= nil, firstRun, testMode)
+   log:info("start: " .. action .. (firstRun and " (first start since REAPER was opened)" or ""))
 
    MarkSessionStarted()
 
-   if action == "load" then
-      setlist = ApplyAutosave(saved, invalid, source) or {}
+   if action == "keep" then
+      -- restarted within the same REAPER run: the list is kept
+      setlist = ApplyListFromFile(current, invalid, source) or {}
+   elseif firstRun and next(current) then
+      -- a new REAPER run starts from the open projects; the list of the last run stays available as the autosave
+      ArchiveList(currentStr)
    end
 
    if not next(setlist) then
       log:info("building the list from the open projects")
       setlist = GetOpenProjectList()
-   end
-
-   if cleanStart then
-      BackupAutosave(savedStr)
       UpdateTabAndListIdx()
-      SaveAutosave() -- the clean list replaces the old autosave right away
+      SaveCurrentList()
    end
 
    if IsDebug() then
@@ -3058,31 +3126,20 @@ function Init()
       PrintListPaths(setlist)
    end
 
-   local ignoreWindowState = IsModifierDown(MOD.CTRL)
-   if ignoreWindowState then log:info("started with Ctrl held: ignoring the saved window state") end
-
    win = Window.new{
       name = ExtStateSection, -- same section and "WindowState" key as before: the saved state is kept
       title = WINDOW_TITLE,
       defaults = { ww = 400, wh = 300, wx = 200, wy = 200, dockState = 0, zoomLevel = 0, scrollOffset = 0 },
       extra_keys = { "zoomLevel", "scrollOffset" },
-      ignore_saved_state = ignoreWindowState,
       on_open = OnWindowOpen,
-      on_close = OnWindowClose, -- also writes the autosave
+      on_close = OnWindowClose, -- also writes the current list
       debug = function(text) log:debug("window: %s", text) end,
    }
    win:set_mode(gui.mode) -- open at this mode's position
 
-   -- Run the self tests last, so the report is at the end of the console and isn't pushed out of
-   -- REAPER's limited console buffer by the long startup log above it.
-   if runTests then
-      RunSelfTests()
-      reaper.ShowConsoleMsg(DescribeSharedLibState() .. "\n")
-   end
-
    if terminate then return false end -- a startup dialog was cancelled: don't open the window
 
-   win:run(Frame) -- opens the window. Closing (also REAPER quitting) saves its state and the autosave
+   win:run(Frame) -- opens the window. Closing (also REAPER quitting) saves its state and the current list
    return true
 end
 

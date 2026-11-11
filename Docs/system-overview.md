@@ -40,7 +40,7 @@ For developers. The operator documentation is a separate project. Plan: roadmap.
   and screenset from REAPER after one confirmation). The look is never autosaved.
 
 ## Components
-- Setlist (song order = project tab order, autosave), Status Display (mode + problems), Toolbar (copy of a
+- Setlist (song order = project tab order, current list + autosave), Status Display (mode + problems), Toolbar (copy of a
   native floating toolbar), Setup (package entry point), Debug tools (self-test, live test).
 
 ## Config parts outside the repo

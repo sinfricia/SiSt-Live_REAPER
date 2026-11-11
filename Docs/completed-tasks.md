@@ -3,6 +3,27 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-11 - Step 4b + 4c: current list, autosave, command area, no locking in show mode
+- Two files in Data/: `SiSt-Live_Setlist_current.rsl` is the live list (written after every change; the old "autosave"),
+  `SiSt-Live_Setlist_autosave.rsl` is the list that was replaced, kept for rescue. Written when the whole list is replaced
+  (first start in a new REAPER run, Reset, Restore, Load Setlist). `WorthArchiving` (tested): never an empty list, and a
+  list without text entries never overwrites an autosave that has some. The old clean-start backup file and the EXT_STATE
+  fallback are gone; an old autosave file simply becomes the first autosave.
+- Startup without a question: restart within the same REAPER run keeps the list (conflict handling with the open
+  projects as before, until the Setlist design is redone); the first start in a new run starts from the open projects.
+  `GetStartupAction` (tested). Shift / Ctrl / Alt launch modifiers and the in-script self-test runner removed (window
+  menu has "Return to default position"; the self-test runs via Setup / DEBUG action). Test mode unchanged.
+- Command area, fixed layout, below the list: a faint divider, the status line (projects | total time, right aligned),
+  the strong divider, then sections with centered names and a divider after each: LIST (Save, Load, Reset, Restore),
+  INSERT (Text Entry), ZOOM (percent = reset, + above - as half-height buttons). Buttons of a section are equally wide.
+  Reset and Restore ask for confirmation and keep the replaced list as the autosave; Restore swaps the two lists and is
+  greyed out without an autosave.
+- Show mode no longer locks anything. It asks for confirmation before deleting a text entry, removing a missing entry,
+  closing a project from the entry menu and loading a setlist from a file (`ConfirmInShowMode`).
+- Findings: tried a rebuilt conflict resolver (sync module, dialog panel, tabs/list view) and a responsive command bar
+  (wrapping, collapsing groups); dropped both on purpose until the Setlist design is settled (see roadmap, step 4a).
+- Self-test: 466 passed. No live test (Sina, 2026-11-11).
+
 ## 2026-11-10 - Step 3: Simplify the live test (step 3 complete)
 - Split: Debug/SiSt-Live_DEBUG Run Live Test.lua (1,224 -> 254 lines: menu, test folder, closing projects,
   unattended mode, the scenario) + Debug/LiveTest/Show.lua (show workflow, recordings), Looper.lua (Region Looper),
