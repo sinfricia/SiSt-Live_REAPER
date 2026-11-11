@@ -7,6 +7,7 @@ questions, text input, the color picker and the file dialogs. Each function retu
 cancelled.
 
   confirm(text, title)                      true for Yes
+  invalid_entries(list, invalid, where)     tells the user which lines of a setlist could not be read
   text(title, label, default)               a non-empty text, or nil
   color()                                   r, g, b as 0..1 floats, or nil
   open_file(title, extensions)              the chosen path, or nil
@@ -18,6 +19,18 @@ local Ask = {}
 
 function Ask.confirm(text, title)
    return reaper.MB(text, title, 4) == 6
+end
+
+-- list: the entries that were read, invalid: the lines that could not be read, where: "from <file>" for the message.
+function Ask.invalid_entries(list, invalid, where)
+   if not next(invalid) then return end
+   local msg = "Couldn't resolve the following entries while loading " .. where .. ":\n\n"
+   local title = "Invalid Entries Found While Parsing"
+   if not next(list) then
+      msg = "Couldn't resolve ANY of following entries while loading " .. where .. ":\n\n"
+      title = "Error Loading from " .. where
+   end
+   reaper.MB(msg .. table.concat(invalid, "\n") .. "\n", title, 0)
 end
 
 function Ask.text(title, label, default)

@@ -46,11 +46,12 @@ local Data = require("Setlist.Data")
 local Sync = require("Setlist.Sync")
 local State = require("Setlist.State")
 local Actions = require("Setlist.Actions")
-local Resolver = require("Setlist.Resolver")
 local ViewState = require("Setlist.UI.ViewState")
 local List = require("Setlist.UI.List")
 local ListInput = require("Setlist.UI.ListInput")
 local CommandArea = require("Setlist.UI.CommandArea")
+local Ask = require("Setlist.UI.Ask")
+local DuplicateWarning = require("Setlist.UI.DuplicateWarning")
 
 local gui = ViewState.gui
 
@@ -123,20 +124,14 @@ local function frame(w)
          wasRendering = rendering
       end
 
-      local numProjInList = #Data.project_entries(State.list)
-      local tabProjs = Sync.project_pointers()
-      if rendering then
-         -- no project check while rendering (see is_rendering)
-      elseif State.tab_count ~= numProjInList then
-         State.list = Resolver.ResolveConflictsWithOpenProj(State.list, true) or State.read_open_projects()
-         if not State.quit then Data.save_current_list(State.list) end
-      elseif not Sync.is_in_order(State.list, tabProjs) then
-         -- The user rearranged the project tabs in REAPER: make the list follow
-         local reordered, ok = Sync.reorder_by_tabs(State.list, tabProjs)
-         if ok then
-            State.list = reordered
-            Actions.commit()
-         end
+      -- The open tabs are the truth: whatever happens to them in REAPER (opened, closed, moved), the list follows.
+      -- Not while REAPER renders, and not while a question is open (it keeps the list as it was when it was asked).
+      if State.job then Actions.step_job() end -- a load opens its projects one per frame
+      local modal = State.dialog ~= nil or State.job ~= nil
+      if not rendering and not modal then
+         if not Sync.is_synced(State.list, Sync.project_pointers()) then Actions.follow_tabs() end
+         DuplicateWarning.check()
+         modal = State.dialog ~= nil
       end
 
       -- Mouse state: read once per frame by the Window (w.mouse), copied into the names used below
@@ -192,14 +187,28 @@ local function frame(w)
       local userInput = m.wheel ~= 0 or gui.leftClick or gui.rightClick or gui.draggingEntry or
           gui.draggingScroll
 
-      ListInput.handle_scrollbar()
-      ListInput.handle_wheel()
+      if not modal then
+         ListInput.handle_scrollbar()
+         ListInput.handle_wheel()
+      end
       List.update_display_offset(userInput)
       List.draw()
       List.draw_scrollbar()
+
+      if modal then
+         -- the question is drawn over the list; nothing else reacts until it is answered
+         gui.draggingEntry, gui.dropIdx = false, nil
+         if State.dialog then
+            local choice = State.dialog.draw(w)
+            if choice then State.dialog.on_choice(choice) end
+         end
+         return
+      end
+
       List.offscreen_indicator()
 
       CommandArea.draw()
+      CommandArea.draw_notice()
       Theme.set_font(gui.entryTextSize)
 
       ListInput.handle_click()
@@ -232,8 +241,15 @@ local function init()
    Data.mark_session_started()
 
    if action == "keep" then
-      -- restarted within the same REAPER run: the list is kept
-      State.list = Resolver.ApplyListFromFile(current, invalid, source) or {}
+      -- restarted within the same REAPER run: the list is kept and follows the open tabs. If they changed while the
+      -- Setlist was closed, the list as it was stays available as the autosave, and the status line says so.
+      Ask.invalid_entries(current, invalid, source)
+      State.list = current
+      local changes = Sync.change_summary(Sync.diff(current, State.read_open_projects()))
+      if changes and Data.archive_list(currentStr) then
+         State.notice = "Open projects changed while the Setlist was closed (" .. changes .. "). Click to restore the previous list."
+      end
+      if next(State.list) then Actions.follow_tabs() end
    elseif firstRun and next(current) then
       -- a new REAPER run starts from the open projects; the list of the last run stays available as the autosave
       Data.archive_list(currentStr)
@@ -243,11 +259,6 @@ local function init()
       log:info("building the list from the open projects")
       State.list = State.read_open_projects()
       Actions.commit()
-   end
-
-   if Log.is_debug() then
-      log:debug("Setlist after Init:")
-      Resolver.PrintListPaths(State.list)
    end
 
    State.win = Window.new{

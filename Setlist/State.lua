@@ -10,6 +10,12 @@ What the Setlist's parts share while it runs. One table, required by every part 
   current_proj  the project of the active tab; last_project: the one of the frame before
   total_time    total length of the open projects in seconds (status line)
   quit          true: close the window and don't write the current list (a startup question was answered with "quit")
+  name          the file name of the setlist that was loaded or saved last (the window title), or nil
+  saved_text    the text of that setlist as it was then; modified: the list differs from it (shown as a "*" in front of the title)
+  job           a load that is still opening projects, one per frame: { plan, queue, total, done, name, prev } or nil
+  dialog        the question that is open, or nil: { draw = function(win) -> choice id or nil, on_choice = function(id) }.
+                While it is open the window only reacts to it.
+  notice        text for the status line, or nil (e.g. "Open projects changed while the Setlist was closed: 2 new")
 
 The view's own state (scrolling, zoom, dragging, colors) is in UI/ViewState.lua.
 ]]
@@ -24,6 +30,12 @@ local State = {
    last_project = nil,
    total_time = 0,
    quit = false,
+   name = nil,
+   saved_text = nil,
+   modified = false,
+   job = nil,
+   dialog = nil,
+   notice = nil,
 }
 State.last_project = State.current_proj
 

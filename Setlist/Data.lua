@@ -441,14 +441,14 @@ end
 
 -- List operations ------------------------------------------------------------------------
 
--- Pure function. Short summary of a setlist for dialogs, e.g. "47 entries (25 projects, 22 text notes)".
+-- Pure function. Short summary of a setlist for dialogs, e.g. "47 entries (25 projects, 22 text entries)".
 function Data.describe_list(list)
    local counts = { [ENTRY.PROJECT] = 0, [ENTRY.TEXT] = 0, [ENTRY.MISSING] = 0 }
    for _, entry in ipairs(list) do
       if counts[entry.type] then counts[entry.type] = counts[entry.type] + 1 end
    end
 
-   local str = #list .. " entries (" .. counts[ENTRY.PROJECT] .. " projects, " .. counts[ENTRY.TEXT] .. " text notes"
+   local str = #list .. " entries (" .. counts[ENTRY.PROJECT] .. " projects, " .. counts[ENTRY.TEXT] .. " text entries"
    if counts[ENTRY.MISSING] > 0 then
       str = str .. ", " .. counts[ENTRY.MISSING] .. " missing"
    end
@@ -724,7 +724,7 @@ define("Data.describe_list", function(t)
       { type = ENTRY.TEXT },
    }
    list[#list + 1] = { type = ENTRY.MISSING }
-   t.eq(Data.describe_list(list), "6 entries (2 projects, 3 text notes, 1 missing)", "missing shown")
+   t.eq(Data.describe_list(list), "6 entries (2 projects, 3 text entries, 1 missing)", "missing shown")
 end)
 
 function Data.self_test()

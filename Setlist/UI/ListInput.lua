@@ -138,12 +138,12 @@ local function show_menu(items)
 end
 
 local function rename_text(entry)
-   local name = Ask.text("Rename Text Note", "Enter new label:", entry.name or "")
+   local name = Ask.text("Rename Text Entry", "Enter New Label:", entry.name or "")
    if name then Actions.rename_text(entry, name) end
 end
 
 local function delete_text(entry, idx)
-   if Ask.confirm("Delete the text entry '" .. entry.name .. "'?", "Delete text entry") then
+   if Ask.confirm("Delete the text entry '" .. entry.name .. "'?", "Delete Text Entry") then
       Actions.delete_entry(idx)
    end
 end
@@ -173,7 +173,7 @@ local function show_project_menu(entry)
       { separator = true },
       { label = "Replace Project", action = function() replace_project(entry) end },
       { label = "Close Project", action = function()
-         if Ask.confirm("Close the project '" .. entry.name .. "'?", "Close project") then
+         if Ask.confirm("Close the project '" .. entry.name .. "'?", "Close Project") then
             Actions.close_project(entry)
          end
       end },
@@ -182,11 +182,11 @@ end
 
 local function show_missing_menu(entry, idx)
    show_menu({
-      { label = "MISSING", disabled = true },
+      { label = "Missing", disabled = true },
       { separator = true },
       { label = "Find Project", action = function() replace_project(entry) end },
       { label = "Remove Project", action = function()
-         if Ask.confirm("Remove '" .. entry.name .. "' from the setlist?", "Remove entry") then
+         if Ask.confirm("Remove '" .. entry.name .. "' from the setlist?", "Remove Entry") then
             Actions.delete_entry(idx)
          end
       end },

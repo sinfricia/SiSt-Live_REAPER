@@ -3,6 +3,26 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-11 - Step 4a (b): silent sync and the load flow
+- The old conflict resolver (380 lines, four chained dialogs) is gone. While the Setlist runs, the open tabs are the truth:
+  `Sync.diff` / `Sync.follow_tabs` (pure, tested) make the list follow opened, closed, moved and replaced projects in the
+  same frame, no question. A restart within a REAPER run keeps the list and follows the tabs; if they changed meanwhile the
+  previous list is kept as the autosave and the status line offers a click to restore it.
+- A project open more than once: "Warning: Project Open More Than Once", Keep Them Open / Close the Extra Tabs; "keep"
+  is remembered by project pointers (UI/DuplicateWarning.lua).
+- Loading (and Restore): UI/LoadDialog.lua shows the current list with Keep checkboxes (text entries and open projects that
+  are not in the loaded setlist; identical text entries and projects that stay are context rows), tri-state header
+  checkbox, swipe select, Type column, green/red rows; `Sync.plan_load` decides (pure, tested); the projects open and close
+  one per frame with progress in the header (`Actions.start_load` / `step_job`); refused while a project plays or records;
+  empty unsaved tabs are closed without asking; entries saved as missing become projects again when their file is back.
+- Window title: the setlist's name with a `*` in front when modified. Everything labelled in Title Case. New library
+  parts in lib/Gui: Dialog (panel with buttons, modal in the window), Widgets.list_view (scrolling rows with checkbox
+  rows, tint, header rows, swipe select) and checkbox drawing.
+- New "SiSt-Live: DEBUG Run Setlist Scenarios": runs the real sync and load code against real tabs (generated test projects
+  in a temp folder, other open projects stay untouched); 31 checks. Smoke runs of the drawing code against a fake REAPER
+  were done by hand.
+- Self-test: 549 passed. No live test (Sina, 2026-11-11).
+
 ## 2026-11-11 - Step 4a (a): the Setlist split into parts
 - The 3,150-line Setlist script is now a 282-line glue script (Init, Frame) plus Setlist/Data.lua (entries, .rsl text
   format, paths, index math, current-list and autosave files), Sync.lua (REAPER's project tabs, pure comparison),

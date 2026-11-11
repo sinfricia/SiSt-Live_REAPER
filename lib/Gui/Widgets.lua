@@ -10,6 +10,10 @@ again, it draws itself and tells you what happened. No widget objects to keep tr
   if Widgets.button(win, "Retry", x, y, w, h) then ... end
   if Widgets.hold_button(win, "Hold to switch", x, y, w, h) then ... end -- fires after holding 0.5 s
   Widgets.header("REAPER SETLIST", x, y, w, h)            -- window header bar
+  Widgets.list_view(win, state, rows, x, y, w, h)         -- scrollable rows { text, style, note, note_style, checked,
+                                                          -- bg, header, on_toggle }: state = {} kept by the caller
+                                                          -- (state.scroll = first row); a row with `checked` has a
+                                                          -- checkbox that a click toggles
 
   -- Text entry: the text field lives in its own file (lib/Gui/TextField.lua, it keeps state and is
   -- big), but is reachable from here, so a component only needs to load Widgets:
@@ -231,6 +235,139 @@ function Widgets.hold_button(win, label, x, y, w, h, opts)
   return fired
 end
 
+-- Scrolling list ---------------------------------------------------------------------------
+
+Widgets.ROW_H = 26
+Widgets.SCROLLBAR_W = 20 -- as wide as the Setlist's own scrollbar
+Widgets.CHECK_SIZE = 18
+
+--- Pure. How many whole rows fit, and the most the list can be scrolled (in rows, 0 = top).
+function Widgets.list_limits(n_rows, row_h, view_h)
+  local visible = math.max(1, math.floor(view_h / row_h))
+  return visible, math.max(0, n_rows - visible)
+end
+
+--- Pure. The scroll position (in rows) after a mouse wheel turn: one notch (120) is one row.
+function Widgets.wheel_scroll(scroll, wheel, max_scroll)
+  if wheel == 0 then return math.min(scroll, max_scroll) end
+  local steps = math.max(1, math.floor(math.abs(wheel) / 100 + 0.5))
+  local v = scroll + (wheel > 0 and -steps or steps)
+  return math.max(0, math.min(max_scroll, v))
+end
+
+--- Pure. The scrollbar thumb: y and height, for a track of track_h starting at track_y.
+function Widgets.list_thumb(track_y, track_h, n_rows, visible, scroll, max_scroll)
+  local thumb_h = math.max(20, math.floor(track_h * visible / math.max(1, n_rows) + 0.5))
+  thumb_h = math.min(thumb_h, track_h)
+  local t = max_scroll > 0 and scroll / max_scroll or 0
+  return track_y + math.floor((track_h - thumb_h) * t + 0.5), thumb_h
+end
+
+--- Pure. The scroll position (in rows) when the thumb is dragged so that its middle is at mouse_y.
+function Widgets.scroll_from_thumb(mouse_y, track_y, track_h, thumb_h, max_scroll)
+  local room = track_h - thumb_h
+  if room <= 0 or max_scroll <= 0 then return 0 end
+  local t = math.max(0, math.min(1, (mouse_y - track_y - thumb_h / 2) / room))
+  return math.floor(t * max_scroll + 0.5)
+end
+
+--- A checkbox box at x, y (size Widgets.CHECK_SIZE): checked is true, false or "mixed" (a dash: only some of a group).
+--- Clicks are the caller's business (list_view toggles a row when it is clicked).
+function Widgets.draw_check(x, y, checked)
+  local s = Widgets.CHECK_SIZE
+  Widgets.box(x, y, s, s, Theme.mix(Theme.color("background"), Theme.color("text"), 0.45))
+  Widgets.box(x + 1, y + 1, s - 2, s - 2, checked and Theme.mix(Theme.color("button"), Theme.color("accent"), 0.5)
+    or Theme.color("background"))
+  if checked == "mixed" then
+    Theme.set("text")
+    gfx.rect(x + 4, y + math.floor(s / 2) - 1, s - 8, 3, true)
+  elseif checked then
+    Theme.set("text")
+    gfx.line(x + 4, y + math.floor(s / 2), x + math.floor(s / 2) - 1, y + s - 5)
+    gfx.line(x + math.floor(s / 2) - 1, y + s - 5, x + s - 4, y + 4)
+    gfx.line(x + 4, y + math.floor(s / 2) + 1, x + math.floor(s / 2) - 1, y + s - 4)
+    gfx.line(x + math.floor(s / 2) - 1, y + s - 4, x + s - 4, y + 5)
+  end
+end
+
+--- A scrollable list of rows with the mouse wheel and a scrollbar (only when the rows don't all fit). state: a table
+--- kept by the caller ({} at first; state.scroll is the first visible row). rows: list of
+--- { text, style, note, note_style, checked, bg, header, on_toggle } with style / note_style "muted", "accent", "error",
+--- "ok" or nil (normal). A row with `checked` (true, false or "mixed") has a checkbox in front; a click anywhere on the row
+--- toggles row.checked, or calls row.on_toggle() when it has one (a header row that sets a whole group). Pressing on a
+--- checkbox row and dragging over others sets them all to the same state ("swipe select"). bg: a tint behind the row,
+--- "ok" (green) or "error" (red). header: a header row (muted, a faint background). indent: a row without a checkbox
+--- whose text lines up with the rows that have one. kind: a short word in a column of its own between the text and the
+--- note (the column exists when any row has one).
+--- opts: row_h, size. Returns state.scroll.
+function Widgets.list_view(win, state, rows, x, y, w, h, opts)
+  opts = opts or {}
+  local row_h = opts.row_h or Widgets.ROW_H
+  local visible, max_scroll = Widgets.list_limits(#rows, row_h, h)
+  state.scroll = state.scroll or 0
+  local m = win.mouse
+  local sw = max_scroll > 0 and Widgets.SCROLLBAR_W or 0
+  local track_x = x + w - sw
+
+  if Widgets.is_inside(m.x, m.y, x, y, w, h) then
+    state.scroll = Widgets.wheel_scroll(state.scroll, m.wheel or 0, max_scroll)
+  end
+  local thumb_y, thumb_h = Widgets.list_thumb(y, h, #rows, visible, state.scroll, max_scroll)
+  if sw > 0 and m.left and Widgets.is_inside(m.press_x, m.press_y, track_x, y, sw, h) then
+    state.scroll = Widgets.scroll_from_thumb(m.y, y, h, thumb_h, max_scroll)
+    thumb_y, thumb_h = Widgets.list_thumb(y, h, #rows, visible, state.scroll, max_scroll)
+  end
+  state.scroll = math.max(0, math.min(max_scroll, state.scroll))
+  if not m.left then state.paint = nil end
+
+  Widgets.box(x, y, w, h, Theme.mix(Theme.color("background"), Theme.color("text"), 0.04))
+  local note_w = math.floor((w - sw) * 0.4)
+  local kind_w = 0
+  for _, row in ipairs(rows) do
+    if row.kind then kind_w = 90 break end
+  end
+  for i = 1, visible do
+    local row = rows[state.scroll + i]
+    if not row then break end
+    local ry = y + (i - 1) * row_h
+    local text_x = x + 8
+    if row.bg then Widgets.box(x, ry, w - sw, row_h, row.bg, 0.16) end
+    if row.header then Widgets.box(x, ry, w - sw, row_h, "text", 0.07) end
+    if row.checked ~= nil then
+      local over = Widgets.is_inside(m.x, m.y, x, ry, w - sw, row_h)
+      if over then Widgets.box(x, ry, w - sw, row_h, "text", 0.06) end
+      if row.on_toggle then
+        local _, _, clicked = Widgets.button_state(m, x, ry, w - sw, row_h)
+        if clicked then row.on_toggle() end
+      else
+        -- swipe select: the row that is pressed sets the state, the others the mouse then passes over get the same
+        if over and m.left_pressed then state.paint = not row.checked end
+        if over and m.left and state.paint ~= nil then row.checked = state.paint end
+      end
+      Widgets.draw_check(x + 8, ry + math.floor((row_h - Widgets.CHECK_SIZE) / 2), row.checked)
+      text_x = x + 8 + Widgets.CHECK_SIZE + 8
+    elseif row.indent then
+      text_x = x + 8 + Widgets.CHECK_SIZE + 8
+    end
+    local text_w = (row.note and (w - sw - note_w - 8) or (w - sw - 8)) - (text_x - x - 8) - kind_w
+    if row.kind then
+      Widgets.text(row.kind, x + w - sw - note_w - 4 - kind_w, ry, kind_w, row_h, { size = 15, color = "muted" })
+    end
+    local text = row.text
+    Widgets.text(text, text_x, ry, text_w, row_h,
+      { size = row.header and 15 or opts.size, color = row.style or (row.header and "muted" or "text") })
+    if row.note then
+      Widgets.text(row.note, x + w - sw - note_w - 4, ry, note_w, row_h,
+        { size = 15, align = "right", color = row.note_style or "muted" })
+    end
+  end
+  if sw > 0 then
+    Widgets.box(track_x, y, sw, h, "button")
+    Widgets.box(track_x + 2, thumb_y, sw - 4, thumb_h, "muted")
+  end
+  return state.scroll
+end
+
 -- Self test ------------------------------------------------------------------------------
 
 function Widgets.self_test()
@@ -275,6 +412,23 @@ function Widgets.self_test()
   check("repeat: again after the interval", Widgets.repeat_fire(timers, "z", true, false, 0.1, 0.1))
   check("repeat: never on release", not Widgets.repeat_fire(timers, "z", false, false, 0.5, 0.1)
     and timers.z == nil)
+
+  local visible, max_scroll = Widgets.list_limits(10, 24, 100)
+  check("list_limits: whole rows only", visible == 4 and max_scroll == 6)
+  visible, max_scroll = Widgets.list_limits(3, 24, 100)
+  check("list_limits: no scrolling when everything fits", visible == 4 and max_scroll == 0)
+  check("list_limits: always at least one row", (Widgets.list_limits(5, 24, 10)) == 1)
+  check("wheel: one notch down is one row", Widgets.wheel_scroll(0, -120, 6) == 1 and Widgets.wheel_scroll(3, 120, 6) == 2)
+  check("wheel: stays inside the limits", Widgets.wheel_scroll(0, 120, 6) == 0 and Widgets.wheel_scroll(6, -120, 6) == 6)
+  check("wheel: a smaller list pulls the position back", Widgets.wheel_scroll(5, 0, 2) == 2)
+  local ty, th = Widgets.list_thumb(0, 100, 20, 5, 0, 15)
+  check("thumb: at the top for scroll 0", ty == 0 and th == 25)
+  ty = Widgets.list_thumb(0, 100, 20, 5, 15, 15)
+  check("thumb: at the bottom for the last scroll", ty == 75)
+  check("thumb: never smaller than 20 px", select(2, Widgets.list_thumb(0, 100, 1000, 5, 0, 995)) == 20)
+  check("thumb drag: middle of the track is half way", Widgets.scroll_from_thumb(50, 0, 100, 20, 10) == 5)
+  check("thumb drag: top and bottom are the limits",
+    Widgets.scroll_from_thumb(-30, 0, 100, 20, 10) == 0 and Widgets.scroll_from_thumb(500, 0, 100, 20, 10) == 10)
 
   return results
 end

@@ -34,6 +34,7 @@ local Windows        = require("ModeEffects.SiSt-Live_ModeEffect_Windows")
 local GuiTheme       = require("Gui.Theme")
 local Window         = require("Gui.Window")
 local Widgets        = require("Gui.Widgets")
+local Dialog         = require("Gui.Dialog")
 local TextField      = require("Gui.TextField")
 local Zoom           = require("Gui.Zoom")
 
@@ -77,6 +78,7 @@ local components = {
   { name = "Gui Theme", file = "lib/Gui/Theme.lua", self_test = GuiTheme.self_test },
   { name = "Gui Window", file = "lib/Gui/Window.lua", self_test = Window.self_test },
   { name = "Gui Widgets", file = "lib/Gui/Widgets.lua", self_test = Widgets.self_test },
+  { name = "Gui Dialog", file = "lib/Gui/Dialog.lua", self_test = Dialog.self_test },
   { name = "Gui TextField", file = "lib/Gui/TextField.lua", self_test = TextField.self_test },
   { name = "Gui Zoom", file = "lib/Gui/Zoom.lua", self_test = Zoom.self_test },
   { name = "SelfTest", file = "lib/SelfTest.lua", self_test = SelfTest.self_test },

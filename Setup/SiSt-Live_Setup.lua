@@ -59,17 +59,19 @@
 --   [nomain] ../Setlist/Sync.lua
 --   [nomain] ../Setlist/State.lua
 --   [nomain] ../Setlist/Actions.lua
---   [nomain] ../Setlist/Resolver.lua
 --   [nomain] ../Setlist/UI/ViewState.lua
 --   [nomain] ../Setlist/UI/Ask.lua
 --   [nomain] ../Setlist/UI/List.lua
 --   [nomain] ../Setlist/UI/ListInput.lua
 --   [nomain] ../Setlist/UI/CommandArea.lua
+--   [nomain] ../Setlist/UI/LoadDialog.lua
+--   [nomain] ../Setlist/UI/DuplicateWarning.lua
 --   [main] ../Status Display/SiSt-Live_Status Display.lua
 --   [main] ../Toolbar/SiSt-Live_Toolbar.lua
 --   [main] ../Transport/SiSt-Live_Clear time selection and loop points.lua
 --   [main] ../Debug/SiSt-Live_DEBUG Toggle Logging.lua
 --   [main] ../Debug/SiSt-Live_DEBUG Run Self-Test.lua
+--   [main] ../Debug/SiSt-Live_DEBUG Run Setlist Scenarios.lua
 --   [nomain] ../lib/Log.lua
 --   [nomain] ../lib/SiSt-Live_Log.lua
 --   [nomain] ../lib/SiSt-Live_Button.lua
@@ -92,6 +94,7 @@
 --   [nomain] ../lib/Gui/Theme.lua
 --   [nomain] ../lib/Gui/Window.lua
 --   [nomain] ../lib/Gui/Widgets.lua
+--   [nomain] ../lib/Gui/Dialog.lua
 --   [nomain] ../lib/Gui/TextField.lua
 --   [nomain] ../lib/Gui/Zoom.lua
 -- @about

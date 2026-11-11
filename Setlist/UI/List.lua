@@ -28,7 +28,7 @@ local ViewState = require("Setlist.UI.ViewState")
 local gui, CFG, MODE = ViewState.gui, ViewState.CFG, ViewState.MODE
 local ENTRY = Data.ENTRY
 
-local TITLE = "REAPER SETLIST"
+local TITLE = "Setlist"
 
 local List = {}
 
@@ -315,7 +315,8 @@ local function draw_entry(y, entry)
       end
 
 
-      local playState = reaper.GetPlayStateEx(entry.proj)
+      -- (a tab closed a moment ago has a stale pointer until the list has followed the tabs)
+      local playState = entry.proj and reaper.ValidatePtr(entry.proj, "ReaProject*") and reaper.GetPlayStateEx(entry.proj) or 0
       if playState > 0 then
          -- draw pos indicator
          local projLen = Sync.project_length(entry.proj)
@@ -426,7 +427,17 @@ function List.draw()
    gfx.rect(0, gfx.h - gui.ctrlPanelSize, gfx.w, gui.ctrlPanelSize)
 
    -- Draw Title: the shared SiSt-Live header (teal, fixed size: gui.titleHeight - 12 = Widgets.HEADER_H)
-   Widgets.header(TITLE, 3, 3, gfx.w - 6, gui.titleHeight - 12, "accent")
+   local headerH = gui.titleHeight - 12
+   if State.job then
+      -- loading: the header fills while the projects open
+      Widgets.header("", 3, 3, gfx.w - 6, headerH, "accent")
+      Widgets.box(3, 3, math.floor((gfx.w - 6) * State.job.done / math.max(1, State.job.total)), headerH, "accent", 0.6)
+      Widgets.text(string.format("Loading %d / %d", State.job.done, State.job.total), 3, 3, gfx.w - 6, headerH,
+         { size = Widgets.header_text_size(headerH), align = "center", color = "text" })
+   else
+      local title = State.name and ((State.modified and "*" or "") .. State.name) or TITLE
+      Widgets.header(title, 3, 3, gfx.w - 6, headerH, "accent")
+   end
 
    -- Status line under the list (what the list holds), a faint divider above it, the strong command bar divider below
    local projects = #Data.project_entries(State.list)

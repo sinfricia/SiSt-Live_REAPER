@@ -6,24 +6,23 @@ What's still to do. Reasons and rules: Docs/design-decisions.md. Finished work: 
 ## Status
 
 - Done: step -1, step 0, step 1, step 1b, step 2, step 2b, step 3a, step 3 (2026-11-10, last part: simplify the
-  live test; see completed tasks), step 4b and 4c (2026-11-11), step 4a piece 1 (the split, 2026-11-11).
-- Next: step 4a pieces 2 to 8 (Setlist redesign; includes the old 4d to 4f).
+  live test; see completed tasks), step 4b and 4c (2026-11-11), step 4a (a) the split and (b) sync and load flow (2026-11-11).
+- Next: step 4a, the rest (Setlist redesign; includes the old 4d to 4f).
 - Bug fix 2026-11-10: Start Show "No" now switches recording off (see completed tasks).
 
 ## Step 4: Setlist
 
 ### 4a: redesign (design decided 2026-11-11: Docs/setlist-design.md; each piece its own commit)
-Build order (piece 1, the split, is done):
-1. Sync: the list follows the tabs silently (open, close, move, replaced project); the duplicate warning with
-   pointer memory; project length check (test again whether reaper.GetProjectLength is reliable, fallback for projects
-   without an end marker). Replaces the old conflict resolver and its dialogs.
-2. Load flow: dialog listing the extra open projects with Close checkboxes (new Gui widget: checkbox); progress in the header; refused while playing or recording;
-   setlist name in the header with the modified marker; the live test loads its setlist through this code.
-3. Missing indicator in the status line.
-4. Row indicators: loop (L2 in the transport slot, loop band), end behaviour chips A / M, tooltips (this is old 4f).
-5. Linked text entries (line on the left), Text entries edited in place (old 4d).
-6. Multi-selection with modifiers (old 4e).
-7. Responsiveness pass (also: IsMouseInRect on win.mouse instead of gfx.mouse_*) and a minimum window size; wrapping of long text entries.
+Done: (a) the split into Data / Sync / Actions / UI, (b) the silent sync with the duplicate warning, the load flow with
+its dialog, progress, setlist name and modified marker (see completed tasks). Still to do, in this order:
+1. Missing indicator in the status line (red chip, click scrolls to the first missing entry).
+2. Row indicators: loop (L2 in the transport slot, loop band), end behaviour chips A / M, tooltips (this is old 4f).
+3. Linked text entries (line on the left), text entries edited in place (old 4d).
+4. Multi-selection with modifiers (old 4e).
+5. Responsiveness pass and a minimum window size (also: IsMouseInRect on win.mouse instead of gfx.mouse_*, the list's
+   15 px margin against the 12 px of the rest); wrapping of long text entries.
+Also open: the project length check (test again whether reaper.GetProjectLength is reliable, fallback for projects without
+an end marker); the live test loading its setlist through the Setlist's own load code.
 
 ## Step 5: General repo and SiSt-Local
 

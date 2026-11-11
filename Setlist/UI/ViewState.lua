@@ -56,7 +56,7 @@ local CFG = {
       [ENTRY.TEXT] = { 1.0, 0.5, 0.2, 0.2 }, -- light orange
       -- projects have no default highlight
    },
-   textEntryAlpha = 0.9,                      -- text notes: theme text color, slightly faded
+   textEntryAlpha = 0.9,                      -- text entries: theme text color, slightly faded
 
    transportColors = {
       { 0.14, 0.99, 0.22, 1 }, --play
