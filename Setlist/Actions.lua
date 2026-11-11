@@ -51,18 +51,41 @@ end
 
 -- Text entries --------------------------------------------------------------------------------------------------
 
+-- Inserts a text entry after the active project and the text entries linked to it (at the end when there is none).
+-- Returns the new entry.
 function Actions.insert_text(name)
-   -- after the active project (at the end when there is none)
    local at = #State.list + 1
    for i, entry in ipairs(State.list) do
-      if entry.proj and entry.proj == State.current_proj then at = i + 1 break end
+      if entry.proj and entry.proj == State.current_proj then
+         local _, last = Data.link_block(State.list, i)
+         at = last + 1
+         break
+      end
    end
-   table.insert(State.list, at, { name = name, path = name, type = ENTRY.TEXT })
+   local entry = { name = name, path = name, type = ENTRY.TEXT }
+   table.insert(State.list, at, entry)
+   Actions.commit()
+   return entry
+end
+
+-- (the path of a text entry is its text)
+function Actions.rename_text(entry, name)
+   entry.name, entry.path = name, name
    Actions.commit()
 end
 
-function Actions.rename_text(entry, name)
-   entry.name = name
+-- Links the text entry at idx to the project above / below it (dir "above" / "below"). Returns false, and changes
+-- nothing, when no project is right there (Data.can_link).
+function Actions.link_text(idx, dir)
+   local chain = Data.link_chain(State.list, idx, dir)
+   if not chain then return false end
+   for _, i in ipairs(chain) do State.list[i].link = dir end -- the text entries in between are linked too
+   Actions.commit()
+   return true
+end
+
+function Actions.unlink_text(idx)
+   State.list[idx].link = nil
    Actions.commit()
 end
 
@@ -74,7 +97,9 @@ end
 
 function Actions.duplicate_text(idx)
    log:debug("Duplicating Text Item: " .. State.list[idx].name)
-   table.insert(State.list, idx + 1, Data.copy_table(State.list[idx]))
+   local copy = Data.copy_table(State.list[idx])
+   copy.link = nil
+   table.insert(State.list, idx + 1, copy)
    Actions.commit()
 end
 
@@ -145,29 +170,60 @@ function Actions.drop_entry(dragIdx, dropIdx, direction, duplicate)
    local list = State.list
    local dragEntry = list[dragIdx]
 
-   if direction == 1 then
-      dropIdx = dropIdx + 1
-   end
-
    if dragEntry.type == ENTRY.TEXT and duplicate then
       log:debug("Duplicating Text Item: " .. dragEntry.name)
       local copy = Data.copy_table(dragEntry)
-      copy.listIdx = dropIdx
-      table.insert(list, dropIdx, copy)
-      log:debug("Inserted duplicate at idx " .. copy.listIdx)
-   else
-      if dragEntry.type == ENTRY.PROJECT then
-         local newTabIdx = Data.list_to_tab_idx(list, dropIdx, State.tab_count)
+      copy.link = nil
+      local at = direction == 1 and dropIdx + 1 or dropIdx
+      table.insert(list, at, copy)
+      Data.join_block(list, at) -- dropped between linked entries: linked as well
+      log:debug("Inserted duplicate at idx " .. at)
+   elseif dragEntry.type == ENTRY.PROJECT then
+      -- A project moves with the text entries linked to it, and never into another project's block.
+      local first, last = Data.link_block(list, dragIdx)
+      if dropIdx == dragIdx then return end
+
+      if dropIdx >= first and dropIdx <= last then
+         -- dropped on one of its own text entries: the project moves past it, and the entries on its other side are
+         -- linked the other way round
+         local block = {}
+         for k = first, last do
+            if k ~= dragIdx then block[#block + 1] = list[k] end
+         end
+         local ref = list[dropIdx]
+         local at = 1
+         for i, e in ipairs(block) do
+            if e == ref then at = direction == 1 and i + 1 or i break end
+         end
+         table.insert(block, at, dragEntry)
+         for i, e in ipairs(block) do
+            list[first + i - 1] = e
+            if e ~= dragEntry then e.link = (i < at) and "below" or "above" end
+         end
+      else
+         local bfirst, blast = Data.block_of(list, dropIdx)
+         local target = direction == 1 and (blast or dropIdx) + 1 or (bfirst or dropIdx)
+         local moved = {}
+         for k = first, last do moved[#moved + 1] = list[k] end
+         for k = last, first, -1 do table.remove(list, k) end
+         if target > last then target = target - #moved end
+         for i, e in ipairs(moved) do table.insert(list, target + i - 1, e) end
+
+         local newTabIdx = 0 -- the tab goes where the project is now in the list
+         for i = 1, target + (dragIdx - first) - 1 do
+            if list[i].type == ENTRY.PROJECT then newTabIdx = newTabIdx + 1 end
+         end
          Sync.move_tab(dragEntry.proj, newTabIdx, State.tab_count)
       end
-
-      if direction == 1 then
-         table.insert(list, dropIdx, dragEntry)
-         table.remove(list, dragIdx)
-      else
-         table.remove(list, dragIdx)
-         table.insert(list, dropIdx, dragEntry)
-      end
+   else
+      -- Any other entry moves alone: after the entry it was dropped on (dragged down) or before it (dragged up). Dropped
+      -- between the entries of a project's block it joins that block, anywhere else it is not linked.
+      if dropIdx == dragIdx then return end
+      table.remove(list, dragIdx)
+      local target = direction == 1 and dropIdx + 1 or dropIdx
+      if dropIdx > dragIdx then target = target - 1 end
+      table.insert(list, target, dragEntry)
+      Data.join_block(list, target)
    end
 
    Actions.commit()

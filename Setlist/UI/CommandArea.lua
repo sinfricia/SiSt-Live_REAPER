@@ -15,6 +15,7 @@ local State = require("Setlist.State")
 local Actions = require("Setlist.Actions")
 local ViewState = require("Setlist.UI.ViewState")
 local List = require("Setlist.UI.List")
+local ListInput = require("Setlist.UI.ListInput")
 local Ask = require("Setlist.UI.Ask")
 local LoadDialog = require("Setlist.UI.LoadDialog")
 
@@ -87,8 +88,10 @@ local function restore()
 end
 
 local function insert_text()
-   local name = Ask.text("Insert Text Entry", "Enter Label:", "")
-   if name then Actions.insert_text(name) end
+   -- the new entry goes after the active project and its row turns into a text field right away
+   local entry = Actions.insert_text("New Text")
+   gui.followPending = true
+   ListInput.start_edit(entry, true)
 end
 
 local function run(id)
@@ -237,7 +240,7 @@ function CommandArea.draw_status()
       Widgets.box(0, cy, w, ch, red, over and 0.85 or red[4])
       Widgets.text(label, 0, cy, w, ch, { size = 15, align = "center" })
       if clicked then
-         gui.scrollOffset = math.max(0, math.min(gui.maxScroll, first - 1))
+         gui.scrollOffset = math.max(0, math.min(gui.maxScroll, (List.layout(State.list))[first] or 0))
          gui.followPending = false
       end
       x = w + 6

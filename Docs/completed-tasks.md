@@ -3,6 +3,18 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-11 - Step 4a (d): linked text entries, editing in place, several lines
+- Linked text entries (`link` field "above" / "below", `Data.link_chain / link_block / block_of / join_block`): linking
+  through text entries in between, blocks that move with their project in drag and drop and in the tab order, joining by
+  dropping inside a block, links dropped when the project closes or is not kept by a load. Drawn indented (by the number
+  column) with a line at the left edge and hooks into the first and last entry. Tests: Data, Sync (follow_tabs, plan_load).
+- Editing in place with a multi-line `Gui/TextField` (Shift+Enter, Up/Down/Home/End by lines, soft wrap while typing,
+  `TextField.wrap_lines`); the Rename dialog and the Insert dialog are gone.
+- Text entries: "--" at the number's place, 80% font size, faint default tint; several lines (line breaks and wrapping to
+  the window, closer line step). The list is measured in rows (`List.layout`, `entry_rows`, `entry_at_row`), so scrolling,
+  scrollbar, follow-scroll and dragging work with tall entries.
+- Self-test: 650 passed. Real-tab scenarios (drag with blocks) added to "DEBUG Run Setlist Scenarios". No live test.
+
 ## 2026-11-11 - Step 4a (c): row indicators, tooltips and status chips
 - Rows: chips before the length (`A` no stop, `M` manual, `L` loop regions; `UI/List.lua`, reading `Setlist/ProjectInfo.lua`
   which parses a project's markers and regions, cached by the project's state change count). While looping, the transport

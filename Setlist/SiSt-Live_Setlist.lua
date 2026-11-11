@@ -170,7 +170,8 @@ local function frame(w)
       end
       gui.listClickTarget = nil -- set by ListInput.handle_click at the end of a frame, used once in the next one
 
-      if #State.list <= gui.numVisibleEntries and gui.scrollOffset ~= 0 then
+      local _, totalRows = List.layout(State.list)
+      if totalRows <= gui.numVisibleEntries and gui.scrollOffset ~= 0 then
          gui.scrollOffset = 0
          log:debug("Scroll set to 0 because all entries are visible.")
       elseif gui.followPending and not (gui.leftClick or gui.draggingEntry or gui.draggingScroll) then
@@ -196,6 +197,7 @@ local function frame(w)
       List.update_display_offset(userInput)
       List.draw()
       List.draw_scrollbar()
+      if not modal then ListInput.handle_edit() end
 
       if modal then
          -- the question is drawn over the list; nothing else reacts until it is answered
@@ -214,8 +216,10 @@ local function frame(w)
       CommandArea.draw_status()
       Theme.set_font(gui.entryTextSize)
 
-      ListInput.handle_click()
-      ListInput.handle_drag()
+      if not gui.edit then -- (while a text entry is edited, the mouse belongs to its field)
+         ListInput.handle_click()
+         ListInput.handle_drag()
+      end
       Widgets.tooltip_end(w)
    end
 end

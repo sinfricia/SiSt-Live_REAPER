@@ -239,6 +239,10 @@ function Data.text_to_list(setlistStr, separator, find_proj)
             newEntry.name = Data.project_name(path)
          end
 
+         if newEntry.type ~= ENTRY.TEXT or (newEntry.link ~= "above" and newEntry.link ~= "below") then
+            newEntry.link = nil -- only text entries link, only in these two directions
+         end
+
          newEntry.listIdx = #parsedSetlist + 1
 
          table.insert(parsedSetlist, newEntry)
@@ -518,6 +522,91 @@ function Data.list_to_tab_idx(list, list_idx, tab_count)
    return tab
 end
 
+-- Links ----------------------------------------------------------------------------------------------------------
+-- A text entry can be linked to the project right above ("above") or right below ("below") it, with only linked text
+-- entries in between: the link is the field `link`. The project and its linked text entries are a "block" that moves as one
+-- (drag and drop, tab order). A link that does not reach a project (the project was moved away, the entry was dragged
+-- somewhere else) is ignored: the entry counts as unlinked.
+
+local function is_linked_text(e, dir)
+   return e ~= nil and e.type == ENTRY.TEXT and e.link == dir
+end
+
+--- The block of the project entry at position i: first, last list positions (the project and the text entries linked to it).
+function Data.link_block(list, i)
+   local first, last = i, i
+   while first > 1 and is_linked_text(list[first - 1], "below") do first = first - 1 end
+   while last < #list and is_linked_text(list[last + 1], "above") do last = last + 1 end
+   return first, last
+end
+
+--- The block that the entry at position i belongs to (a project entry, or a text entry whose link reaches a project):
+--- first, last, position of the project. nil for an entry that is in no block.
+function Data.block_of(list, i)
+   local e = list[i]
+   if not e then return nil end
+   if e.type == ENTRY.PROJECT then
+      local first, last = Data.link_block(list, i)
+      return first, last, i
+   end
+   if e.type ~= ENTRY.TEXT or not e.link then return nil end
+   local step = e.link == "above" and -1 or 1
+   local j = i + step
+   while is_linked_text(list[j], e.link) do j = j + step end
+   if list[j] and list[j].type == ENTRY.PROJECT then
+      local first, last = Data.link_block(list, j)
+      if i >= first and i <= last then return first, last, j end
+   end
+   return nil
+end
+
+--- The positions that linking the text entry at position i in this direction ("above" / "below") links: the entry and the
+--- text entries between it and the project in that direction (they are linked too). nil when no project can be reached
+--- through text entries (a missing entry or the end of the list is in the way).
+function Data.link_chain(list, i, dir)
+   if not list[i] or list[i].type ~= ENTRY.TEXT then return nil end
+   local step = dir == "above" and -1 or 1
+   local chain, j = { i }, i + step
+   while list[j] and list[j].type == ENTRY.TEXT do
+      chain[#chain + 1] = j
+      j = j + step
+   end
+   if list[j] and list[j].type == ENTRY.PROJECT then return chain end
+   return nil
+end
+
+function Data.can_link(list, i, dir)
+   return Data.link_chain(list, i, dir) ~= nil
+end
+
+--- A text entry that sits between two entries of the same block (a project and its linked text entries) joins that block:
+--- it gets the link of the side it is on. Returns true when it did.
+function Data.join_block(list, pos)
+   local e = list[pos]
+   if not e or e.type ~= ENTRY.TEXT then return false end
+   for _, dir in ipairs({ "above", "below" }) do
+      e.link = dir
+      local first, last = Data.block_of(list, pos)
+      if first and first < pos and pos < last then return true end -- entries of the block on both sides
+   end
+   e.link = nil
+   return false
+end
+
+--- For drawing: a table entry -> { first = bool, last = bool } for every entry in a block of more than one entry.
+function Data.linked_rows(list)
+   local rows = {}
+   for i, e in ipairs(list) do
+      if e.type == ENTRY.PROJECT then
+         local first, last = Data.link_block(list, i)
+         if last > first then
+            for k = first, last do rows[list[k]] = { first = k == first, last = k == last } end
+         end
+      end
+   end
+   return rows
+end
+
 function Data.format_time(seconds)
    local minutes = math.floor(seconds / 60)
    local secs    = math.floor(seconds % 60)
@@ -651,6 +740,71 @@ define("List index <-> tab index", function(t)
    t.eq(Data.tab_to_list_idx(list, 2), 5, "past the last tab: one past the end of the list")
    t.eq(Data.tab_to_list_idx(list, -1), 0, "before the first tab: 0")
    t.eq(Data.tab_to_list_idx({}, 0), 1, "empty list: position 1")
+end)
+
+define("Links: blocks", function(t)
+   local function P(n) return { type = ENTRY.PROJECT, name = n } end
+   local function T(n, link) return { type = ENTRY.TEXT, name = n, link = link } end
+   -- A, [t1 above A], [t2 below B], B, [t3 above B], free, C
+   local list = { P("A"), T("t1", "above"), T("t2", "below"), P("B"), T("t3", "above"), T("free"), P("C") }
+   t.eq({ Data.link_block(list, 1) }, { 1, 2 }, "A and the text linked above it")
+   t.eq({ Data.link_block(list, 4) }, { 3, 5 }, "B with its text above and below")
+   t.eq({ Data.link_block(list, 7) }, { 7, 7 }, "C has none")
+   t.eq({ Data.block_of(list, 2) }, { 1, 2, 1 }, "a text finds its block and project")
+   t.eq({ Data.block_of(list, 3) }, { 3, 5, 4 }, "also when linked below")
+   t.eq(Data.block_of(list, 6), nil, "an unlinked text is in no block")
+   list[6].link = "below" -- links to C: right there, so it counts
+   t.eq({ Data.block_of(list, 6) }, { 6, 7, 7 }, "linked below to C")
+   list[6].link = "above" -- text 5 is linked above, so it could reach B... but 5 is "above" B: continuous run
+   t.eq({ Data.block_of(list, 6) }, { 3, 6, 4 }, "a run of linked texts reaches the project")
+   list[6].link = nil
+   list[2].link = "below" -- A, t1 (below), t2 (below), B: t1 and t2 are both B's
+   t.eq({ Data.link_block(list, 4) }, { 2, 5 }, "both texts above B")
+   t.eq({ Data.link_block(list, 1) }, { 1, 1 }, "A lost its text")
+   list[2].link = "above"
+   -- can_link
+   local l2 = { P("A"), T("x"), T("y"), P("B") }
+   t.eq(Data.link_chain(l2, 2, "above"), { 2 }, "directly below a project")
+   t.eq(Data.link_chain(l2, 3, "above"), { 3, 2 }, "another text entry in between: linked too")
+   t.eq(Data.link_chain(l2, 2, "below"), { 2, 3 }, "the same downwards")
+   t.eq(Data.link_chain(l2, 3, "below"), { 3 }, "directly above a project")
+   t.eq(Data.link_chain({ P("A"), { type = ENTRY.MISSING }, T("x") }, 3, "above"), nil, "a missing entry is in the way")
+   t.eq(Data.link_chain({ T("only") }, 1, "above"), nil, "no project at all")
+   t.eq(Data.can_link(l2, 3, "above"), true, "can_link")
+   t.eq(l2[2].link, nil, "nothing is changed by asking")
+   -- join_block: dropped between two entries of a block
+   local l4 = { P("A"), T("n1", "above"), T("n2", "above"), P("B") }
+   local drop = T("drop")
+   table.insert(l4, 3, drop)
+   t.eq({ Data.join_block(l4, 3), drop.link }, { true, "above" }, "between two entries of A's block: linked above")
+   local l5 = { P("A"), T("b1", "below"), T("b2", "below"), P("B") }
+   drop = T("drop")
+   table.insert(l5, 3, drop)
+   t.eq({ Data.join_block(l5, 3), drop.link }, { true, "below" }, "between two entries linked below: linked below")
+   local l6 = { P("A"), T("n1", "above") }
+   drop = T("drop")
+   table.insert(l6, 2, drop)
+   t.eq({ Data.join_block(l6, 2), drop.link }, { true, "above" }, "between a project and its first linked entry: linked above")
+   local l7 = { P("A"), T("n1", "above") }
+   drop = T("drop", "above")
+   table.insert(l7, drop)
+   t.eq({ Data.join_block(l7, 3), drop.link }, { false, nil }, "after the last entry of a block: outside, no link")
+   -- linked_rows
+   local l3 = { P("A"), T("t", "above"), T("free"), P("B") }
+   local rows = Data.linked_rows(l3)
+   t.eq(rows[l3[1]], { first = true, last = false }, "the project starts the line")
+   t.eq(rows[l3[2]], { first = false, last = true }, "the linked text ends it")
+   t.eq({ rows[l3[3]], rows[l3[4]] }, {}, "the others have no line")
+end)
+
+define("Links survive saving", function(t)
+   local list = { { type = ENTRY.PROJECT, name = "A", path = "/selftest/nonexistent/A.rpp" },
+      { type = ENTRY.TEXT, name = "note", path = "note", link = "above" },
+      { type = ENTRY.TEXT, name = "odd", path = "odd", link = "sideways" } }
+   local parsed = Data.text_to_list(Data.list_to_text(list, "\n"), "\n")
+   t.eq(parsed[2].link, "above", "the link is stored")
+   t.eq(parsed[3].link, nil, "an unknown direction is ignored")
+   t.eq(parsed[1].link, nil, "a project has no link")
 end)
 
 define("missing_entries", function(t)

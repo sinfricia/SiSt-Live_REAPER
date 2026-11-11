@@ -45,7 +45,11 @@ Keys while focused:
 Mouse: click = cursor (never selects), drag = select, double-click = select all, click outside = field loses focus
 (ev.blurred, the text is kept).
 
-Not supported (on purpose, for now): undo, multi-line text, input methods for Asian languages.
+Multi-line (opts.multiline = true in TextField.new, and opts.line_h when drawing): Shift+Enter inserts a line break,
+Up / Down move between the lines (same column where there is one), Home / End go to the start / end of the line, Enter
+submits as always. The box is as high as you give it (lines * line_h); a line is drawn as far as it fits, no wrapping.
+
+Not supported (on purpose, for now): undo, input methods for Asian languages.
 
 Self test: TextField.self_test() returns a list of { name, ok }. Pure functions only.
 ]]
@@ -63,6 +67,7 @@ TextField.TEXT_SIZE = 18
 local KEY = {
   BACKSPACE = 8, TAB = 9, ENTER = 13, ESC = 27,
   LEFT = 1818584692, RIGHT = 1919379572, HOME = 1752132965, END = 6647396, DELETE = 6579564,
+  UP = 30064, DOWN = 1685026670,
   CTRL_A = 1, CTRL_C = 3, CTRL_V = 22, CTRL_X = 24,
 }
 TextField.KEY = KEY
@@ -132,6 +137,7 @@ function TextField.new(opts)
     text = opts.text or "",
     placeholder = opts.placeholder or "",
     max_length = opts.max_length,
+    multiline = opts.multiline,
     caret = 0,        -- characters before the cursor
     anchor = nil,     -- other end of the selection, nil = no selection
     first = 1,        -- first character drawn (horizontal scrolling)
@@ -175,6 +181,73 @@ local function replace_selection(f, chars, insert)
   return true
 end
 
+-- Lines (pure). A line is { from, to }: the caret positions at its start and at its end (0 = before the first character).
+-- The line break or space that ends a line is skipped: the next line starts after it.
+
+--- The lines of the text as the user typed them (broken at the line breaks only).
+function TextField.hard_lines(chars)
+  local lines, start = {}, 0
+  for i, c in ipairs(chars) do
+    if c == "\n" then
+      lines[#lines + 1] = { from = start, to = i - 1 }
+      start = i
+    end
+  end
+  lines[#lines + 1] = { from = start, to = #chars }
+  return lines
+end
+
+--- The number of the line (1-based) that the caret position is in (the later one at a position that ends one line and
+--- starts the next).
+function TextField.line_of(lines, caret)
+  local line = 1
+  for k = 1, #lines do
+    if lines[k].from <= caret then line = k end
+  end
+  return line
+end
+
+--- The lines of the text wrapped to max_w pixels: at the line breaks, then at spaces (the space is skipped), and a word
+--- that is wider than a line is cut where it no longer fits. measure(s) -> width. Always at least one line.
+function TextField.wrap_lines(chars, max_w, measure)
+  local lines = {}
+  local function add_segment(s, e) -- the characters s+1 .. e (no line break in them)
+    if e == s then lines[#lines + 1] = { from = s, to = s } return end
+    local pos = s
+    while pos < e do
+      local fit = 0
+      while pos + fit < e and measure(join(chars, pos + 1, pos + fit + 1)) <= max_w do fit = fit + 1 end
+      if fit == 0 then fit = 1 end
+      if pos + fit >= e then
+        lines[#lines + 1] = { from = pos, to = e }
+        pos = e
+      else
+        local brk = nil -- a space within the fitting part (or the one right after it): the line ends before it
+        for i = pos + fit + 1, pos + 2, -1 do
+          if chars[i] == " " then brk = i break end
+        end
+        if brk then
+          lines[#lines + 1] = { from = pos, to = brk - 1 }
+          pos = brk
+        else
+          lines[#lines + 1] = { from = pos, to = pos + fit }
+          pos = pos + fit
+        end
+      end
+    end
+    if lines[#lines].to < e then lines[#lines + 1] = { from = e, to = e } end -- the text ends in a skipped space
+  end
+  local start = 0
+  for i, c in ipairs(chars) do
+    if c == "\n" then
+      add_segment(start, i - 1)
+      start = i
+    end
+  end
+  add_segment(start, #chars)
+  return lines
+end
+
 --- The editing core. Applies one key. mods: { ctrl, shift }. clipboard: { get = fn() -> string,
 --- set = fn(string) } or nil. Returns event ("submit", "escape", "tab" or nil) and changed.
 function TextField.apply_key(f, key, mods, clipboard)
@@ -192,7 +265,10 @@ function TextField.apply_key(f, key, mods, clipboard)
     f.caret = math.max(0, math.min(to, n))
   end
 
-  if key == KEY.ENTER then return "submit", false end
+  if key == KEY.ENTER then
+    if f.multiline and mods.shift then return nil, replace_selection(f, chars, "\n") end
+    return "submit", false
+  end
   if key == KEY.ESC then return "escape", false end
   if key == KEY.TAB then return "tab", false end
 
@@ -208,6 +284,22 @@ function TextField.apply_key(f, key, mods, clipboard)
     else move(mods.ctrl and TextField.word_right(chars, f.caret) or f.caret + 1) end
     return nil, false
   end
+  if f.multiline then
+    local lines = f.vlines or TextField.hard_lines(chars) -- (the drawn lines when the field has been drawn: wrapped)
+    local k = TextField.line_of(lines, f.caret)
+    if key == KEY.UP then
+      if k == 1 then move(0)
+      else move(math.min(lines[k - 1].from + (f.caret - lines[k].from), lines[k - 1].to)) end
+      return nil, false
+    end
+    if key == KEY.DOWN then
+      if k == #lines then move(n)
+      else move(math.min(lines[k + 1].from + (f.caret - lines[k].from), lines[k + 1].to)) end
+      return nil, false
+    end
+    if key == KEY.HOME then move(lines[k].from); return nil, false end
+    if key == KEY.END then move(lines[k].to); return nil, false end
+  end
   if key == KEY.HOME then move(0); return nil, false end
   if key == KEY.END then move(n); return nil, false end
   if key == KEY.CTRL_A then f.anchor, f.caret = 0, n; return nil, false end
@@ -222,7 +314,12 @@ function TextField.apply_key(f, key, mods, clipboard)
   end
   if key == KEY.CTRL_V then
     if not (clipboard and clipboard.get) then return nil, false end
-    local pasted = (clipboard.get() or ""):gsub("[\r\n\t]+", " ") -- one line only
+    local pasted = clipboard.get() or ""
+    if f.multiline then
+      pasted = pasted:gsub("\r\n?", "\n"):gsub("\t", " ")
+    else
+      pasted = pasted:gsub("[\r\n\t]+", " ") -- one line only
+    end
     return nil, replace_selection(f, chars, pasted)
   end
 
@@ -316,9 +413,11 @@ local function sws_clipboard()
 end
 
 --- Draws the field and handles mouse and keys. Call it every frame.
---- opts: size (font size), disabled. Returns { changed, submitted, escape, blurred, tab, focused }.
+--- opts: size (font size), disabled, line_h (multi-line: the height of one line). Returns { changed, submitted, escape,
+--- blurred, tab, focused }.
 function TextField.draw(win, f, x, y, w, h, opts)
   opts = opts or {}
+  if f.multiline then return TextField.draw_multiline(win, f, x, y, w, h, opts) end
   local ev = {}
   local m = win.mouse
   local size = opts.size or TextField.TEXT_SIZE
@@ -439,6 +538,123 @@ function TextField.draw(win, f, x, y, w, h, opts)
   return ev
 end
 
+--- The multi-line variant of draw: the text is wrapped to the width of the box, one line is opts.line_h pixels high and
+--- the first one starts opts.top_pad pixels below the top; the keys are those of the single-line field plus the line keys.
+function TextField.draw_multiline(win, f, x, y, w, h, opts)
+  local ev = {}
+  local m = win.mouse
+  local size = opts.size or TextField.TEXT_SIZE
+  local pad = TextField.PAD
+  local line_h = opts.line_h or math.floor(h)
+  local top = opts.top_pad or 0
+  local avail = w - 2 * pad
+  local inside = m.x >= x and m.x < x + w and m.y >= y and m.y < y + h
+
+  Theme.set_font(size)
+  local function measure(str) return (gfx.measurestr(str)) end
+  local chars = TextField.split(f.text)
+  local lines = TextField.wrap_lines(chars, avail, measure)
+  f.vlines = lines
+
+  -- the character position of a point (line by y, column by x)
+  local function caret_at(mx, my)
+    local k = math.max(1, math.min(#lines, math.floor((my - y - top) / line_h) + 1))
+    local first, last = lines[k].from, lines[k].to
+    local rel = mx - x - pad
+    for pos = first + 1, last do
+      local before = measure(join(chars, first + 1, pos - 1))
+      local after = measure(join(chars, first + 1, pos))
+      if rel < (before + after) / 2 then return pos - 1 end
+    end
+    return last
+  end
+
+  -- Mouse
+  if not opts.disabled and m.left_pressed then
+    if inside then
+      local now = reaper.time_precise()
+      if not TextField.has_focus(win, f) then TextField.focus(win, f) end
+      if now - f.last_click <= TextField.DOUBLE_CLICK then
+        f.anchor, f.caret = 0, #chars
+        f.dragging = false
+      else
+        f.caret = caret_at(m.x, m.y)
+        f.anchor = f.caret
+        f.dragging = true
+      end
+      f.last_click = now
+      f.blink_start = now
+    elseif TextField.has_focus(win, f) then
+      TextField.blur(win, f)
+      ev.blurred = true
+    end
+  end
+  if f.dragging then
+    if m.left then f.caret = caret_at(m.x, m.y) else f.dragging = false end
+  end
+
+  -- Keys
+  if TextField.has_focus(win, f) and not opts.disabled then
+    local mods = { ctrl = m.ctrl, shift = m.shift }
+    local clipboard = sws_clipboard()
+    for _, key in ipairs(win.chars or {}) do
+      local event, changed = TextField.apply_key(f, key, mods, clipboard)
+      if changed then
+        ev.changed = true
+        f.blink_start = reaper.time_precise()
+        chars = TextField.split(f.text) -- (a following key of this frame moves on the new lines)
+        f.vlines = TextField.wrap_lines(chars, avail, measure)
+      end
+      if event == "submit" then ev.submitted = true; TextField.blur(win, f); break end
+      if event == "escape" then ev.escape = true; break end
+      if event == "tab" then ev.tab = true; break end
+      if key ~= 0 then f.blink_start = reaper.time_precise() end
+    end
+    win.chars = {}
+    lines = f.vlines
+  end
+  ev.focused = TextField.has_focus(win, f)
+
+  -- Box
+  local focused = ev.focused
+  local face = Theme.mix(Theme.color("background"), Theme.color("text"), 0.07)
+  Theme.set(face, opts.disabled and 0.5 or 1)
+  gfx.rect(x, y, w, h, true)
+  Theme.set(focused and "accent" or "line")
+  gfx.rect(x, y, w, h, false)
+  if focused then gfx.rect(x + 1, y + 1, w - 2, h - 2, false) end
+
+  -- Lines
+  local th = gfx.texth
+  local from, to = TextField.selection(f)
+  local caret_line = TextField.line_of(lines, f.caret)
+  for k = 1, #lines do
+    local first, last = lines[k].from, lines[k].to
+    local ty = y + top + (k - 1) * line_h + (line_h - th) / 2
+    local function x_of(pos) return x + pad + measure(join(chars, first + 1, pos)) end
+    if focused and from then -- the selected part of this line
+      local s, e = math.max(from, first), math.min(to, last)
+      if e > s then
+        Theme.set("accent", 0.45)
+        gfx.rect(x_of(s), ty, x_of(e) - x_of(s), th, true)
+      end
+    end
+    Theme.set("text", opts.disabled and 0.5 or 1)
+    gfx.x, gfx.y = x + pad, ty
+    gfx.drawstr(join(chars, first + 1, last))
+    if focused and k == caret_line then
+      local now = reaper.time_precise()
+      f.blink_start = f.blink_start or now
+      if math.floor((now - f.blink_start) / TextField.BLINK) % 2 == 0 then
+        Theme.set("text")
+        local cx = math.floor(x_of(math.min(f.caret, last))) - (f.caret > first and 1 or 0)
+        gfx.line(cx, ty, cx, ty + th - 1)
+      end
+    end
+  end
+  return ev
+end
+
 -- Self test ---------------------------------------------------------------------------------------
 
 function TextField.self_test()
@@ -481,6 +697,63 @@ function TextField.self_test()
   f.anchor, f.caret = 0, 4
   typed(f, { K.CTRL_V }, nil, { get = function() return "123456" end })
   check("max_length: paste is cut", f.text == "1234")
+
+  -- multi-line
+  f = TextField.new{ text = "ab", multiline = true }
+  typed(f, { K.ENTER }, { shift = true })
+  typed(f, { "c" })
+  check("multi-line: Shift+Enter inserts a line break", f.text == "ab\nc" and f.caret == 4)
+  check("multi-line: plain Enter submits", typed(f, { K.ENTER })[1] == "submit")
+  f = TextField.new{ text = "one" }
+  typed(f, { K.ENTER }, { shift = true })
+  check("single line: Shift+Enter submits like Enter", f.text == "one")
+  f = TextField.new{ text = "hello\nhi\nworld", multiline = true }
+  f.caret = 4 -- in "hello", column 4
+  typed(f, { K.DOWN })
+  check("multi-line: Down goes to the same column, or the end of a shorter line", f.caret == 8)
+  typed(f, { K.DOWN })
+  check("multi-line: and on to the next line", f.caret == 11)
+  typed(f, { K.DOWN })
+  check("multi-line: Down on the last line goes to the end", f.caret == 14)
+  typed(f, { K.UP, K.UP })
+  check("multi-line: Up twice", f.caret == 5 or f.caret == 2 or f.caret == 4)
+  f.caret = 8
+  typed(f, { K.HOME })
+  check("multi-line: Home goes to the start of the line", f.caret == 6)
+  typed(f, { K.END })
+  check("multi-line: End goes to the end of the line", f.caret == 8)
+  f = TextField.new{ text = "a\n\nb", multiline = true }
+  local lines = TextField.hard_lines(TextField.split(f.text))
+  check("multi-line: lines, an empty line in the middle", #lines == 3 and lines[1].from == 0 and lines[1].to == 1
+    and lines[2].from == 2 and lines[2].to == 2 and lines[3].from == 3 and lines[3].to == 4)
+  check("multi-line: the line of a position", TextField.line_of(lines, 0) == 1 and TextField.line_of(lines, 2) == 2
+    and TextField.line_of(lines, 3) == 3)
+  -- wrapping (every character 10 wide)
+  local function m10(str) return #str * 10 end
+  local function shape(text, w)
+    local out = {}
+    for _, l in ipairs(TextField.wrap_lines(TextField.split(text), w, m10)) do out[#out + 1] = l.from .. "-" .. l.to end
+    return table.concat(out, " ")
+  end
+  check("wrap: fits on one line", shape("one two", 1000) == "0-7")
+  check("wrap: breaks at a space, which is skipped", shape("one two three", 80) == "0-7 8-13")
+  check("wrap: a word wider than the line is cut", shape("abcdefghij", 40) == "0-4 4-8 8-10")
+  check("wrap: line breaks", shape("ab\ncd", 1000) == "0-2 3-5")
+  check("wrap: empty text is one empty line", shape("", 100) == "0-0")
+  check("wrap: a trailing space that did not fit gets a line for the caret", shape("abcd ", 40) == "0-4 5-5")
+  f = TextField.new{ text = "one two three", multiline = true }
+  f.vlines = TextField.wrap_lines(TextField.split(f.text), 80, m10)
+  f.caret = 10
+  typed(f, { K.UP })
+  check("wrap: Up goes to the line above, same column", f.caret == 2)
+  typed(f, { K.END })
+  check("wrap: End goes to the end of the (wrapped) line", f.caret == 7)
+  typed(f, { K.DOWN, K.HOME })
+  check("wrap: Down and Home go to the start of the next line", f.caret == 8)
+  f = TextField.new{ text = "x\ny", multiline = true }
+  f.anchor, f.caret = 0, 3
+  typed(f, { K.CTRL_V }, nil, { get = function() return "1\r\n2\t3" end })
+  check("multi-line: paste keeps line breaks, tabs become spaces", f.text == "1\n2 3")
 
   return results
 end

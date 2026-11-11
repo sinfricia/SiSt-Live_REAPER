@@ -12,6 +12,7 @@ of Actions.lua, every question is asked through UI/Ask.lua.
 local Log = require("SiSt-Live_Log")
 local log = Log.get("Setlist")
 local Window = require("Gui.Window")
+local TextField = require("Gui.TextField")
 local Data = require("Setlist.Data")
 local State = require("Setlist.State")
 local Actions = require("Setlist.Actions")
@@ -115,13 +116,14 @@ function ListInput.handle_drag()
 
       if math.abs(gfx.mouse_y - gui.dragStartY) > gui.dragThreshold then
          -- Calculate drop index based on mouse position
-         local newDropIdx = math.floor((gfx.mouse_y + (gui.lineHeight / 3 * gui.dragDirection) - gui.titleHeight) /
-                gui.lineHeight) +
-             1 -- leave dropzone of 1/3 of the line height. It's not working perfectly but dragging feels quite nice :)
+         -- the row under the mouse (leave a dropzone of 1/3 of the line height: dragging feels quite nice), then the entry
+         -- the drop is relative to: the one above that row when dragged down, below it when dragged up
+         local row = (gfx.mouse_y + (gui.lineHeight / 3 * gui.dragDirection) - gui.titleHeight) / gui.lineHeight +
+             gui.scrollOffset
+         local _, totalRows = List.layout(State.list)
+         local hovered = List.entry_at_row(State.list, clamp(row, 0, totalRows - 0.001))
 
-         newDropIdx = clamp(newDropIdx + gui.scrollOffset - gui.dragDirection, 1, #State.list)
-
-         gui.dropIdx = newDropIdx
+         gui.dropIdx = clamp(hovered - gui.dragDirection, 1, #State.list)
       end
 
       ListInput.handle_drop()
@@ -138,9 +140,48 @@ local function show_menu(items)
    if choice > 0 and actions[choice] then actions[choice]() end
 end
 
-local function rename_text(entry)
-   local name = Ask.text("Rename Text Entry", "Enter New Label:", entry.name or "")
-   if name then Actions.rename_text(entry, name) end
+-- Editing a text entry in place ------------------------------------------------------------------------------------
+
+--- The row of the text entry turns into a text field with the text selected. is_new: the entry was just inserted (it goes
+--- again when the edit is cancelled or ends empty).
+function ListInput.start_edit(entry, is_new)
+   ListInput.end_edit()
+   -- (Enter keeps the text, Shift+Enter starts another line)
+   local field = TextField.new{ text = entry.name or "", select_all = true, max_length = 1000, multiline = true }
+   gui.edit = { entry = entry, is_new = is_new, field = field }
+   TextField.focus(State.win, field)
+end
+
+-- Stops editing without a change (the field gives the keyboard back).
+function ListInput.end_edit()
+   if gui.edit then TextField.blur(State.win, gui.edit.field) end
+   gui.edit, gui.editEvent = nil, nil
+end
+
+--- Once per frame after the list is drawn: acts on what the field reported. Enter or a click elsewhere keeps the new text
+--- (an empty one is not kept), Esc drops it.
+function ListInput.handle_edit()
+   local edit = gui.edit
+   if not edit then return end
+
+   local idx = nil
+   for i, e in ipairs(State.list) do
+      if e == edit.entry then idx = i break end
+   end
+   local ev = gui.editEvent or {}
+   gui.editEvent = nil
+   if not idx then ListInput.end_edit() return end -- the entry is gone
+
+   if ev.submitted or ev.blurred or ev.escape then
+      local text = edit.field.text:gsub("%s+$", "") -- (no empty lines at the end)
+      local keep = not ev.escape and text:match("%S") ~= nil
+      ListInput.end_edit()
+      if keep then
+         if text ~= edit.entry.name then Actions.rename_text(edit.entry, text) end
+      elseif edit.is_new then
+         Actions.delete_entry(idx)
+      end
+   end
 end
 
 local function delete_text(entry, idx)
@@ -158,7 +199,13 @@ local function show_text_menu(entry, idx)
    show_menu({
       { label = "-- " .. entry.name, disabled = true },
       { separator = true },
-      { label = "Rename", action = function() rename_text(entry) end },
+      { label = "Edit Text", action = function() ListInput.start_edit(entry) end },
+      { label = "Link to Project Above", disabled = entry.link == "above" or not Data.can_link(State.list, idx, "above"),
+         action = function() Actions.link_text(idx, "above") end },
+      { label = "Link to Project Below", disabled = entry.link == "below" or not Data.can_link(State.list, idx, "below"),
+         action = function() Actions.link_text(idx, "below") end },
+      { label = "Unlink", disabled = not entry.link, action = function() Actions.unlink_text(idx) end },
+      { separator = true },
       { label = "Color Entry", action = function()
          local r, g, b = Ask.color()
          if r then Actions.color_text(entry, r, g, b) end
@@ -222,7 +269,7 @@ function ListInput.handle_click()
 
       if entry.type == ENTRY.TEXT then
          if isDouble then
-            rename_text(entry)
+            ListInput.start_edit(entry)
          elseif modifier_down(MOD.ALT) then
             delete_text(entry, idx)
          end

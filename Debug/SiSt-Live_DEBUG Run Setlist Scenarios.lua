@@ -244,6 +244,34 @@ local function scenarios()
   Actions.reset()
   check("reset: the list is the open projects again", Sync.is_synced(State.list, Sync.project_pointers()) and not has(State.list, "text", "Loaded text"))
   check("... the name is gone", State.name == nil and State.modified == false)
+
+  -- 5. linked text entries move with their project ------------------------------------------------------------------
+  local function idx_of(name)
+    for i, e in ipairs(State.list) do if e.name == name then return i end end
+  end
+  local ia, ie = idx_of("Alpha"), idx_of("Echo")
+  if ia and ie then
+    table.insert(State.list, ia + 1, { type = Data.ENTRY.TEXT, name = "Alpha note", path = "Alpha note", link = "above" })
+    Actions.commit()
+    check("a text entry linked above Alpha: Alpha's block has two entries", select(2, Data.link_block(State.list, ia)) == ia + 1)
+    ie = idx_of("Echo")
+    Actions.drop_entry(ia, ie, ia < ie and 1 or -1, false)
+    refresh()
+    local a, n, e = idx_of("Alpha"), idx_of("Alpha note"), idx_of("Echo")
+    check("dragging Alpha onto Echo: the note comes along, right after it", a and n == a + 1, names(State.list))
+    check("... Alpha is now on the other side of Echo", (ia < ie) == (a > e), names(State.list))
+    check("... and the tabs are in the new order", Sync.is_synced(State.list, Sync.project_pointers()))
+    local note = State.list[n]
+    local target = idx_of("Charlie")
+    Actions.drop_entry(n, target, n < target and 1 or -1, false)
+    check("dragging the note alone: it moves and loses its link", note.link == nil and idx_of("Alpha note") ~= idx_of("Alpha") + 1,
+      names(State.list))
+    local ib = idx_of("Charlie")
+    Actions.drop_entry(ib, ib, 1, false)
+    check("dropping an entry on itself changes nothing", idx_of("Charlie") == ib)
+  else
+    check("(scenario 5 needs Alpha and Echo in the list)", false, names(State.list))
+  end
 end
 
 local ok, err = pcall(scenarios)

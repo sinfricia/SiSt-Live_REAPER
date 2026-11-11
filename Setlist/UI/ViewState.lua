@@ -39,6 +39,7 @@ local CFG = {
    leftBorder = 5,
    entryIndent = 10,
 
+
    -- Base sizes at zoom level 0. The zoomed values live in gui (see ApplyZoom).
    entryTextSize = 24,
    projLenTextSize = 16,
@@ -53,10 +54,11 @@ local CFG = {
    dragHighlight = { 1, 0.8, 0.4, 0.7 },
    entryHighlights = {
       [ENTRY.MISSING] = { 1, 0, 0, 0.6 },    --red
-      [ENTRY.TEXT] = { 1.0, 0.5, 0.2, 0.2 }, -- light orange
+      [ENTRY.TEXT] = { 1, 1, 1, 0.05 },      -- just a bit brighter than the background (coloured entries have their own)
       -- projects have no default highlight
    },
    textEntryAlpha = 0.9,                      -- text entries: theme text color, slightly faded
+   textEntryScale = 0.8,                      -- text entries are written at this fraction of the project font size
 
    transportColors = {
       { 0.14, 0.99, 0.22, 1 }, --play
@@ -98,6 +100,7 @@ local gui = setmetatable({
    lineHeight = 0,
    listH = 0,
    entryTextSize = CFG.entryTextSize,
+   textEntrySize = math.floor(CFG.entryTextSize * 0.8 + 0.5),
    projLenTextSize = CFG.projLenTextSize,
    linePadding = CFG.linePadding,
 

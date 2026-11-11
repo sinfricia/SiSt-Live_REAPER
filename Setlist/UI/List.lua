@@ -20,6 +20,7 @@ Self test: List.self_test() returns a list of { name, ok }.
 local Log = require("SiSt-Live_Log")
 local log = Log.get("Setlist")
 local Theme, Widgets = require("Gui.Theme"), require("Gui.Widgets")
+local TextField = require("Gui.TextField")
 local Data = require("Setlist.Data")
 local Sync = require("Setlist.Sync")
 local State = require("Setlist.State")
@@ -108,9 +109,14 @@ end
 
 function List.apply_zoom(level)
    gui.zoomLevel, gui.entryTextSize, gui.projLenTextSize, gui.linePadding = List.compute_zoom(level)
+   gui.textEntrySize = math.max(8, math.floor(gui.entryTextSize * gui.textEntryScale + 0.5))
 
    Theme.set_font(gui.entryTextSize)
    gui.lineHeight = gfx.texth + gui.linePadding
+   -- the lines of a text entry are closer together than the rows of the list (the text stays together)
+   Theme.set_font(gui.textEntrySize)
+   gui.textLineStep = math.min(gui.lineHeight, math.floor(gfx.texth + math.max(2, gui.linePadding / 4)))
+   Theme.set_font(gui.entryTextSize)
    log:debug("Zoom level is now " .. gui.zoomLevel)
 end
 
@@ -118,6 +124,123 @@ end
 -- Holding a zoom button repeats this (Widgets.button repeat_every), so there is no throttling here.
 function List.zoom_step(step)
    if State.win.mouse.alt then List.apply_zoom(0) else List.apply_zoom(gui.zoomLevel + step) end
+end
+
+-- Rows -------------------------------------------------------------------------------------------------------------
+-- The list is measured in rows (one row = gui.lineHeight): an entry is one row high, except a text entry with several
+-- lines, which is as many rows high as it has lines. Scrolling, the scrollbar and the visible count are in rows.
+
+--- Pure. Breaks the text into lines that are at most max_w wide: at the line breaks in it, then at spaces; a word that
+--- is wider than a line is cut where it no longer fits. measure(s) -> width. Always at least one line.
+function List.wrap_text(text, max_w, measure)
+   local lines = {}
+   for hard in (text .. "\n"):gmatch("([^\n]*)\n") do
+      local current = ""
+      for word in (hard .. " "):gmatch("(.-) ") do
+         local candidate = current == "" and word or (current .. " " .. word)
+         if measure(candidate) <= max_w then
+            current = candidate
+         else
+            if current ~= "" then lines[#lines + 1] = current end
+            current = word
+            while measure(current) > max_w and #current > 1 do -- a word wider than the line: cut it
+               local cut = #current - 1
+               while cut > 1 and measure(current:sub(1, cut)) > max_w do cut = cut - 1 end
+               lines[#lines + 1] = current:sub(1, cut)
+               current = current:sub(cut + 1)
+            end
+         end
+      end
+      lines[#lines + 1] = current
+   end
+   return lines
+end
+
+local number_cache = {}
+
+--- The width of the number column: where a project has its number (and a text entry its "--"), the name starts after it.
+function List.number_width()
+   local digits = math.floor(math.log(math.max(State.tab_count or 1, 1), 10) + 1)
+   local key = digits .. "|" .. gui.entryTextSize
+   if number_cache.key ~= key then
+      Theme.set_font(gui.entryTextSize)
+      number_cache.key, number_cache.width = key, gfx.measurestr(string.rep("0", digits) .. ". ")
+   end
+   return number_cache.width
+end
+
+--- How far a text entry is indented: a linked one starts where the project names start, so its "--" is lined up with them.
+function List.link_indent(entry)
+   if entry.type == ENTRY.TEXT and gui.linkRows and gui.linkRows[entry] then return List.number_width() end
+   return 0
+end
+
+--- The height of a text entry's extra lines as a fraction of a row (they are closer together than rows).
+function List.row_gap()
+   if gui.textLineStep and gui.lineHeight and gui.lineHeight > 0 then return gui.textLineStep / gui.lineHeight end
+   return 1
+end
+
+local wrap_cache = setmetatable({}, { __mode = "k" }) -- text entry -> { key, lines }
+
+--- What a text entry shows: its lines (wrapped to the window) and the width of the number column (where a project has its
+--- number, a text entry has "--"; its text starts after it). Wrapping needs the window: with none (w = 0) only the line
+--- breaks of the text count.
+function List.text_lines(entry)
+   local name = entry.name or ""
+   if gfx.w == nil or gfx.w <= 0 then return List.wrap_text(name, math.huge, function() return 0 end), 0 end
+
+   local numW = List.number_width()
+   local indent = List.link_indent(entry)
+   local key = table.concat({ name, gfx.w, gui.scrollW, gui.entryTextSize, gui.textEntrySize, numW, indent }, "|")
+   local c = wrap_cache[entry]
+   if c and c.key == key then return c.lines, numW end
+
+   Theme.set_font(gui.textEntrySize)
+   local avail = gfx.w - gui.scrollW - (gui.leftBorder + gui.entryIndent + indent) - numW - 12
+   local lines = List.wrap_text(name, math.max(avail, 20), function(s) return (gfx.measurestr(s)) end)
+   wrap_cache[entry] = { key = key, lines = lines }
+   return lines, numW
+end
+
+--- How many rows high an entry is.
+function List.entry_rows(entry)
+   if type(entry) == "table" and entry.type == ENTRY.TEXT and entry.name then
+      local n
+      if gui.edit and gui.edit.entry == entry then -- the entry grows while it is edited: the lines the field drew last
+         local lines = gui.edit.field.vlines
+         if lines then
+            n = #lines
+         else
+            local _, breaks = gui.edit.field.text:gsub("\n", "")
+            n = breaks + 1
+         end
+      else
+         n = #List.text_lines(entry)
+      end
+      return 1 + (n - 1) * List.row_gap()
+   end
+   return 1
+end
+
+--- starts[i] = the number of rows above entry i (the 0-based row where it begins); and the total number of rows.
+function List.layout(list)
+   local starts, row = {}, 0
+   for i, entry in ipairs(list) do
+      starts[i] = row
+      row = row + List.entry_rows(entry)
+   end
+   return starts, row
+end
+
+--- The position of the entry that covers the 0-based row (the last one for a row below the list).
+function List.entry_at_row(list, row)
+   local top = 0
+   for i, entry in ipairs(list) do
+      top = top + List.entry_rows(entry)
+      if row < top then return i end
+   end
+   return #list
 end
 
 function List.entry_at_mouse(findAtLastClickPos)
@@ -132,35 +255,28 @@ function List.entry_at_mouse(findAtLastClickPos)
       return nil, nil
    end
 
-   local entryUnderMouse = nil
-   local idxUnderMouse = nil
-   for i, _ in ipairs(State.list) do
-      local yStart = gui.titleHeight + (i - 1) * gui.lineHeight
-      local yEnd = yStart + gui.lineHeight
+   local starts = List.layout(State.list)
+   for i, entry in ipairs(State.list) do
+      local h = List.entry_rows(entry) * gui.lineHeight
+      local yStart = gui.titleHeight + (starts[i] - gui.scrollOffset) * gui.lineHeight
+      local yEnd = yStart + h
 
-      if yEnd > gui.listH + gui.titleHeight then return nil, nil end -- only return entry if fully visible.
+      if yEnd > gui.titleHeight then -- (not scrolled out at the top)
+         if yEnd > gui.listH + gui.titleHeight then return nil, nil end -- only return entry if fully visible.
 
-      local mouseIsOverEntry
+         local mouseIsOverEntry
+         if findAtLastClickPos then
+            mouseIsOverEntry = List.point_in_rect(0, yStart, gfx.w - gui.scrollW, h,
+               gui.lastClickDownPos.x, gui.lastClickDownPos.y)
+         else
+            mouseIsOverEntry = List.mouse_in_rect(0, yStart, gfx.w - gui.scrollW, h)
+         end
 
-      if findAtLastClickPos then
-         mouseIsOverEntry = List.point_in_rect(0, yStart, gfx.w - gui.scrollW, gui.lineHeight,
-            gui.lastClickDownPos.x, gui.lastClickDownPos.y)
-      else
-         mouseIsOverEntry = List.mouse_in_rect(0, yStart, gfx.w - gui.scrollW, gui.lineHeight)
-      end
-
-      if mouseIsOverEntry then
-         idxUnderMouse = i + gui.scrollOffset
-         entryUnderMouse = State.list[idxUnderMouse]
-         break
+         if mouseIsOverEntry then return entry, i end
       end
    end
 
-   if not entryUnderMouse or idxUnderMouse > #State.list then
-      return nil, nil
-   end
-
-   return entryUnderMouse, idxUnderMouse
+   return nil, nil
 end
 
 -- Pure function. Returns the scroll offset (0-based, number of entries scrolled out at the top) that puts the
@@ -170,9 +286,10 @@ function List.follow_scroll_offset(list, currentListIdx, maxScroll)
    if not currentListIdx or currentListIdx < 1 or currentListIdx > #list then return nil end
 
    local offset = 0
+   local starts = List.layout(list)
    for i = currentListIdx - 1, 1, -1 do
       if list[i].type == ENTRY.PROJECT then
-         offset = i - 1
+         offset = starts[i]
          break
       end
    end
@@ -184,7 +301,8 @@ end
 -- previous project of the LAST project reach the top row the range is extended (the rows below stay empty).
 -- A list that fits completely never scrolls.
 function List.max_scroll(list, numVisibleEntries)
-   local naturalMax = math.max(0, #list - numVisibleEntries)
+   local _, totalRows = List.layout(list)
+   local naturalMax = math.max(0, totalRows - numVisibleEntries)
    if naturalMax == 0 then return 0 end
 
    for i = #list, 1, -1 do
@@ -198,7 +316,8 @@ end
 -- Pure function. The range for manual scrolling (wheel, scrollbar, dragging): the last entry may reach the
 -- bottom of the window, but there is never an empty row below it.
 function List.manual_max_scroll(list, numVisibleEntries)
-   return math.max(0, #list - numVisibleEntries)
+   local _, totalRows = List.layout(list)
+   return math.max(0, totalRows - numVisibleEntries)
 end
 
 -- Pure function. Scrolls by delta rows (positive = down) in the manual range.
@@ -226,10 +345,13 @@ end
 
 -- Pure function. Where the entry at listIdx is relative to the visible rows:
 -- -1 = scrolled out at the top, 1 = below the visible rows, 0 = visible (or listIdx unknown).
-function List.offscreen_direction(listIdx, scrollOffset, numVisible)
+function List.offscreen_direction(list, listIdx, scrollOffset, numVisible)
    if not listIdx then return 0 end
-   if listIdx <= scrollOffset then return -1 end
-   if listIdx > scrollOffset + numVisible then return 1 end
+   local starts = List.layout(list)
+   local first = starts[listIdx]
+   if not first then return 0 end
+   if first + List.entry_rows(list[listIdx]) <= scrollOffset then return -1 end
+   if first >= scrollOffset + numVisible then return 1 end
    return 0
 end
 
@@ -263,8 +385,8 @@ end
 function List.offscreen_indicator()
    if gui.draggingEntry then return end
 
-   local dir = List.offscreen_direction(List.find_project_row(State.list, State.current_proj), gui.scrollOffset,
-      gui.numVisibleEntries)
+   local dir = List.offscreen_direction(State.list, List.find_project_row(State.list, State.current_proj),
+      gui.scrollOffset, gui.numVisibleEntries)
    if dir == 0 then return end
 
    local w, h = gui.offscreenIndicatorW, gui.offscreenIndicatorH
@@ -295,7 +417,7 @@ function List.offscreen_indicator()
 end
 
 function List.draw_scrollbar()
-   local setlistLength = #State.list
+   local _, setlistLength = List.layout(State.list) -- rows
    if setlistLength <= gui.numVisibleEntries then return end
 
    local scrollTrackHeight = gui.listH + gui.titleHeight
@@ -317,6 +439,8 @@ end
 local function draw_entry(y, entry)
    if not entry or not y then return end
    local highlight = entry.highlight
+   local h = List.entry_rows(entry) * gui.lineHeight -- (a text entry with several lines is several rows high)
+   local indent = List.link_indent(entry)
 
    if gui.draggingEntry and entry.listIdx == gui.dragEntryListIdx and gui.dragThreshReached then
       highlight = gui.dragHighlight
@@ -333,14 +457,29 @@ local function draw_entry(y, entry)
 
    if highlight then
       gfx.set(table.unpack(highlight))
-      gfx.rect(gui.leftBorder, y + 2, gfx.w - gui.scrollW, gui.lineHeight - 4)
+      gfx.rect(gui.leftBorder + indent, y + 2, gfx.w - gui.scrollW - indent, h - 4)
    end
 
    Theme.set("line")
-   gfx.line(gui.leftBorder, y + gui.lineHeight, gfx.w - gui.scrollW, y + gui.lineHeight - 1)
+   gfx.line(gui.leftBorder, y + h, gfx.w - gui.scrollW, y + h - 1)
+
+   -- a line at the left edge joins a project with the text entries linked to it; at the first and the last entry of the
+   -- group it turns into a hook towards the entry (the linked text entries are indented, the hook reaches their edge)
+   local link = gui.linkRows and gui.linkRows[entry]
+   if link then
+      Theme.set("accent", 0.9)
+      local mid = y + h / 2
+      local top = link.first and mid - 1 or y
+      local bottom = link.last and mid + 1 or y + h
+      gfx.rect(1, top, 2, bottom - top)
+      if link.first or link.last then
+         local reach = entry.type == ENTRY.TEXT and (gui.leftBorder + indent - 3) or 9
+         gfx.rect(1, mid - 1, math.max(4, reach - 1), 2)
+      end
+   end
 
    -- what the song's markers say (the chips before the length: end handler, loop regions)
-   local info = entry.type == ENTRY.PROJECT and not entry.name:find("_.*ROUTING") and entry.path ~= "Unsaved Project"
+   local info =entry.type == ENTRY.PROJECT and not entry.name:find("_.*ROUTING") and entry.path ~= "Unsaved Project"
        and ProjectInfo.read(entry.proj) or nil
 
    -------------------
@@ -427,8 +566,34 @@ local function draw_entry(y, entry)
       end
       entryStr = displayIdx .. (entry.name or "")
    elseif entry.type == ENTRY.TEXT then
-      textAlpha = gui.textEntryAlpha
-      entryStr = "--  " .. (entry.name or "")
+      -- "--" where a project has its number, the text (a bit smaller) where the project names start, one row per line
+      local x0 = gui.leftBorder + gui.entryIndent + indent
+      local lines, numW = List.text_lines(entry)
+      local editing = gui.edit and gui.edit.entry == entry
+      if numW == 0 then
+         Theme.set_font(gui.entryTextSize)
+         numW = gfx.measurestr("00. ")
+      end
+      Theme.set_font(gui.textEntrySize)
+      Theme.set("text", gui.textEntryAlpha)
+      local _, lineH = gfx.measurestr("Ag")
+      local step = gui.textLineStep or gui.lineHeight
+      local top = (gui.lineHeight - step) / 2 -- the lines are a block, centred in the entry
+      gfx.x, gfx.y = x0, y + top + (step - lineH) / 2
+      gfx.drawstr("--")
+      if editing then
+         -- being edited: the text is a text field (ListInput.handle_edit acts on what happened)
+         gui.editEvent = TextField.draw(State.win, gui.edit.field, x0 + numW - TextField.PAD, y + 1,
+            gfx.w - gui.scrollW - (x0 + numW) + TextField.PAD - 4, h - 2,
+            { size = gui.textEntrySize, line_h = step, top_pad = top - 1 })
+      else
+         for k, line in ipairs(lines) do
+            gfx.x, gfx.y = x0 + numW, y + top + (k - 1) * step + (step - lineH) / 2
+            gfx.drawstr(line)
+         end
+      end
+      Theme.set_font(gui.entryTextSize)
+      entryStr = ""
    elseif entry.type == ENTRY.MISSING then
       textAlpha = gui.textEntryAlpha
       entryStr = "?  " .. (entry.name or "")
@@ -477,15 +642,13 @@ function List.draw()
    -- Draw Entries. While a follow-scroll animates, gui.displayOffset is fractional: the rows are drawn shifted
    -- by the fraction and one extra row is drawn. The backgrounds painted below hide what sticks out.
    local offset = gui.displayOffset or gui.scrollOffset
-   local firstIdx = math.floor(offset)
-   local frac = offset - firstIdx
-   local rows = gui.numVisibleEntries + (frac > 0 and 1 or 0)
+   local starts = List.layout(State.list)
 
-   for i = 1, rows do
-      local idx = i + firstIdx
-      if idx > #State.list then break end
-      if idx >= 1 then
-         draw_entry(gui.titleHeight + (i - 1 - frac) * gui.lineHeight, State.list[idx])
+   gui.linkRows = Data.linked_rows(State.list)
+   for i, entry in ipairs(State.list) do
+      -- (the entries that are at least partly in the view, plus one row below)
+      if starts[i] + List.entry_rows(entry) > offset and starts[i] <= offset + gui.numVisibleEntries then
+         draw_entry(gui.titleHeight + (starts[i] - offset) * gui.lineHeight, entry)
       end
    end
 
@@ -530,15 +693,11 @@ function List.draw()
           (gui.dropIdx > gui.dragEntryListIdx or gui.dropIdx < gui.dragEntryListIdx)
 
       if isDragFarEnough then
-         local dropYstart
-
-         if gui.dropIdx == 1 then
-            dropYstart = gui.titleHeight + (gui.dropIdx - gui.scrollOffset - 1) * gui.lineHeight
-         elseif gui.dragDirection == 1 then
-            dropYstart = gui.titleHeight + (gui.dropIdx - gui.scrollOffset) * gui.lineHeight
-         else
-            dropYstart = gui.titleHeight + (gui.dropIdx - gui.scrollOffset - 1) * gui.lineHeight
-         end
+         -- at the end of the entry it is dropped after (dragged down), at the start of the one it is dropped before
+         local starts = List.layout(State.list)
+         local row = starts[gui.dropIdx] or 0
+         if gui.dragDirection == 1 and gui.dropIdx > 1 then row = row + List.entry_rows(State.list[gui.dropIdx]) end
+         local dropYstart = gui.titleHeight + (row - gui.scrollOffset) * gui.lineHeight
 
          -- Draw drop indicator line as a rectangle
          Theme.set("text", 0.6)
@@ -596,6 +755,7 @@ end)
 define("Manual scrolling range", function(t)
    t.eq(List.manual_max_scroll({ 1, 2, 3, 4, 5 }, 3), 2, "last entry at the bottom")
    t.eq(List.manual_max_scroll({ 1, 2 }, 5), 0, "fits: no scrolling")
+   t.eq(List.manual_max_scroll({ 1, { type = ENTRY.TEXT, name = "a\nb\nc" }, 3 }, 3), 2, "a three-line text entry counts as three rows")
 
    t.eq(List.apply_manual_scroll(3, 1, 8), 4, "normal scroll down")
    t.eq(List.apply_manual_scroll(3, -5, 8), 0, "clamped at the top")
@@ -624,11 +784,52 @@ define("FindProjListIdx / GetOffscreenDirection", function(t)
    t.eq(List.find_project_row(list, nil), nil, "nil project")
 
    -- rows 6..10 visible (scrollOffset 5, 5 rows)
-   t.eq(List.offscreen_direction(5, 5, 5), -1, "just above")
-   t.eq(List.offscreen_direction(6, 5, 5), 0, "first visible row")
-   t.eq(List.offscreen_direction(10, 5, 5), 0, "last visible row")
-   t.eq(List.offscreen_direction(11, 5, 5), 1, "just below")
-   t.eq(List.offscreen_direction(nil, 5, 5), 0, "unknown project: no arrow")
+   local rows = {}
+   for i = 1, 12 do rows[i] = { type = ENTRY.PROJECT } end
+   t.eq(List.offscreen_direction(rows, 5, 5, 5), -1, "just above")
+   t.eq(List.offscreen_direction(rows, 6, 5, 5), 0, "first visible row")
+   t.eq(List.offscreen_direction(rows, 10, 5, 5), 0, "last visible row")
+   t.eq(List.offscreen_direction(rows, 11, 5, 5), 1, "just below")
+   t.eq(List.offscreen_direction(rows, nil, 5, 5), 0, "unknown project: no arrow")
+   rows[5] = { type = ENTRY.TEXT, name = "one\ntwo\nthree" } -- rows 4..6 (0-based)
+   t.eq(List.offscreen_direction(rows, 5, 5, 5), 0, "a tall entry that is partly in view counts as visible")
+   t.eq(List.offscreen_direction(rows, 5, 7, 5), -1, "...and is gone once its last row is above")
+end)
+
+define("wrap_text", function(t)
+   local function m(s) return #s * 10 end -- every character 10 wide
+   t.eq(List.wrap_text("one two three", 1000, m), { "one two three" }, "fits: one line")
+   t.eq(List.wrap_text("one two three", 80, m), { "one two", "three" }, "breaks at a space")
+   t.eq(List.wrap_text("a\nb", 1000, m), { "a", "b" }, "line breaks stay")
+   t.eq(List.wrap_text("", 100, m), { "" }, "empty text: one empty line")
+   t.eq(List.wrap_text("abcdefghij", 40, m), { "abcd", "efgh", "ij" }, "a word wider than the line is cut")
+   t.eq(List.wrap_text("ab cdefghij", 40, m), { "ab", "cdef", "ghij" }, "a long word starts on a new line, then is cut")
+   t.eq(List.wrap_text("a  b", 1000, m), { "a  b" }, "double spaces are kept when it fits")
+   t.eq(List.wrap_text("x\n\ny", 1000, m), { "x", "", "y" }, "empty lines stay")
+end)
+
+define("Rows of multi-line entries", function(t)
+   local saved_step = gui.textLineStep
+   gui.textLineStep = nil -- (no window: a line is a whole row)
+   local list = { { type = ENTRY.PROJECT }, { type = ENTRY.TEXT, name = "a\nb" }, { type = ENTRY.TEXT, name = "x" },
+      { type = ENTRY.TEXT, name = "1\n2\n3" }, { type = ENTRY.PROJECT } }
+   t.eq({ List.entry_rows(list[1]), List.entry_rows(list[2]), List.entry_rows(list[4]) }, { 1, 2, 3 }, "rows per entry")
+   t.eq({ List.layout(list) }, { { 0, 1, 3, 4, 7 }, 8 }, "where the entries start and the total")
+   t.eq({ List.entry_at_row(list, 0), List.entry_at_row(list, 2), List.entry_at_row(list, 3), List.entry_at_row(list, 6),
+      List.entry_at_row(list, 7), List.entry_at_row(list, 99) }, { 1, 2, 3, 4, 5, 5 }, "the entry at a row")
+   t.eq(List.follow_scroll_offset({ { type = ENTRY.PROJECT }, { type = ENTRY.TEXT, name = "a\nb" }, { type = ENTRY.PROJECT },
+      { type = ENTRY.PROJECT } }, 4, 100), 3, "follow-scroll counts rows: the previous project of the last one starts at row 3")
+   gui.textLineStep = saved_step
+end)
+
+define("Closer lines in text entries", function(t)
+   local saved_step, saved_h = gui.textLineStep, gui.lineHeight
+   gui.textLineStep, gui.lineHeight = 30, 50
+   t.eq(List.entry_rows({ type = ENTRY.TEXT, name = "a" }), 1, "one line: one row")
+   t.eq(List.entry_rows({ type = ENTRY.TEXT, name = "a\nb\nc" }), 1 + 2 * 0.6, "more lines: each adds 30/50 of a row")
+   t.eq({ List.layout({ { type = ENTRY.TEXT, name = "a\nb" }, { type = ENTRY.PROJECT } }) }, { { 0, 1.6 }, 2.6 },
+      "the next entry starts after the tall one")
+   gui.textLineStep, gui.lineHeight = saved_step, saved_h
 end)
 
 define("StepSmoothScroll", function(t)

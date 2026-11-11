@@ -55,9 +55,22 @@ points are at the end. Build order: Docs/roadmap.md, step 4a. Rules and reasons 
 **Paths:** a setlist stores absolute paths. When loading, a project is first looked up by file name in the setlist file's
 own folder (not in subfolders: archived copies may live there), then at the stored path.
 
-**Text entries:** free by default, optionally **linked** to the project above or below (moves with it). They all look
-the same; the user colors them. One line to begin with, wrapping later. Content: labels, reminders, instructions. Use a
-custom text entry widget (multi-line later).
+**Text entries:** free by default, optionally **linked** to the project above or below. Content: labels, reminders,
+instructions. They look the same; the user colors them (no default color, only a faint tint).
+- **Linking:** right-click: Link to Project Above / Below, Unlink. Text entries in between are linked too, in the same
+  direction (`Data.link_chain`). The field is `link = "above" | "below"` in the setlist file; a link that does not reach a
+  project through linked text entries is ignored (`Data.block_of`). A project and its linked text entries are a **block**
+  that moves as one: dragging the project, reordering tabs (`Sync.follow_tabs`), a new tab goes after the block of the tab
+  before it. A text entry dropped between the entries of a block joins it (`Data.join_block`); dropped anywhere else, or
+  dragged on its own out of a block, it is free. A project dropped onto one of its own text entries moves past it and the
+  entries on its other side switch direction. When a project closes its text entries stay, unlinked; when a setlist is
+  loaded, kept text entries keep their link only if their project is kept.
+- **Editing in place:** double-click (or Edit Text in the menu) turns the text into a field (Gui/TextField, multi-line):
+  Enter keeps, Esc cancels, a click elsewhere keeps, Shift+Enter is a new line, empty is not kept. The Text Entry button
+  inserts "New Text" after the active project's block and starts editing it (cancelled or empty: gone again).
+- **Several lines:** a text entry is one row high plus a closer line step per extra line (manual line breaks and soft
+  wrapping at the window width, also while typing). The list is measured in rows (fractions allowed): scrolling,
+  scrollbar, follow-scroll and drag positions work on `List.layout`.
 
 **Jumping:** a click on a project entry selects its tab, in both modes. "Queue Project" goes away for now.
 **Selection (4e):** Ctrl+click / Shift+click with a clear selected state; plain click still jumps. Multi selection should allow batch reording, coloring, closing (deleting for text items)
@@ -82,7 +95,9 @@ custom text entry widget (multi-line later).
     project has one or more loop regions). The normal end stays unmarked. Hover tooltips explain them.
   - Tooltips (`Widgets.tooltip_begin / tooltip / tooltip_end`): a light box with a thin dark border, shown after the mouse
     rests 0.6 s.
-- **Linked text entries:** a thin colored line on the left joins the linked rows (option C of the quiz).
+- **Text entries:** "--" where a project has its number, the text 80% of the project font size, starting where project
+  names start; a linked one is indented by the number column (its "--" lines up with the names). A line at the left edge
+  joins a block, with a hook into its first and last entry (option C of the quiz).
 - Text sizes and spacing: one rhythm (margin 12, buttons 8 apart, sections 28 apart).
 
 ## Code structure (decided 2026-11-11)

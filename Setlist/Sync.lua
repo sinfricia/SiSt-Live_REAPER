@@ -319,6 +319,15 @@ function Sync.follow_tabs(list, tabs, d)
 
    local dropped = {}
    for _, e in ipairs(d.list_only) do dropped[e] = true end
+   -- the text entries linked to a project that is gone lose their link (they stay, as free text entries)
+   for i, e in ipairs(list) do
+      if dropped[e] then
+         local first, last = Data.link_block(list, i)
+         for k = first, last do
+            if k ~= i then list[k].link = nil end
+         end
+      end
+   end
    local result = {}
    for _, e in ipairs(list) do
       if not dropped[e] then result[#result + 1] = e end
@@ -334,26 +343,50 @@ function Sync.follow_tabs(list, tabs, d)
    for ti = 0, #tabs - 1 do
       if entry_at[ti] then ordered[#ordered + 1] = entry_at[ti] end
    end
-   local n = 0
+   -- A project moves with the text entries linked to it (its block): the blocks are laid into the places of the
+   -- project entries, everything else keeps its place.
+   local blocks, attached = {}, {}
    for i, e in ipairs(result) do
       if e.type == ENTRY.PROJECT then
-         n = n + 1
-         result[i] = ordered[n]
+         local first, last = Data.link_block(result, i)
+         local block = {}
+         for k = first, last do
+            block[#block + 1] = result[k]
+            if k ~= i then attached[result[k]] = true end
+         end
+         blocks[e] = block
       end
    end
+   local flat, n = {}, 0
+   for _, e in ipairs(result) do
+      if e.type == ENTRY.PROJECT then
+         n = n + 1
+         for _, member in ipairs(blocks[ordered[n]] or { ordered[n] }) do flat[#flat + 1] = member end
+      elseif not attached[e] then
+         flat[#flat + 1] = e
+      end
+   end
+   result = flat
 
-   -- the tabs that have no entry, each after the entry of the tab before it
+   -- the tabs that have no entry, each after the block of the tab before it
    for _, t in ipairs(d.tab_only) do
       entry_at[t.tab_idx] = t.tab
       local pos = nil
       local before = entry_at[t.tab_idx - 1]
       if before then
          for i, e in ipairs(result) do
-            if e == before then pos = i + 1 break end
+            if e == before then
+               local _, last = Data.link_block(result, i)
+               pos = last + 1
+               break
+            end
          end
       else
          for i, e in ipairs(result) do
-            if e.type == ENTRY.PROJECT then pos = i break end
+            if e.type == ENTRY.PROJECT then
+               pos = Data.link_block(result, i)
+               break
+            end
          end
       end
       table.insert(result, pos or (#result + 1), t.tab)
@@ -426,6 +459,26 @@ function Sync.plan_load(loaded, tabs, current, remove, file_exists, is_empty)
    end
    for _, t in ipairs(d.tab_only) do -- extras that the current list does not know yet
       if not placed[t.tab.proj] and not remove[t.tab.proj] then plan.list[#plan.list + 1] = t.tab end
+   end
+
+   -- a kept text entry keeps its link only while the project it is linked to is kept too (a copy without the link
+   -- otherwise: the plan changes nothing in the current list)
+   local kept = {}
+   for _, e in ipairs(plan.list) do kept[e] = true end
+   local anchor_of = {}
+   for i, e in ipairs(current) do
+      if e.type == ENTRY.TEXT and e.link then
+         local _, _, anchor = Data.block_of(current, i)
+         anchor_of[e] = anchor and current[anchor] or nil
+      end
+   end
+   for i, e in ipairs(plan.list) do
+      if e.type == ENTRY.TEXT and e.link and not (anchor_of[e] and kept[anchor_of[e]]) then
+         local copy = {}
+         for k, v in pairs(e) do copy[k] = v end
+         copy.link = nil
+         plan.list[i] = copy
+      end
    end
 
    for _, e in ipairs(loaded) do plan.list[#plan.list + 1] = e end
@@ -549,6 +602,18 @@ define("is_synced / diff / follow_tabs / duplicates", function(t)
    r = Sync.follow_tabs({ proj("a", A), text("t"), proj("b", B) }, tabs2)
    t.ok(Sync.is_synced(r, { B, C, A }) and Sync.diff(r, tabs2).in_sync, "follow_tabs: the result is in sync")
 
+   -- follow_tabs with linked text entries: a project moves with them
+   local function linked(s, dir) return { type = ENTRY.TEXT, path = s, link = dir } end
+   r = Sync.follow_tabs({ proj("a", A), linked("a-note", "above"), linked("b-note", "below"), proj("b", B), text("free") },
+      { tab("b", B), tab("a", A) })
+   t.eq(paths(r), "b-note,b,a,a-note,free", "follow_tabs: linked text entries move with their project, free ones stay")
+   r = Sync.follow_tabs({ proj("a", A), linked("a-note", "above"), proj("b", B) }, { tab("a", A), tab("n", C), tab("b", B) })
+   t.eq(paths(r), "a,a-note,n,b", "follow_tabs: a new tab goes after the block of the tab before it")
+   local gone_note, other_note = linked("gone-note", "below"), linked("a-note", "above")
+   r = Sync.follow_tabs({ gone_note, proj("g", C), other_note, proj("a", A), proj("b", B) }, { tab("a", A), tab("b", B) })
+   t.eq(paths(r), "gone-note,a-note,a,b", "follow_tabs: the texts of a closed project stay, without their link")
+   t.ok(gone_note.link == nil and other_note.link == nil, "follow_tabs: and the link is cleared, so they do not join the next project")
+
    -- duplicates
    local dups = Sync.duplicates({ tab("a", A), tab("b", B), tab("A", C), tab("a", {}) })
    t.ok(#dups == 1 and dups[1].count == 2 and dups[1].tabs[1] == 0 and dups[1].tabs[2] == 3, "duplicates: found by path")
@@ -594,6 +659,15 @@ define("plan_load", function(t)
    plan = Sync.plan_load(loaded, tabs, current, { [C] = true, [break_note] = true }, exists)
    t.eq(paths(plan.list), "note,y,a,L1,b,gone", "a mix: x and the break removed, the note and y kept")
    t.eq(paths(plan.to_close), "x", "only x is closed")
+
+   -- a kept text entry keeps its link only while its project is kept
+   local lx = { type = ENTRY.TEXT, path = "lx", name = "lx", link = "above" }
+   local current2 = { x_entry, lx, b_entry, y_entry }
+   plan = Sync.plan_load(loaded, tabs, current2, {}, exists)
+   t.eq(plan.list[2].link, "above", "plan_load: the project stays, so the link stays")
+   plan = Sync.plan_load(loaded, tabs, current2, { [C] = true }, exists)
+   t.eq({ plan.list[1].path, plan.list[1].link }, { "lx", nil }, "plan_load: the project is removed: the text entry loses its link")
+   t.eq(lx.link, "above", "plan_load: the current list itself is not changed")
 
    -- identical text entries are replaced by the loaded ones, not kept next to them
    local loaded_with_note = { proj("a", nil), text("note"), proj("b", nil) }
