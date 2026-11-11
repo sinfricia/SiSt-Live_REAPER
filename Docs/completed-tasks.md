@@ -3,6 +3,22 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-11 - Step 4e: Setlist cleanup
+Review round 2026-11-11. No behaviour change, except the divider line (Sina asked for it during the step; one commit).
+- **The shared `gui` table (86 fields) is gone.** The mouse is only `State.win.mouse` (the click flags and `gui.lastClickDownPos`
+  copies are removed: `left`, `right`, `left_pressed`, `press_x/y`). `ViewState` now has `CFG` (constants, read as `CFG.x`, no
+  more fall-through), `view` (zoom, scroll, display offset, follow flags, mode, selection), `drag` (entry drag and scrollbar drag),
+  `input` (click bookkeeping, double click, text edit) and `lay` (this frame's sizes). The new UI/ListLayout.lua works out
+  `small`, `panel_h`, `list_h`, `visible_rows`, `max_scroll` once per frame (`ListLayout.compute` is pure and tested, 10 checks).
+  The two draw scratch flags moved into List.lua as `mark`.
+- **snake_case in all Setlist code** (about 240 names, e.g. `drop_idx`, `list_idx`, `tab_idx`, `scroll_offset`). Kept on purpose:
+  the window's saved `zoomLevel` / `scrollOffset`, and `listIdx` / `tabIdx` in `TRANSIENT_FIELDS` (older saved lists).
+- **Tests out of the production files:** Setlist/Tests/{Data,Sync,List,ListLayout,ViewState,ProjectInfo}_test.lua (about 700
+  lines out of Data, Sync, List, ViewState, ProjectInfo). `Data.encode_value` is exported for its test. The main script's
+  SELFTEST_COLLECT block requires them; Setup's @provides lists them. 251 -> 261 Setlist checks (self-test 682 passed).
+- **UI (Sina):** the divider between two linked (indented) text entries is indented too.
+- Docs: design-decisions "Setlist view state", setlist-design file list and test location.
+
 ## 2026-11-11 - Step 4d: review fixes
 From the code review after step 4 (Sina approved the plan and the decision; one commit).
 - **Layout tests:** lib/SiSt-Live_Tests.lua declared `local Layout` twice, so the layout mode effect's tests never ran; the

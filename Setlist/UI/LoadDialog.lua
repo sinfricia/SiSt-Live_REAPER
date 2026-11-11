@@ -19,7 +19,7 @@ local State = require("Setlist.State")
 local Actions = require("Setlist.Actions")
 local ViewState = require("Setlist.UI.ViewState")
 
-local gui = ViewState.gui
+local view = ViewState.view
 local ENTRY = Data.ENTRY
 
 local LoadDialog = {}
@@ -67,7 +67,7 @@ function LoadDialog.open(loaded, name)
 
    if #items == 0 then
       Actions.start_load(Sync.plan_load(loaded, tabs, State.list, {}, file_exists, Sync.is_empty_unsaved), name)
-      gui.followPending = true
+      view.follow_pending = true
       return
    end
 
@@ -113,7 +113,7 @@ function LoadDialog.open(loaded, name)
          end
          Actions.start_load(Sync.plan_load(loaded, Sync.open_projects(), State.list, remove, file_exists,
             Sync.is_empty_unsaved), name)
-         gui.followPending = true
+         view.follow_pending = true
       end,
    }
 end

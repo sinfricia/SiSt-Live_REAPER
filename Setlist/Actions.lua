@@ -9,7 +9,7 @@ answer. So the same code serves a button, a menu and a test.
   commit()                          after every change: refresh the index fields and save the current list
   follow_tabs()                     the list follows the open tabs (opened, closed, moved projects)
   insert_text(name), rename_text(entry, name), color_text(entry, r, g, b), duplicate_text(idx), delete_entry(idx)
-  drop_entry(dragIdx, dropIdx, direction, duplicate)    a drag and drop in the list (moves the tab of a project)
+  drop_entry(drag_idx, drop_idx, direction, duplicate)    a drag and drop in the list (moves the tab of a project)
   close_project(entry), replace_project(entry, path)
   reset()                           the list becomes the open projects (the old list is kept as the autosave)
   read_setlist_file(path), read_autosave()          the entries of a setlist file / of the autosave
@@ -163,10 +163,10 @@ function Actions.delete_entries(entries)
    Actions.commit()
 end
 
--- A drag and drop of several selected entries (selected: entry tables) to where dropIdx / direction say (see drop_entry).
+-- A drag and drop of several selected entries (selected: entry tables) to where drop_idx / direction say (see drop_entry).
 -- A selected project takes the text entries linked to it along; a selected text entry whose project does not move loses
 -- its link. Dropped on one of the moving entries: nothing happens. copy: only the text entries are copied. The tabs follow.
-function Actions.drop_selection(selected, dropIdx, direction, copy, link, hoveredIdx)
+function Actions.drop_selection(selected, drop_idx, direction, copy, link, hovered_idx)
    local list = State.list
    local sel = {}
    for _, e in ipairs(selected) do sel[e] = true end
@@ -180,8 +180,8 @@ function Actions.drop_selection(selected, dropIdx, direction, copy, link, hovere
             copies[#copies + 1] = c
          end
       end
-      local ref = list[hoveredIdx or dropIdx]
-      local at = direction == 1 and dropIdx + 1 or dropIdx
+      local ref = list[hovered_idx or drop_idx]
+      local at = direction == 1 and drop_idx + 1 or drop_idx
       for i, c in ipairs(copies) do table.insert(list, at + i - 1, c) end
       if #copies > 0 then link_inserted(list, at, #copies, direction, ref, link) end
       Actions.commit()
@@ -202,7 +202,7 @@ function Actions.drop_selection(selected, dropIdx, direction, copy, link, hovere
       end
    end
    -- dropped on itself: nothing (but a linking drop (Shift) onto an entry that does not move still links)
-   if moving[list[dropIdx]] and not (link and hoveredIdx and not moving[list[hoveredIdx]]) then return end
+   if moving[list[drop_idx]] and not (link and hovered_idx and not moving[list[hovered_idx]]) then return end
 
    local only_texts = true
    for e in pairs(moving) do
@@ -211,8 +211,8 @@ function Actions.drop_selection(selected, dropIdx, direction, copy, link, hovere
    if only_texts then
       -- text entries only: dropped between the entries of a block they join it, with Shift they are linked to the entry
       -- the mouse is over (see link_inserted)
-      local ref = list[hoveredIdx or dropIdx]
-      local target = direction == 1 and dropIdx + 1 or dropIdx
+      local ref = list[hovered_idx or drop_idx]
+      local target = direction == 1 and drop_idx + 1 or drop_idx
       local moved, kept, before = {}, {}, 0
       for i, e in ipairs(list) do
          if moving[e] then
@@ -232,8 +232,8 @@ function Actions.drop_selection(selected, dropIdx, direction, copy, link, hovere
    end
 
    -- outside of the block of the entry it is dropped on
-   local bfirst, blast = Data.block_of(list, dropIdx)
-   local target = direction == 1 and (blast or dropIdx) + 1 or (bfirst or dropIdx)
+   local bfirst, blast = Data.block_of(list, drop_idx)
+   local target = direction == 1 and (blast or drop_idx) + 1 or (bfirst or drop_idx)
 
    local moved, kept, before = {}, {}, 0
    for i, e in ipairs(list) do
@@ -294,96 +294,96 @@ function Actions.replace_project(entry, path)
       reaper.MB("Selected file couldn't be loaded", "Error", 0)
    end
 
-   local tabIdx = entry.tabIdx
-   if not tabIdx then
-      tabIdx = Data.list_to_tab_idx(list, entry.listIdx, State.tab_count)
+   local tab_idx = entry.tab_idx
+   if not tab_idx then
+      tab_idx = Data.list_to_tab_idx(list, entry.list_idx, State.tab_count)
    end
 
-   Sync.move_tab(reaper.EnumProjects(-1), tabIdx, State.tab_count)
+   Sync.move_tab(reaper.EnumProjects(-1), tab_idx, State.tab_count)
 
    if entry.proj then
       Sync.close_project(entry.proj)
    end
 
-   local target = list[entry.listIdx]
+   local target = list[entry.list_idx]
    target.type = ENTRY.PROJECT
    target.proj = reaper.EnumProjects(-1)
    target.path = path
    target.name = Data.project_name(path)
-   target.tabIdx = Data.list_to_tab_idx(list, entry.listIdx, State.tab_count)
+   target.tab_idx = Data.list_to_tab_idx(list, entry.list_idx, State.tab_count)
    Actions.commit()
 end
 
--- A drag and drop in the list. dragIdx: the entry that was dragged, dropIdx: where it was dropped, direction: 1 when it
+-- A drag and drop in the list. drag_idx: the entry that was dragged, drop_idx: where it was dropped, direction: 1 when it
 -- was dragged down the list, -1 up. duplicate: copy a text entry instead of moving it. A project entry also moves its tab.
--- link: a text entry is linked to the entry the mouse is over (hoveredIdx, the drop line is next to it): the project it is,
+-- link: a text entry is linked to the entry the mouse is over (hovered_idx, the drop line is next to it): the project it is,
 -- or the group of the text entry it is, or else the project on the side of the drop line.
-function Actions.drop_entry(dragIdx, dropIdx, direction, duplicate, link, hoveredIdx)
+function Actions.drop_entry(drag_idx, drop_idx, direction, duplicate, link, hovered_idx)
    local list = State.list
-   local dragEntry = list[dragIdx]
+   local drag_entry = list[drag_idx]
 
-   if dragEntry.type == ENTRY.TEXT and duplicate then
-      log:debug("Duplicating Text Item: " .. dragEntry.name)
-      local copy = Data.copy_table(dragEntry)
+   if drag_entry.type == ENTRY.TEXT and duplicate then
+      log:debug("Duplicating Text Item: " .. drag_entry.name)
+      local copy = Data.copy_table(drag_entry)
       copy.link = nil
-      local ref = list[hoveredIdx or dropIdx]
-      local at = direction == 1 and dropIdx + 1 or dropIdx
+      local ref = list[hovered_idx or drop_idx]
+      local at = direction == 1 and drop_idx + 1 or drop_idx
       table.insert(list, at, copy)
       link_inserted(list, at, 1, direction, ref, link)
       log:debug("Inserted duplicate at idx " .. at)
-   elseif dragEntry.type == ENTRY.PROJECT then
+   elseif drag_entry.type == ENTRY.PROJECT then
       -- A project moves with the text entries linked to it, and never into another project's block.
-      local first, last = Data.link_block(list, dragIdx)
-      if dropIdx == dragIdx then return end
+      local first, last = Data.link_block(list, drag_idx)
+      if drop_idx == drag_idx then return end
 
-      if dropIdx >= first and dropIdx <= last then
+      if drop_idx >= first and drop_idx <= last then
          -- dropped on one of its own text entries: the project moves past it, and the entries on its other side are
          -- linked the other way round
          local block = {}
          for k = first, last do
-            if k ~= dragIdx then block[#block + 1] = list[k] end
+            if k ~= drag_idx then block[#block + 1] = list[k] end
          end
-         local ref = list[dropIdx]
+         local ref = list[drop_idx]
          local at = 1
          for i, e in ipairs(block) do
             if e == ref then at = direction == 1 and i + 1 or i break end
          end
-         table.insert(block, at, dragEntry)
+         table.insert(block, at, drag_entry)
          for i, e in ipairs(block) do
             list[first + i - 1] = e
-            if e ~= dragEntry then e.link = (i < at) and "below" or "above" end
+            if e ~= drag_entry then e.link = (i < at) and "below" or "above" end
          end
       else
-         local bfirst, blast = Data.block_of(list, dropIdx)
-         local target = direction == 1 and (blast or dropIdx) + 1 or (bfirst or dropIdx)
+         local bfirst, blast = Data.block_of(list, drop_idx)
+         local target = direction == 1 and (blast or drop_idx) + 1 or (bfirst or drop_idx)
          local moved = {}
          for k = first, last do moved[#moved + 1] = list[k] end
          for k = last, first, -1 do table.remove(list, k) end
          if target > last then target = target - #moved end
          for i, e in ipairs(moved) do table.insert(list, target + i - 1, e) end
 
-         local newTabIdx = 0 -- the tab goes where the project is now in the list
-         for i = 1, target + (dragIdx - first) - 1 do
-            if list[i].type == ENTRY.PROJECT then newTabIdx = newTabIdx + 1 end
+         local new_tab_idx = 0 -- the tab goes where the project is now in the list
+         for i = 1, target + (drag_idx - first) - 1 do
+            if list[i].type == ENTRY.PROJECT then new_tab_idx = new_tab_idx + 1 end
          end
-         Sync.move_tab(dragEntry.proj, newTabIdx, State.tab_count)
+         Sync.move_tab(drag_entry.proj, new_tab_idx, State.tab_count)
       end
    else
       -- Any other entry moves alone: after the entry it was dropped on (dragged down) or before it (dragged up). Dropped
       -- between the entries of a project's block it joins that block, anywhere else it is not linked.
-      local ref = list[hoveredIdx or dropIdx] -- the entry the mouse is over
-      if dropIdx == dragIdx then
+      local ref = list[hovered_idx or drop_idx] -- the entry the mouse is over
+      if drop_idx == drag_idx then
          -- stays where it is; with link (Shift) it is still linked to the entry it was dropped on
-         if not (link and dragEntry.type == ENTRY.TEXT and ref ~= dragEntry) then return end
-         dragEntry.link = nil
-         link_inserted(list, dragIdx, 1, direction, ref, true)
+         if not (link and drag_entry.type == ENTRY.TEXT and ref ~= drag_entry) then return end
+         drag_entry.link = nil
+         link_inserted(list, drag_idx, 1, direction, ref, true)
          Actions.commit()
          return
       end
-      table.remove(list, dragIdx)
-      local target = direction == 1 and dropIdx + 1 or dropIdx
-      if dropIdx > dragIdx then target = target - 1 end
-      table.insert(list, target, dragEntry)
+      table.remove(list, drag_idx)
+      local target = direction == 1 and drop_idx + 1 or drop_idx
+      if drop_idx > drag_idx then target = target - 1 end
+      table.insert(list, target, drag_entry)
       link_inserted(list, target, 1, direction, ref, link)
    end
 
@@ -447,7 +447,7 @@ function Actions.read_setlist_file(path)
          if entry.type == ENTRY.PROJECT then
             local nth = seen[entry.path] or 0
             seen[entry.path] = nth + 1
-            entry.proj, entry.tabIdx = Sync.find_open_tab(entry.path, nth)
+            entry.proj, entry.tab_idx = Sync.find_open_tab(entry.path, nth)
          end
       end
    end

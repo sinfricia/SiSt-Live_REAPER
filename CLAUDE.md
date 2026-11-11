@@ -24,7 +24,8 @@ REAPER API: Docs/reference/ (the .htm REAPER generates, not in git). Search sign
 - No new _RS IDs in code: scripts are found by file name (design decisions, Action IDs).
 - New file: add it to @provides in Setup/SiSt-Live_Setup.lua; a new lib file also gets an entry in
   lib/SiSt-Live_Tests.lua.
-- Tests only where Docs/design-decisions.md (Testing) says they are worth it.
+- Tests only where Docs/design-decisions.md (Testing) says they are worth it. They live in the component's own Tests/
+  folder (Setlist/Tests/), not in the production files.
 - Syntax-check every changed Lua file before handing it over.
 - Naming rules: Docs/design-decisions.md (Naming).
 

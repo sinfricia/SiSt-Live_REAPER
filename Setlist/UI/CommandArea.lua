@@ -24,7 +24,7 @@ local ListInput = require("Setlist.UI.ListInput")
 local Ask = require("Setlist.UI.Ask")
 local LoadDialog = require("Setlist.UI.LoadDialog")
 
-local gui, CFG = ViewState.gui, ViewState.CFG
+local view, lay, CFG = ViewState.view, ViewState.lay, ViewState.CFG
 
 local CommandArea = {}
 
@@ -75,7 +75,7 @@ local function reset()
       return false
    end
    Actions.reset()
-   gui.followPending = true
+   view.follow_pending = true
    return true
 end
 
@@ -95,7 +95,7 @@ end
 local function insert_text()
    -- the new entry goes after the active project and its row turns into a text field right away
    local entry = Actions.insert_text("New Text")
-   gui.followPending = true
+   view.follow_pending = true
    ListInput.start_edit(entry, true)
 end
 
@@ -124,7 +124,7 @@ end
 -- Layout --------------------------------------------------------------------------------------------------------
 
 local function zoom_percent_label()
-   return math.floor(gui.entryTextSize / CFG.entryTextSize * 100 + 0.5) .. "%"
+   return math.floor(lay.entry_text_size / CFG.entry_text_size * 100 + 0.5) .. "%"
 end
 
 -- half = 1 / 2: the item is the upper / lower half of a stacked pair (same column, half the height each)
@@ -156,8 +156,8 @@ local function groups()
          align = "right",
          items = {
             { id = "zoom_reset", label = zoom_percent_label(), menu = "Reset Zoom", w = 68, compact_w = 56, tip = "Reset Zoom." },
-            { id = "zoom_in",    label = "+",                  menu = "Zoom In", w = 34, compact_w = 28, half = 1, repeat_every = gui.zoomDelay, tip = "Zoom in." },
-            { id = "zoom_out",   label = "-",                  menu = "Zoom Out", w = 34, compact_w = 28, half = 2, repeat_every = gui.zoomDelay, tip = "Zoom out." },
+            { id = "zoom_in",    label = "+",                  menu = "Zoom In", w = 34, compact_w = 28, half = 1, repeat_every = CFG.zoom_delay, tip = "Zoom in." },
+            { id = "zoom_out",   label = "-",                  menu = "Zoom Out", w = 34, compact_w = 28, half = 2, repeat_every = CFG.zoom_delay, tip = "Zoom out." },
          }
       },
    }
@@ -201,7 +201,7 @@ local function group_widths(g, mode)
 end
 
 function CommandArea.update()
-   Theme.set_font(gui.buttonFontSize)
+   Theme.set_font(CFG.button_font_size)
    local sections, specs = groups(), {}
    for i, g in ipairs(sections) do
       g.nat_w, g.nat_widths = group_widths(g, NATURAL)
@@ -214,8 +214,8 @@ function CommandArea.update()
       sections = sections,
    }
    -- the smallest window the Setlist is usable in: the first section and the indicator, and the header, two rows and the panel
-   gui.minWindowW = Layout.min_width(specs, MARGIN, OVERFLOW_W)
-   gui.minWindowH = gui.titleHeight + 2 * gui.lineHeight + gui.ctrlPanelSize
+   lay.min_window_w = Layout.min_width(specs, MARGIN, OVERFLOW_W)
+   lay.min_window_h = CFG.title_height + 2 * lay.line_height + CFG.ctrl_panel_size
 end
 
 -- The commands of the sections that were left out, as a menu at the mouse.
@@ -236,25 +236,25 @@ function CommandArea.draw()
    if not current then CommandArea.update() end
    local plan = current.plan
    local mode = plan.compact and COMPACT or NATURAL
-   Theme.set_font(gui.buttonFontSize)
+   Theme.set_font(CFG.button_font_size)
 
-   local top = gfx.h - gui.ctrlPanelSize + gui.statusH + gui.cmdPad
-   local y, h = top + gui.headingH, gui.buttonH
+   local top = gfx.h - CFG.ctrl_panel_size + CFG.status_h + CFG.cmd_pad
+   local y, h = top + CFG.heading_h, CFG.button_h
    for k, place in ipairs(plan.items) do
       local g = current.sections[place.index]
       local widths = plan.compact and g.cmp_widths or g.nat_widths
-      Widgets.text(g.title, place.x, top, place.w, gui.headingH - 4, { size = 15, color = "muted", align = "center" })
+      Widgets.text(g.title, place.x, top, place.w, CFG.heading_h - 4, { size = 15, color = "muted", align = "center" })
       local bx = place.x
       for _, it in ipairs(g.items) do
          local opts = {
-            size = gui.buttonFontSize,
+            size = CFG.button_font_size,
             disabled = it.disabled,
             repeat_every = it.repeat_every,
             tooltip = it.tip
          }
          local by, bh, bw = y, h, widths[it]
          if it.half then
-            opts.size = gui.buttonFontSize * 0.9
+            opts.size = CFG.button_font_size * 0.9
             bh = math.floor((h - 2) / 2)
             if it.half == 2 then by = y + bh + 2 end
             bx = it.half == 2 and (bx - bw - mode.gap) or bx -- the lower half goes under the upper one
@@ -265,15 +265,15 @@ function CommandArea.draw()
       if g.align ~= "right" and k < #plan.items then
          -- divider at the end of the section, in the middle of the gap
          Theme.set("line")
-         gfx.rect(place.x + place.w + mode.group_gap / 2, top, 1, gui.headingH + h)
+         gfx.rect(place.x + place.w + mode.group_gap / 2, top, 1, CFG.heading_h + h)
       end
    end
 
    -- sections that did not fit: a line at the right edge of the bar; a click opens their commands as a menu
    if #plan.hidden > 0 then
-      local x, ih = plan.overflow_x, gui.headingH + h
+      local x, ih = plan.overflow_x, CFG.heading_h + h
       local over, _, clicked = Widgets.button_state(State.win.mouse, x, top, OVERFLOW_W, ih)
-      gfx.set(table.unpack(gui.activeProjHighlight)) -- (the colour of the active project: bright)
+      gfx.set(table.unpack(CFG.active_proj_highlight)) -- (the colour of the active project: bright)
       gfx.a = over and 1 or 0.95
       gfx.rect(x + OVERFLOW_W - 6, top + 4, 5, ih - 8)
       Widgets.tooltip(State.win, "More buttons are hidden: widen the window,\nor click here for a menu with them.", x, top, OVERFLOW_W, ih)
@@ -290,7 +290,7 @@ function CommandArea.draw_compact()
    local over, _, clicked = Widgets.button_state(State.win.mouse, x, y, size, size)
    Theme.set("background", 0.9)
    gfx.rect(x, y, size, size)
-   gfx.set(table.unpack(gui.activeProjHighlight)) -- (the colour of the active project: bright)
+   gfx.set(table.unpack(CFG.active_proj_highlight)) -- (the colour of the active project: bright)
    gfx.a = over and 1 or 0.95
    for i = 0, 2 do gfx.rect(x + 4 + i * 6, y + size - 9, 3, 3) end -- "..."
    Widgets.tooltip(State.win, "The window is too small for the buttons.\nClick for a menu with them.", x, y, size, size)
@@ -312,14 +312,14 @@ function CommandArea.draw_status()
       -- flush with the left edge of the window and the full height of the status line, red like a missing entry in the list
       local label = missing .. " Missing"
       local w = gfx.measurestr(label) + 24 -- (the chip is flush with the edge and always whole: it is short)
-      local cy, ch = gfx.h - gui.ctrlPanelSize + 1, gui.statusH - 1
+      local cy, ch = gfx.h - CFG.ctrl_panel_size + 1, CFG.status_h - 1
       local over, _, clicked = Widgets.button_state(State.win.mouse, 0, cy, w, ch)
-      local red = gui.entryHighlights[Data.ENTRY.MISSING]
+      local red = CFG.entry_highlights[Data.ENTRY.MISSING]
       Widgets.box(0, cy, w, ch, red, over and 0.85 or red[4])
       Widgets.text(label, 0, cy, w, ch, { size = 15, align = "center" })
       if clicked then
-         gui.scrollOffset = math.max(0, math.min(gui.maxScroll, (List.layout(State.list))[first] or 0))
-         gui.followPending = false
+         view.scroll_offset = math.max(0, math.min(lay.max_scroll, (List.layout(State.list))[first] or 0))
+         view.follow_pending = false
       end
       x = w + 6
    end
@@ -327,9 +327,9 @@ function CommandArea.draw_status()
    if State.notice then
       -- a chip like the missing one, in the accent colour; a click restores the previous list (when it was kept) or
       -- dismisses the notice. A refused restore (something plays) keeps it.
-      local room = gfx.w - (gui.statusRightW or 200) - 24 - x -- the right part holds the counts and the time
+      local room = gfx.w - (lay.status_right_w or 200) - 24 - x -- the right part holds the counts and the time
       if room < 80 then return end
-      local cy, ch = gfx.h - gui.ctrlPanelSize + 1, gui.statusH - 1
+      local cy, ch = gfx.h - CFG.ctrl_panel_size + 1, CFG.status_h - 1
       local text = Widgets.fit_text(State.notice, room - 24, function(s) return (gfx.measurestr(s)) end)
       local w = gfx.measurestr(text) + 24
       local over, _, clicked = Widgets.button_state(State.win.mouse, x, cy, w, ch)

@@ -30,11 +30,11 @@
 --   points to the current project when it is out of view.
 --
 --   Parts (all in Setlist/): Data.lua (entries, text format, files), Sync.lua (REAPER's project tabs), Actions.lua (what
---   the user can do to the list), State.lua (what the parts share), UI/ (ViewState, List, ListInput, CommandArea, Ask).
+--   the user can do to the list), State.lua (what the parts share), UI/ (ViewState, ListLayout, List, ListInput, CommandArea, Ask), Tests/.
 --   This script is the glue: Init, and Frame once per frame.
 
-local scriptDir = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or ""
-package.path = scriptDir .. "../lib/?.lua;" .. scriptDir .. "../?.lua;" .. package.path -- the package's lib folder, and Setlist.* modules
+local script_dir = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or ""
+package.path = script_dir .. "../lib/?.lua;" .. script_dir .. "../?.lua;" .. package.path -- the package's lib folder, and Setlist.* modules
 
 -- Shared SiSt-Live libraries (part of the package: Setup and the self-test check that they are all there)
 local Log = require("SiSt-Live_Log")
@@ -48,17 +48,18 @@ local State = require("Setlist.State")
 local ProjectInfo = require("Setlist.ProjectInfo")
 local Actions = require("Setlist.Actions")
 local ViewState = require("Setlist.UI.ViewState")
+local ListLayout = require("Setlist.UI.ListLayout")
 local List = require("Setlist.UI.List")
 local ListInput = require("Setlist.UI.ListInput")
 local CommandArea = require("Setlist.UI.CommandArea")
 local Ask = require("Setlist.UI.Ask")
 local DuplicateWarning = require("Setlist.UI.DuplicateWarning")
 
-local gui = ViewState.gui
+local view, drag, input, lay = ViewState.view, ViewState.drag, ViewState.input, ViewState.lay
 
 local WINDOW_TITLE = "SiSt-Live Setlist"
 
-local pollMode = nil -- returned by Mode.watch() in Init; call once per frame to pick up mode changes
+local poll_mode = nil -- returned by Mode.watch() in Init; call once per frame to pick up mode changes
 
 --------------------------
 ------- MAIN FLOW --------
@@ -91,18 +92,18 @@ local function is_rendering()
    return reaper.EnumProjects(0x40000000) ~= nil
 end
 
-local wasRendering = false
+local was_rendering = false
 
 -- Window callbacks (see lib/Gui/Window.lua). Zoom and scroll position are saved with the window.
 local function on_window_open(w)
-   gui.zoomLevel = w.state.zoomLevel or 0
-   gui.scrollOffset = w.state.scrollOffset or 0
-   List.apply_zoom(gui.zoomLevel) -- needs the open window (font metrics)
+   view.zoom_level = w.state.zoomLevel or 0
+   view.scroll_offset = w.state.scrollOffset or 0
+   List.apply_zoom(view.zoom_level) -- needs the open window (font metrics)
 end
 
 local function on_window_close(w)
-   w.state.zoomLevel = gui.zoomLevel
-   w.state.scrollOffset = gui.scrollOffset
+   w.state.zoomLevel = view.zoom_level
+   w.state.scrollOffset = view.scroll_offset
    if not State.quit then Data.save_current_list(State.list) end
 end
 
@@ -117,13 +118,13 @@ local function frame(w)
       State.current_proj = reaper.EnumProjects(-1)
 
       State.tab_count = Sync.open_count()
-      pollMode() -- picks up edit/show changes (callback errors are logged, not thrown)
-      w:set_mode(gui.mode) -- the window saves / restores its position per mode
+      poll_mode() -- picks up edit/show changes (callback errors are logged, not thrown)
+      w:set_mode(view.mode) -- the window saves / restores its position per mode
 
       local rendering = is_rendering()
-      if rendering ~= wasRendering then
+      if rendering ~= was_rendering then
          log:info("rendering %s: project check %s", rendering and "started" or "finished", rendering and "paused" or "resumed")
-         wasRendering = rendering
+         was_rendering = rendering
       end
 
       -- The open tabs are the truth: whatever happens to them in REAPER (opened, closed, moved), the list follows.
@@ -136,79 +137,66 @@ local function frame(w)
          modal = State.dialog ~= nil
       end
 
-      -- Mouse state: read once per frame by the Window (w.mouse), copied into the names used below
+      -- Mouse state: kept by the Window (w.mouse). What is left here is the Setlist's own bookkeeping of a press.
       local m = w.mouse
-      gui.prevRightClick, gui.rightClick = gui.rightClick, m.right
-      gui.prevLeftClick, gui.leftClick = gui.leftClick, m.left
-      if m.left_pressed or m.right_pressed then
-         gui.lastClickDownPos = { x = m.press_x, y = m.press_y }
-         if m.left_pressed then log:debug("Left click detected at position: " .. m.press_x .. "," .. m.press_y) end
+      if m.left_pressed then log:debug("Left click detected at position: " .. m.press_x .. "," .. m.press_y) end
+      if not m.left then
+         input.left_click_handled = false
+         input.press_on_indicator = false
       end
-
-      if not gui.leftClick then
-         gui.leftClickHandled = false
-         gui.pressOnIndicator = false
-      end
-      if not gui.rightClick then gui.rightClickHandled = false end
-      if not m.left and not m.right then gui.draggingScroll = false end
+      if not m.right then input.right_click_handled = false end
+      if not m.left and not m.right then drag.scrolling = false end
 
 
-      -- The layout for this window width. Below the smallest size the command bar is usable in (a small docked window, or a
-      -- floating one made small): the list stays, the status line and command bar are left out, and a sign in the corner
-      -- opens the commands as a menu (CommandArea.draw_compact). A question stays visible.
+      -- The sizes for this window width and zoom (see UI/ListLayout.lua). The command bar's own layout comes first: it
+      -- tells how small the window may get before the command bar is replaced by a menu.
       CommandArea.update()
-      gui.small = gfx.w < gui.minWindowW or gfx.h < gui.minWindowH
-      gui.panelH = gui.small and 0 or gui.ctrlPanelSize
-
-      gui.listH = gfx.h - gui.panelH - gui.titleHeight
-      gui.numVisibleEntries = math.max(1, math.floor(gui.listH / gui.lineHeight))
-      gui.maxScroll = List.manual_max_scroll(State.list, gui.numVisibleEntries)
-      gui.followMaxScroll = List.max_scroll(State.list, gui.numVisibleEntries)
+      ListLayout.update()
 
       -- Follow-scroll: whenever the active project changes (tab click in REAPER or click in the list),
       -- bring the previous project to the top row. Not when a project was clicked in the list in edit mode.
       if State.last_project ~= State.current_proj then
-         local fromList = State.current_proj ~= nil and State.current_proj == gui.listClickTarget
-         if List.should_follow(gui.mode, fromList) then
-            gui.followPending = true
+         local from_list = State.current_proj ~= nil and State.current_proj == view.list_click_target
+         if List.should_follow(view.mode, from_list) then
+            view.follow_pending = true
          else
             log:debug("Project selected in the list in edit mode: not scrolling")
          end
       end
-      gui.listClickTarget = nil -- set by ListInput.handle_click at the end of a frame, used once in the next one
+      view.list_click_target = nil -- set by ListInput.handle_click at the end of a frame, used once in the next one
 
-      local _, totalRows = List.layout(State.list)
-      if totalRows <= gui.numVisibleEntries and gui.scrollOffset ~= 0 then
-         gui.scrollOffset = 0
+      local _, total_rows = List.layout(State.list)
+      if total_rows <= lay.visible_rows and view.scroll_offset ~= 0 then
+         view.scroll_offset = 0
          log:debug("Scroll set to 0 because all entries are visible.")
-      elseif gui.followPending and not (gui.leftClick or gui.draggingEntry or gui.draggingScroll) then
-         local listIdx = Data.tab_to_list_idx(State.list, Sync.tab_index(State.current_proj) or -1)
-         local offset = List.follow_scroll_offset(State.list, listIdx, gui.followMaxScroll)
+      elseif view.follow_pending and not (m.left or drag.active or drag.scrolling) then
+         local list_idx = Data.tab_to_list_idx(State.list, Sync.tab_index(State.current_proj) or -1)
+         local offset = List.follow_scroll_offset(State.list, list_idx, lay.follow_max_scroll)
          if offset then
-            gui.scrollOffset = offset
-            log:debug("Following current project (" .. gui.mode .. " mode): listIdx " .. listIdx .. ", scrollOffset = " ..
-               offset .. " (follow range " .. gui.followMaxScroll .. ", manual range " .. gui.maxScroll .. ", " ..
-               gui.numVisibleEntries .. " rows visible, zoom " .. gui.zoomLevel .. ")")
+            view.scroll_offset = offset
+            log:debug("Following current project (" .. view.mode .. " mode): list_idx " .. list_idx .. ", scroll_offset = " ..
+               offset .. " (follow range " .. lay.follow_max_scroll .. ", manual range " .. lay.max_scroll .. ", " ..
+               lay.visible_rows .. " rows visible, zoom " .. view.zoom_level .. ")")
          end
-         gui.followPending = false
+         view.follow_pending = false
       end
 
       -- Any user scrolling, click or drag ends a running scroll animation right away
-      local userInput = m.wheel ~= 0 or gui.leftClick or gui.rightClick or gui.draggingEntry or
-          gui.draggingScroll
+      local user_input = m.wheel ~= 0 or m.left or m.right or drag.active or
+          drag.scrolling
 
       if not modal then
          ListInput.handle_scrollbar()
          ListInput.handle_wheel()
       end
-      List.update_display_offset(userInput)
+      List.update_display_offset(user_input)
       List.draw()
       List.draw_scrollbar()
       if not modal then ListInput.handle_edit() end
 
       if modal then
          -- the question is drawn over the list; nothing else reacts until it is answered
-         gui.draggingEntry, gui.dropIdx = false, nil
+         drag.active, drag.drop_idx = false, nil
          if State.dialog then
             local choice = State.dialog.draw(w)
             if choice then State.dialog.on_choice(choice) end
@@ -219,15 +207,15 @@ local function frame(w)
 
       List.offscreen_indicator()
 
-      if gui.small then
+      if lay.small then
          CommandArea.draw_compact()
       else
          CommandArea.draw()
          CommandArea.draw_status()
       end
-      Theme.set_font(gui.entryTextSize)
+      Theme.set_font(lay.entry_text_size)
 
-      if not gui.edit then -- (while a text entry is edited, the mouse belongs to its field)
+      if not input.edit then -- (while a text entry is edited, the mouse belongs to its field)
          ListInput.handle_click()
          ListInput.handle_drag()
       end
@@ -241,23 +229,23 @@ local function init()
    Theme.TITLE_FACE = Theme.reaper_font_face("lb_font") -- and the medium one for its title
 
    -- Starts following the shared edit/show mode (Mode.watch calls on_shared_mode_changed once right away).
-   pollMode = Mode.watch(ViewState.on_shared_mode_changed) -- sets the list mode before the first frame
-   log:info("following the shared mode - list mode: %s", gui.mode)
+   poll_mode = Mode.watch(ViewState.on_shared_mode_changed) -- sets the list mode before the first frame
+   log:info("following the shared mode - list mode: %s", view.mode)
 
    State.tab_count = Sync.open_count()
 
-   local testMode = Data.is_test_mode()
-   local firstRun = Data.is_first_run()
-   local current, invalid, currentStr, source = {}, {}, "", ""
+   local test_mode = Data.is_test_mode()
+   local first_run = Data.is_first_run()
+   local current, invalid, current_str, source = {}, {}, "", ""
 
-   if testMode then
+   if test_mode then
       log:info("test mode (live test): the saved lists are neither read nor written")
    else
-      current, invalid, currentStr, source = Data.read_list_file(Data.current_list_path(), "current list", Sync.find_open_tab)
+      current, invalid, current_str, source = Data.read_list_file(Data.current_list_path(), "current list", Sync.find_open_tab)
    end
 
-   local action = Data.startup_action(next(current) ~= nil, firstRun, testMode)
-   log:info("start: " .. action .. (firstRun and " (first start since REAPER was opened)" or ""))
+   local action = Data.startup_action(next(current) ~= nil, first_run, test_mode)
+   log:info("start: " .. action .. (first_run and " (first start since REAPER was opened)" or ""))
 
    Data.mark_session_started()
 
@@ -272,13 +260,13 @@ local function init()
       end
       local changes = Sync.change_summary(Sync.diff(current, tabs))
       if changes then
-         State.notice_restorable = Data.archive_list(currentStr)
+         State.notice_restorable = Data.archive_list(current_str)
          State.notice = "Projects Changed While Setlist Closed: " .. changes
       end
       if next(State.list) then Actions.follow_tabs() end
-   elseif firstRun and next(current) then
+   elseif first_run and next(current) then
       -- a new REAPER run starts from the open projects; the list of the last run stays available as the autosave
-      Data.archive_list(currentStr)
+      Data.archive_list(current_str)
    end
 
    if not next(State.list) then
@@ -296,7 +284,7 @@ local function init()
       on_close = on_window_close, -- also writes the current list
       debug = function(text) log:debug("window: %s", text) end,
    }
-   State.win:set_mode(gui.mode) -- open at this mode's position
+   State.win:set_mode(view.mode) -- open at this mode's position
 
    if State.quit then return false end -- a startup dialog was cancelled: don't open the window
 
@@ -304,16 +292,17 @@ local function init()
    return true
 end
 
--- Test-only switch (see lib/SelfTest.lua): hand over the tests instead of opening the window
+-- Test-only switch (see lib/SelfTest.lua): hand over the tests (Setlist/Tests/) instead of opening the window
 if rawget(_G, "SELFTEST_COLLECT") then
    for _, part in ipairs({
-      { "Setlist data", "Setlist/Data.lua", Data },
-      { "Setlist sync", "Setlist/Sync.lua", Sync },
-      { "Setlist view state", "Setlist/UI/ViewState.lua", ViewState },
-      { "Setlist list", "Setlist/UI/List.lua", List },
-      { "Setlist project info", "Setlist/ProjectInfo.lua", ProjectInfo },
+      { "Setlist data", "Setlist/Data.lua", "Data" },
+      { "Setlist sync", "Setlist/Sync.lua", "Sync" },
+      { "Setlist view state", "Setlist/UI/ViewState.lua", "ViewState" },
+      { "Setlist list", "Setlist/UI/List.lua", "List" },
+      { "Setlist list layout", "Setlist/UI/ListLayout.lua", "ListLayout" },
+      { "Setlist project info", "Setlist/ProjectInfo.lua", "ProjectInfo" },
    }) do
-      table.insert(SELFTEST_COLLECT, { name = part[1], file = part[2], self_test = part[3].self_test })
+      table.insert(SELFTEST_COLLECT, { name = part[1], file = part[2], self_test = require("Setlist.Tests." .. part[3] .. "_test").self_test })
    end
 else
    init()

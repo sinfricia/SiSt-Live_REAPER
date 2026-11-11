@@ -66,7 +66,7 @@ Mouse state (win.mouse), updated at the start of every frame:
   x, y                      position
   left, right               button is held
   left_pressed/_released    true only in the frame where it happened (same for right_)
-  press_x, press_y          where the last press started (used for clicks and drags)
+  press_x, press_y          where the last press started (used for clicks and drags); 0, 0 before the first press
   wheel                     wheel movement this frame (positive = up)
   ctrl, shift, alt          modifier keys
 
@@ -242,7 +242,7 @@ function Window.next_mouse(prev, cap, x, y, wheel)
     left_pressed = left and not prev.left, left_released = prev.left and not left,
     right_pressed = right and not prev.right, right_released = prev.right and not right,
     ctrl = cap & 4 ~= 0, shift = cap & 8 ~= 0, alt = cap & 16 ~= 0,
-    press_x = prev.press_x, press_y = prev.press_y,
+    press_x = prev.press_x or 0, press_y = prev.press_y or 0, -- (0,0 until the first press)
   }
   if m.left_pressed or m.right_pressed then m.press_x, m.press_y = x, y end
   return m

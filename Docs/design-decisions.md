@@ -131,7 +131,8 @@ only ever run on demand; lookups only where unavoidable.
   against the real REAPER) and diagnostics (information rows).
 - Module name SelfTest (not Test): says what it does, less likely to clash on Lua's shared module path.
 - One test list file per package (SiSt-Live: lib/SiSt-Live_Tests.lua), works from anywhere.
-- Component scripts keep their tests inside the script, collected through the test-only switch SELFTEST_COLLECT
+- Component scripts hand over their tests through the test-only switch SELFTEST_COLLECT. The Setlist's tests are in
+  Setlist/Tests/<Module>_test.lua, not in the production files (2026-11-11); a test reaches only what its module exports
   (stopgap: testable logic moves into lib modules over time).
 - Registry (automatic, self-healing): ExtState "SiSt Libraries" / "test_registry", name=path|..., paths relative
   to the resource folder; packages register themselves when their scripts run. ExtState over a file: per machine
@@ -263,6 +264,16 @@ only ever run on demand; lookups only where unavoidable.
 - Loop chips come from the Setlist reading the project's markers (cached, read again when the project's state change count
   or its number of markers and regions changes), not from the Region Looper: the Looper would have to scan every open
   project the same way, and the chips would depend on it running. The Looper only publishes the loop pass while looping.
+
+## Setlist view state (2026-11-11)
+
+- No shared `gui` table. The mouse is only `State.win.mouse` (the Window keeps it). The sizes of a frame are `lay`, set
+  by `List.apply_zoom` (zoomed sizes) and `ListLayout.update` (once per frame); the state is `view` (zoom, scroll,
+  mode, selection), `drag` and `input`; constants are `CFG`. Each group says what it is about, so a reader can tell a
+  constant from state from a layout number.
+- snake_case in all Setlist code. Stored names stay as they are: the window's `zoomLevel` / `scrollOffset` in ExtState,
+  and `listIdx` / `tabIdx` in lists saved by older versions (ignored on load, never written).
+- A linked (indented) text entry's divider line is indented too when the entry below is also an indented one (Sina, 2026-11-11).
 
 ## Naming (2026-10-19)
 

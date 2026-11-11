@@ -130,7 +130,9 @@ Setlist/
   Sync.lua                REAPER's project tabs (read, move, close) and the pure comparison of list and tabs
   Actions.lua             what the user can do to the list (insert, rename, drop, reset, restore, load, save, ...)
   State.lua               what the parts share: the list, the window, tab count, current project
-  UI/ViewState.lua        look (sizes, colors) and view state (zoom, scrolling, dragging), the list mode
+  UI/ViewState.lua        look (CFG: sizes, colors) and state in four groups: view (zoom, scroll, mode, selection), drag,
+                          input (click bookkeeping, text edit) and lay (this frame's sizes)
+  UI/ListLayout.lua       the sizes of this frame (small window, list height, visible rows), worked out once per frame
   UI/List.lua             drawing the list, scrollbar, header, status line; scroll and zoom math
   UI/ListInput.lua        gestures in the list: clicks, drag and drop, entry menus, wheel, scrollbar
   UI/CommandArea.lua      the buttons below the list, the notice after a restart
@@ -138,8 +140,8 @@ Setlist/
   UI/DuplicateWarning.lua the warning for a project open in more than one tab
   UI/Ask.lua              every dialog (questions, text input, colors, file dialogs)
 ```
-Tests live with the code they test (`self_test()` per module, registered by the main script); `SelfTest.cases()` gives
-the `t.eq` / `t.ok` style.
+Tests are in Setlist/Tests/<Module>_test.lua (each returns `Tests.self_test`), registered by the main script's
+SELFTEST_COLLECT block; `SelfTest.cases()` gives the `t.eq` / `t.ok` style.
 
 ## Open points
 
@@ -160,7 +162,7 @@ One rule: a part has a natural size and gives way in a fixed order; the pure par
   go first, then the length, so about five characters of the name stay. Text entries wrap (already).
 - **Header:** a long title or setlist name gets "...". **Tooltips** wrap to the window width. **Load dialog list:** the type
   column goes below 420 px, the notes below 300 px, texts get "...". The dialogs themselves already adapt (`Dialog.layout`).
-- **Smallest size** (`gui.minWindowW / H`: the List section compact plus margins and the indicator; header, two rows and the
+- **Smallest size** (`lay.min_window_w / h`: the List section compact plus margins and the indicator; header, two rows and the
   panel, about 240 x 250 px): the window is not forced to it (a script that made a floating
   window bigger again flickered; removed 2026-11-11). Below it (docked or floating) the list is still drawn, the status line and the command bar are left out, and a "..." sign in the bottom
   right corner opens all commands as a menu. A question is drawn over the list as always (Sina, 2026-11-11, replaces

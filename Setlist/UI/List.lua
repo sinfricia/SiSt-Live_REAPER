@@ -7,14 +7,14 @@ current project), finding the entry under the mouse, and the pure scroll and zoo
 looks things up; changing the list is Actions.lua, reading gestures is ListInput.lua.
 
   draw()                                    the whole window except the command area
-  entry_at_mouse(atLastClickPos)            the entry under the mouse and its list position
+  entry_at_mouse(at_last_click_pos)            the entry under the mouse and its list position
   update_display_offset(snap), offscreen_indicator(), draw_scrollbar()
   compute_zoom(level), apply_zoom(level), zoom_step(step)
   follow_scroll_offset, max_scroll, manual_max_scroll, apply_manual_scroll, should_follow, find_project_row,
   offscreen_direction, smooth_step          pure scroll math (tested)
   pad_number, mouse_in_rect, point_in_rect  small helpers
 
-Self test: List.self_test() returns a list of { name, ok }.
+Tests: Setlist/Tests/List_test.lua.
 ]]
 
 local Log = require("SiSt-Live_Log")
@@ -28,8 +28,12 @@ local State = require("Setlist.State")
 local ProjectInfo = require("Setlist.ProjectInfo")
 local ViewState = require("Setlist.UI.ViewState")
 
-local gui, CFG, MODE = ViewState.gui, ViewState.CFG, ViewState.MODE
+local view, drag, input, lay, CFG, MODE = ViewState.view, ViewState.drag, ViewState.input, ViewState.lay, ViewState.CFG, ViewState.MODE
 local ENTRY = Data.ENTRY
+
+-- Marks while the rows of one frame are drawn (List.draw resets them): the current project was drawn, and the entry
+-- after it is the "next project".
+local mark = { current_drawn = false, next_pending = false }
 
 local TITLE = "Setlist"
 
@@ -59,7 +63,7 @@ local END_CHIPS = {
 local LOOP_CHIP = { letter = "L", color = { 1.0, 0.82, 0.05 }, tip = "This project has one or more loop regions." }
 
 local function chip_width(chip)
-   Theme.set_font(gui.projLenTextSize)
+   Theme.set_font(lay.proj_len_text_size)
    local lw, lh = gfx.measurestr(chip.letter)
    local as = chip.arrow and math.max(3, math.floor(lh / 4)) or 0
    return 6 + (chip.arrow and (as * 2 + 4) or 0) + lw + 6
@@ -67,12 +71,12 @@ end
 
 -- Draws the chip of a row (a down arrow and the letter); returns its left edge. right: where the chip ends.
 local function draw_chip(chip, right, y)
-   Theme.set_font(gui.projLenTextSize) -- the size of the length next to it
+   Theme.set_font(lay.proj_len_text_size) -- the size of the length next to it
    local lw, lh = gfx.measurestr(chip.letter or "M")
    local h = lh + 4
    local as = chip.arrow and math.max(3, math.floor(lh / 4)) or 0
    local w = 6 + (chip.arrow and (as * 2 + 4) or 0) + lw + 6
-   local x, cy = right - w, y + math.floor((gui.lineHeight - h) / 2)
+   local x, cy = right - w, y + math.floor((lay.line_height - h) / 2)
    Widgets.box(x, cy, w, h, chip.color, 0.4)
    gfx.set(chip.color[1], chip.color[2], chip.color[3], 1)
    gfx.rect(x, cy, w, 1)
@@ -90,14 +94,14 @@ local function draw_chip(chip, right, y)
    return x
 end
 
-function List.pad_number(numberStr, numDigits)
-   local paddingLength = numDigits - #numberStr
+function List.pad_number(number_str, num_digits)
+   local padding_length = num_digits - #number_str
 
-   if paddingLength > 0 then
-      numberStr = string.rep("0", paddingLength) .. numberStr
+   if padding_length > 0 then
+      number_str = string.rep("0", padding_length) .. number_str
    end
 
-   return numberStr
+   return number_str
 end
 
 function List.mouse_in_rect(x, y, w, h)
@@ -109,36 +113,36 @@ function List.point_in_rect(x, y, w, h, px, py)
 end
 
 -- Pure calculation: sizes for a zoom level, always derived from the base sizes in CFG.
--- Returns clampedLevel, entryTextSize, projLenTextSize, linePadding
+-- Returns clamped_level, entry_text_size, proj_len_text_size, line_padding
 function List.compute_zoom(level)
-   level = clamp(level, CFG.minZoomLevel, CFG.maxZoomLevel)
+   level = clamp(level, CFG.min_zoom_level, CFG.max_zoom_level)
    return level,
-       CFG.entryTextSize + level,
-       CFG.projLenTextSize + level / 2,
-       CFG.linePadding + level * 2
+       CFG.entry_text_size + level,
+       CFG.proj_len_text_size + level / 2,
+       CFG.line_padding + level * 2
 end
 
 function List.apply_zoom(level)
-   gui.zoomLevel, gui.entryTextSize, gui.projLenTextSize, gui.linePadding = List.compute_zoom(level)
-   gui.textEntrySize = math.max(8, math.floor(gui.entryTextSize * gui.textEntryScale + 0.5))
+   view.zoom_level, lay.entry_text_size, lay.proj_len_text_size, lay.line_padding = List.compute_zoom(level)
+   lay.text_entry_size = math.max(8, math.floor(lay.entry_text_size * CFG.text_entry_scale + 0.5))
 
-   Theme.set_font(gui.entryTextSize)
-   gui.lineHeight = gfx.texth + gui.linePadding
+   Theme.set_font(lay.entry_text_size)
+   lay.line_height = gfx.texth + lay.line_padding
    -- the lines of a text entry are closer together than the rows of the list (the text stays together)
-   Theme.set_font(gui.textEntrySize)
-   gui.textLineStep = math.min(gui.lineHeight, math.floor(gfx.texth + math.max(2, gui.linePadding / 4)))
-   Theme.set_font(gui.entryTextSize)
-   log:debug("Zoom level is now " .. gui.zoomLevel)
+   Theme.set_font(lay.text_entry_size)
+   lay.text_line_step = math.min(lay.line_height, math.floor(gfx.texth + math.max(2, lay.line_padding / 4)))
+   Theme.set_font(lay.entry_text_size)
+   log:debug("Zoom level is now " .. view.zoom_level)
 end
 
 -- Zoom one step in (+1) or out (-1). Alt resets the zoom.
 -- Holding a zoom button repeats this (Widgets.button repeat_every), so there is no throttling here.
 function List.zoom_step(step)
-   if State.win.mouse.alt then List.apply_zoom(0) else List.apply_zoom(gui.zoomLevel + step) end
+   if State.win.mouse.alt then List.apply_zoom(0) else List.apply_zoom(view.zoom_level + step) end
 end
 
 -- Rows -------------------------------------------------------------------------------------------------------------
--- The list is measured in rows (one row = gui.lineHeight): an entry is one row high, except a text entry with several
+-- The list is measured in rows (one row = lay.line_height): an entry is one row high, except a text entry with several
 -- lines, which is as many rows high as it has lines. Scrolling, the scrollbar and the visible count are in rows.
 
 --- Pure. Breaks the text into lines that are at most max_w wide (see Widgets.wrap_text).
@@ -149,9 +153,9 @@ local number_cache = {}
 --- The width of the number column: where a project has its number (and a text entry its "--"), the name starts after it.
 function List.number_width()
    local digits = math.floor(math.log(math.max(State.tab_count or 1, 1), 10) + 1)
-   local key = digits .. "|" .. gui.entryTextSize
+   local key = digits .. "|" .. lay.entry_text_size
    if number_cache.key ~= key then
-      Theme.set_font(gui.entryTextSize)
+      Theme.set_font(lay.entry_text_size)
       number_cache.key, number_cache.width = key, gfx.measurestr(string.rep("0", digits) .. ". ")
    end
    return number_cache.width
@@ -159,13 +163,13 @@ end
 
 --- How far a text entry is indented: a linked one starts where the project names start, so its "--" is lined up with them.
 function List.link_indent(entry)
-   if entry.type == ENTRY.TEXT and gui.linkRows and gui.linkRows[entry] then return List.number_width() end
+   if entry.type == ENTRY.TEXT and lay.link_rows and lay.link_rows[entry] then return List.number_width() end
    return 0
 end
 
 --- The height of a text entry's extra lines as a fraction of a row (they are closer together than rows).
 function List.row_gap()
-   if gui.textLineStep and gui.lineHeight and gui.lineHeight > 0 then return gui.textLineStep / gui.lineHeight end
+   if lay.text_line_step and lay.line_height and lay.line_height > 0 then return lay.text_line_step / lay.line_height end
    return 1
 end
 
@@ -176,31 +180,31 @@ local wrap_cache = setmetatable({}, { __mode = "k" }) -- text entry -> { key, li
 --- breaks of the text count.
 function List.text_lines(entry)
    local name = entry.name or ""
-   if gfx.w == nil or gfx.w <= 0 or gui.small then return List.wrap_text(name, math.huge, function() return 0 end), 0 end
+   if gfx.w == nil or gfx.w <= 0 or lay.small then return List.wrap_text(name, math.huge, function() return 0 end), 0 end
 
-   local numW = List.number_width()
+   local num_w = List.number_width()
    local indent = List.link_indent(entry)
-   local key = table.concat({ name, tostring(gui.small), gfx.w, gui.scrollW, gui.entryTextSize, gui.textEntrySize, numW, indent }, "|")
+   local key = table.concat({ name, tostring(lay.small), gfx.w, CFG.scroll_w, lay.entry_text_size, lay.text_entry_size, num_w, indent }, "|")
    local c = wrap_cache[entry]
-   if c and c.key == key then return c.lines, numW end
+   if c and c.key == key then return c.lines, num_w end
 
-   Theme.set_font(gui.textEntrySize)
-   local avail = gfx.w - gui.scrollW - (gui.leftBorder + gui.entryIndent + indent) - numW - 12
+   Theme.set_font(lay.text_entry_size)
+   local avail = gfx.w - CFG.scroll_w - (CFG.left_border + CFG.entry_indent + indent) - num_w - 12
    local lines = List.wrap_text(name, math.max(avail, 20), function(s) return (gfx.measurestr(s)) end)
    wrap_cache[entry] = { key = key, lines = lines }
-   return lines, numW
+   return lines, num_w
 end
 
 --- How many rows high an entry is.
 function List.entry_rows(entry)
    if type(entry) == "table" and entry.type == ENTRY.TEXT and entry.name then
       local n
-      if gui.edit and gui.edit.entry == entry then -- the entry grows while it is edited: the lines the field drew last
-         local lines = gui.edit.field.vlines
+      if input.edit and input.edit.entry == entry then -- the entry grows while it is edited: the lines the field drew last
+         local lines = input.edit.field.vlines
          if lines then
             n = #lines
          else
-            local _, breaks = gui.edit.field.text:gsub("\n", "")
+            local _, breaks = input.edit.field.text:gsub("\n", "")
             n = breaks + 1
          end
       else
@@ -231,36 +235,36 @@ function List.entry_at_row(list, row)
    return #list
 end
 
-function List.entry_at_mouse(findAtLastClickPos)
-   if not findAtLastClickPos then
-      findAtLastClickPos = false
+function List.entry_at_mouse(find_at_last_click_pos)
+   if not find_at_last_click_pos then
+      find_at_last_click_pos = false
    end
 
-   local mouseIsOverList = State.win.mouse.y < gui.listH + gui.titleHeight - gui.dragThreshold and
-       State.win.mouse.y > gui.titleHeight and State.win.mouse.x < gfx.w - gui.scrollW and State.win.mouse.x > gui.leftBorder
+   local mouse_is_over_list = State.win.mouse.y < lay.list_h + CFG.title_height - CFG.drag_threshold and
+       State.win.mouse.y > CFG.title_height and State.win.mouse.x < gfx.w - CFG.scroll_w and State.win.mouse.x > CFG.left_border
 
-   if not mouseIsOverList then
+   if not mouse_is_over_list then
       return nil, nil
    end
 
    local starts = List.layout(State.list)
    for i, entry in ipairs(State.list) do
-      local h = List.entry_rows(entry) * gui.lineHeight
-      local yStart = gui.titleHeight + (starts[i] - gui.scrollOffset) * gui.lineHeight
-      local yEnd = yStart + h
+      local h = List.entry_rows(entry) * lay.line_height
+      local y_start = CFG.title_height + (starts[i] - view.scroll_offset) * lay.line_height
+      local y_end = y_start + h
 
-      if yEnd > gui.titleHeight then -- (not scrolled out at the top)
-         if yEnd > gui.listH + gui.titleHeight then return nil, nil end -- only return entry if fully visible.
+      if y_end > CFG.title_height then -- (not scrolled out at the top)
+         if y_end > lay.list_h + CFG.title_height then return nil, nil end -- only return entry if fully visible.
 
-         local mouseIsOverEntry
-         if findAtLastClickPos then
-            mouseIsOverEntry = List.point_in_rect(0, yStart, gfx.w - gui.scrollW, h,
-               gui.lastClickDownPos.x, gui.lastClickDownPos.y)
+         local mouse_is_over_entry
+         if find_at_last_click_pos then
+            mouse_is_over_entry = List.point_in_rect(0, y_start, gfx.w - CFG.scroll_w, h,
+               State.win.mouse.press_x, State.win.mouse.press_y)
          else
-            mouseIsOverEntry = List.mouse_in_rect(0, yStart, gfx.w - gui.scrollW, h)
+            mouse_is_over_entry = List.mouse_in_rect(0, y_start, gfx.w - CFG.scroll_w, h)
          end
 
-         if mouseIsOverEntry then return entry, i end
+         if mouse_is_over_entry then return entry, i end
       end
    end
 
@@ -269,56 +273,56 @@ end
 
 -- Pure function. Returns the scroll offset (0-based, in rows scrolled out at the top) for the current project: the top row
 -- is the first of the text entries right above it that do not belong to the project before (link "above"), or the project
--- itself when there are none. The previous project is not shown. Returns nil if currentListIdx isn't in the list.
-function List.follow_scroll_offset(list, currentListIdx, maxScroll)
-   if not currentListIdx or currentListIdx < 1 or currentListIdx > #list then return nil end
+-- itself when there are none. The previous project is not shown. Returns nil if current_list_idx isn't in the list.
+function List.follow_scroll_offset(list, current_list_idx, max_scroll)
+   if not current_list_idx or current_list_idx < 1 or current_list_idx > #list then return nil end
 
    local starts = List.layout(list)
-   local first = currentListIdx
-   for i = currentListIdx - 1, 1, -1 do
+   local first = current_list_idx
+   for i = current_list_idx - 1, 1, -1 do
       if list[i].type ~= ENTRY.TEXT or list[i].link == "above" then break end
       first = i
    end
    local offset = starts[first]
 
-   return clamp(offset, 0, maxScroll or offset)
+   return clamp(offset, 0, max_scroll or offset)
 end
 
 -- Pure function. How far the list may scroll. Normally that's "last entry at the bottom", but to let
 -- the top row of the LAST project (its text entries above it) reach the top the range is extended (the rows below stay empty).
 -- A list that fits completely never scrolls.
-function List.max_scroll(list, numVisibleEntries)
-   local _, totalRows = List.layout(list)
-   local naturalMax = math.max(0, totalRows - numVisibleEntries)
-   if naturalMax == 0 then return 0 end
+function List.max_scroll(list, num_visible_entries)
+   local _, total_rows = List.layout(list)
+   local natural_max = math.max(0, total_rows - num_visible_entries)
+   if natural_max == 0 then return 0 end
 
    for i = #list, 1, -1 do
       if list[i].type == ENTRY.PROJECT then
-         return math.max(naturalMax, List.follow_scroll_offset(list, i) or 0) -- no maxScroll given: unclamped
+         return math.max(natural_max, List.follow_scroll_offset(list, i) or 0) -- no max_scroll given: unclamped
       end
    end
-   return naturalMax
+   return natural_max
 end
 
 -- Pure function. The range for manual scrolling (wheel, scrollbar, dragging): the last entry may reach the
 -- bottom of the window, but there is never an empty row below it.
-function List.manual_max_scroll(list, numVisibleEntries)
-   local _, totalRows = List.layout(list)
-   return math.max(0, totalRows - numVisibleEntries)
+function List.manual_max_scroll(list, num_visible_entries)
+   local _, total_rows = List.layout(list)
+   return math.max(0, total_rows - num_visible_entries)
 end
 
 -- Pure function. Scrolls by delta rows (positive = down) in the manual range.
 -- Smooth after a follow-scroll: if the view currently shows empty rows beyond the manual range, scrolling up
 -- moves it from where it is (it does not snap back first), and scrolling down simply stays where it is.
-function List.apply_manual_scroll(offset, delta, manualMax)
-   local upperLimit = math.max(manualMax, offset)
-   return clamp(offset + delta, 0, upperLimit)
+function List.apply_manual_scroll(offset, delta, manual_max)
+   local upper_limit = math.max(manual_max, offset)
+   return clamp(offset + delta, 0, upper_limit)
 end
 
 -- Pure function. Should a change of the current project scroll the list? Always, except when the project was
 -- selected by clicking it in the list while in edit mode: the list must not move away from where you work.
-function List.should_follow(mode, changedFromList)
-   return not (mode == MODE.EDIT and changedFromList)
+function List.should_follow(mode, changed_from_list)
+   return not (mode == MODE.EDIT and changed_from_list)
 end
 
 -- Pure function. List index of the first project entry for proj, or nil.
@@ -330,146 +334,150 @@ function List.find_project_row(list, proj)
    return nil
 end
 
--- Pure function. Where the entry at listIdx is relative to the visible rows:
--- -1 = scrolled out at the top, 1 = below the visible rows, 0 = visible (or listIdx unknown).
-function List.offscreen_direction(list, listIdx, scrollOffset, numVisible)
-   if not listIdx then return 0 end
+-- Pure function. Where the entry at list_idx is relative to the visible rows:
+-- -1 = scrolled out at the top, 1 = below the visible rows, 0 = visible (or list_idx unknown).
+function List.offscreen_direction(list, list_idx, scrollOffset, num_visible)
+   if not list_idx then return 0 end
    local starts = List.layout(list)
-   local first = starts[listIdx]
+   local first = starts[list_idx]
    if not first then return 0 end
-   if first + List.entry_rows(list[listIdx]) <= scrollOffset then return -1 end
-   if first >= scrollOffset + numVisible then return 1 end
+   if first + List.entry_rows(list[list_idx]) <= scrollOffset then return -1 end
+   if first >= scrollOffset + num_visible then return 1 end
    return 0
 end
 
 -- Pure function. One animation step of the drawn scroll position towards the target (exponential ease-out).
--- No current value or timeConstant <= 0 jumps straight to the target. Snaps once closer than 0.01 rows.
-function List.smooth_step(current, target, dt, timeConstant)
-   if current == nil or not timeConstant or timeConstant <= 0 then return target end
+-- No current value or time_constant <= 0 jumps straight to the target. Snaps once closer than 0.01 rows.
+function List.smooth_step(current, target, dt, time_constant)
+   if current == nil or not time_constant or time_constant <= 0 then return target end
    if dt <= 0 then return current end
 
-   local new = current + (target - current) * (1 - math.exp(-dt / timeConstant))
+   local new = current + (target - current) * (1 - math.exp(-dt / time_constant))
    if math.abs(target - new) < 0.01 then return target end
    return new
 end
 
--- Moves the drawn scroll position towards gui.scrollOffset. snap = true ends any animation at once
+-- Moves the drawn scroll position towards view.scroll_offset. snap = true ends any animation at once
 -- (used whenever the user scrolls, clicks or drags, so what is drawn is always what the mouse hits).
 function List.update_display_offset(snap)
    local now = reaper.time_precise()
-   local dt = math.min(now - (gui.lastAnimTime or now), 0.1) -- a stalled frame doesn't skip the animation
-   gui.lastAnimTime = now
+   local dt = math.min(now - (view.last_anim_time or now), 0.1) -- a stalled frame doesn't skip the animation
+   view.last_anim_time = now
 
    if snap then
-      gui.displayOffset = gui.scrollOffset
+      view.display_offset = view.scroll_offset
    else
-      gui.displayOffset = List.smooth_step(gui.displayOffset, gui.scrollOffset, dt, gui.smoothScrollTime)
+      view.display_offset = List.smooth_step(view.display_offset, view.scroll_offset, dt, CFG.smooth_scroll_time)
    end
 end
 
 -- Draws an arrow at the top or bottom edge of the list when the current project is out of view.
 -- Clicking it jumps back to the current project (in both modes).
 function List.offscreen_indicator()
-   if gui.draggingEntry then return end
+   if drag.active then return end
 
    local dir = List.offscreen_direction(State.list, List.find_project_row(State.list, State.current_proj),
-      gui.scrollOffset, gui.numVisibleEntries)
+      view.scroll_offset, lay.visible_rows)
    if dir == 0 then return end
 
-   local w, h = gui.offscreenIndicatorW, gui.offscreenIndicatorH
-   local x = math.floor((gfx.w - gui.scrollW - w) / 2)
-   local listBottom = gui.titleHeight + gui.listH -- (the list reaches the panel; a last row may be cut)
-   local y = dir < 0 and gui.titleHeight + 2 or listBottom - h - 2
+   local w, h = CFG.offscreen_indicator_w, CFG.offscreen_indicator_h
+   local x = math.floor((gfx.w - CFG.scroll_w - w) / 2)
+   local list_bottom = CFG.title_height + lay.list_h -- (the list reaches the panel; a last row may be cut)
+   local y = dir < 0 and CFG.title_height + 2 or list_bottom - h - 2
 
-   gfx.set(table.unpack(gui.offscreenIndicatorColor))
+   gfx.set(table.unpack(CFG.offscreen_indicator_color))
    gfx.rect(x, y, w, h, true)
 
-   local cx, triW, triH = x + w / 2, h * 0.9, h * 0.5
-   local top = y + (h - triH) / 2
+   local cx, tri_w, tri_h = x + w / 2, h * 0.9, h * 0.5
+   local top = y + (h - tri_h) / 2
    gfx.set(0, 0, 0, 0.8)
    if dir < 0 then
-      gfx.triangle(cx - triW / 2, top + triH, cx + triW / 2, top + triH, cx, top)
+      gfx.triangle(cx - tri_w / 2, top + tri_h, cx + tri_w / 2, top + tri_h, cx, top)
    else
-      gfx.triangle(cx - triW / 2, top, cx + triW / 2, top, cx, top + triH)
+      gfx.triangle(cx - tri_w / 2, top, cx + tri_w / 2, top, cx, top + tri_h)
    end
 
-   local pressedNow = gui.leftClick and not gui.prevLeftClick
-   if pressedNow and not gui.leftClickHandled
-       and List.point_in_rect(x, y, w, h, gui.lastClickDownPos.x, gui.lastClickDownPos.y) then
-      gui.leftClickHandled = true -- the entry under the arrow is not selected
-      gui.pressOnIndicator = true -- and not dragged
-      gui.followPending = true    -- the jump happens when the mouse is released
+   local pressed_now = State.win.mouse.left_pressed
+   if pressed_now and not input.left_click_handled
+       and List.point_in_rect(x, y, w, h, State.win.mouse.press_x, State.win.mouse.press_y) then
+      input.left_click_handled = true -- the entry under the arrow is not selected
+      input.press_on_indicator = true -- and not dragged
+      view.follow_pending = true    -- the jump happens when the mouse is released
       log:debug("Off-screen arrow clicked: jumping to the current project")
    end
 end
 
 function List.draw_scrollbar()
-   local _, setlistLength = List.layout(State.list) -- rows
-   if setlistLength <= gui.numVisibleEntries then return end
+   local _, setlist_length = List.layout(State.list) -- rows
+   if setlist_length <= lay.visible_rows then return end
 
-   local scrollTrackHeight = gui.listH + gui.titleHeight
-   gui.scrollH = scrollTrackHeight * (gui.numVisibleEntries / setlistLength)
-   local offset = gui.displayOffset or gui.scrollOffset
-   gui.scrollY = clamp(offset / math.max(gui.maxScroll, 1), 0, 1) * (scrollTrackHeight - gui.scrollH)
+   local scroll_track_height = lay.list_h + CFG.title_height
+   lay.scroll_h = scroll_track_height * (lay.visible_rows / setlist_length)
+   local offset = view.display_offset or view.scroll_offset
+   lay.scroll_y = clamp(offset / math.max(lay.max_scroll, 1), 0, 1) * (scroll_track_height - lay.scroll_h)
 
    -- Scroll Track
    Theme.set("button")
-   gfx.rect(gfx.w - gui.scrollW, 0, gui.scrollW, scrollTrackHeight)
+   gfx.rect(gfx.w - CFG.scroll_w, 0, CFG.scroll_w, scroll_track_height)
 
    -- Scroll Thumb
    Theme.set("muted")
-   gfx.rect(gfx.w - gui.scrollW + 2, gui.scrollY, gui.scrollW - 4, gui.scrollH)
+   gfx.rect(gfx.w - CFG.scroll_w + 2, lay.scroll_y, CFG.scroll_w - 4, lay.scroll_h)
 
-   return gui.scrollY, gui.scrollH
+   return lay.scroll_y, lay.scroll_h
 end
 
-local function draw_entry(y, entry)
+-- next_entry: the entry below this one (nil for the last): the divider under a linked text entry that is followed by another
+-- one starts at the same indent, so the linked entries stay together.
+local function draw_entry(y, entry, next_entry)
    if not entry or not y then return end
    local highlight = entry.highlight
-   local h = List.entry_rows(entry) * gui.lineHeight -- (a text entry with several lines is several rows high)
+   local h = List.entry_rows(entry) * lay.line_height -- (a text entry with several lines is several rows high)
    local indent = List.link_indent(entry)
 
    -- the current project and the one after it are found whatever else the row is (a dragged current project must not
    -- lose the "next project" mark of the entry after it)
    local is_current, is_next = false, false
-   if entry.proj ~= nil and entry.proj == State.current_proj and not gui.currProjDrawn then
+   if entry.proj ~= nil and entry.proj == State.current_proj and not mark.current_drawn then
       is_current = true
-      gui.currProjDrawn = true
-      gui.isNextProj = true
-   elseif gui.isNextProj and entry.type == ENTRY.PROJECT then
+      mark.current_drawn = true
+      mark.next_pending = true
+   elseif mark.next_pending and entry.type == ENTRY.PROJECT then
       is_next = true
-      gui.isNextProj = false
+      mark.next_pending = false
    end
 
-   if gui.draggingEntry and gui.dragThreshReached and
-       (entry.listIdx == gui.dragEntryListIdx or (gui.dragGroup and gui.selection[entry])) then
-      highlight = gui.dragHighlight
+   if drag.active and drag.threshold_reached and
+       (entry.list_idx == drag.list_idx or (drag.group and view.selection[entry])) then
+      highlight = CFG.drag_highlight
    elseif is_current then
-      highlight = gui.activeProjHighlight
+      highlight = CFG.active_proj_highlight
    elseif is_next then
-      highlight = gui.nextProjHighlight
+      highlight = CFG.next_proj_highlight
    end
 
-   highlight = highlight or gui.entryHighlights[entry.type]
+   highlight = highlight or CFG.entry_highlights[entry.type]
 
    if highlight then
       gfx.set(table.unpack(highlight))
-      gfx.rect(gui.leftBorder + indent, y + 2, gfx.w - gui.scrollW - indent, h - 4)
+      gfx.rect(CFG.left_border + indent, y + 2, gfx.w - CFG.scroll_w - indent, h - 4)
    end
 
-   if gui.selection[entry] then -- selected: a tint and a border in the accent colour
+   if view.selection[entry] then -- selected: a tint and a border in the accent colour
       Theme.set("accent", 0.2)
-      gfx.rect(gui.leftBorder + indent, y + 2, gfx.w - gui.scrollW - indent, h - 4)
+      gfx.rect(CFG.left_border + indent, y + 2, gfx.w - CFG.scroll_w - indent, h - 4)
       Theme.set("accent", 0.9)
-      gfx.rect(gui.leftBorder + indent, y + 2, gfx.w - gui.scrollW - indent, h - 4, false)
+      gfx.rect(CFG.left_border + indent, y + 2, gfx.w - CFG.scroll_w - indent, h - 4, false)
    end
 
    Theme.set("line")
-   gfx.line(gui.leftBorder, y + h, gfx.w - gui.scrollW, y + h - 1)
+   local divider_x = CFG.left_border
+   if indent > 0 and next_entry and List.link_indent(next_entry) > 0 then divider_x = CFG.left_border + indent end
+   gfx.line(divider_x, y + h, gfx.w - CFG.scroll_w, y + h - 1)
 
    -- a line at the left edge joins a project with the text entries linked to it; at the first and the last entry of the
    -- group it turns into a hook towards the entry (the linked text entries are indented, the hook reaches their edge)
-   local link = gui.linkRows and gui.linkRows[entry]
+   local link = lay.link_rows and lay.link_rows[entry]
    if link then
       Theme.set("accent", 0.9)
       local mid = y + h / 2
@@ -477,7 +485,7 @@ local function draw_entry(y, entry)
       local bottom = link.last and mid + 1 or y + h
       gfx.rect(1, top, 2, bottom - top)
       if link.first or link.last then
-         local reach = entry.type == ENTRY.TEXT and (gui.leftBorder + indent - 3) or 9
+         local reach = entry.type == ENTRY.TEXT and (CFG.left_border + indent - 3) or 9
          gfx.rect(1, mid - 1, math.max(4, reach - 1), 2)
       end
    end
@@ -486,16 +494,16 @@ local function draw_entry(y, entry)
    -- entries that are marked (a square in the colour of the border, white for the active project), the active project
    -- keeps no dot then
    do
-      local radius = gui.leftBorder / 2
+      local radius = CFG.left_border / 2
       -- centred on the left edge of the entry (after its indent), where the dot of the active project always was
-      local cx = gui.leftBorder + indent
+      local cx = CFG.left_border + indent
       local cy = y + h / 2 -- the vertical middle of the entry: where the link hook touches it
       local active = entry.proj ~= nil and entry.proj == State.current_proj
-      if gui.selection[entry] then
+      if view.selection[entry] then
          if active then Theme.set("text") else Theme.set("accent") end
-         local size = gui.leftBorder + 1
+         local size = CFG.left_border + 1
          gfx.rect(math.floor(cx - size / 2), math.floor(cy - size / 2), size, size)
-      elseif active and next(gui.selection) == nil then
+      elseif active and next(view.selection) == nil then
          Theme.set("text")
          gfx.circle(cx, cy, radius, true, true)
       end
@@ -507,137 +515,137 @@ local function draw_entry(y, entry)
 
    -------------------
    -- draw entry text
-   local textAlpha -- text uses the theme's text color, nil = not drawn
-   local entryStr
-   gfx.x = gui.leftBorder + gui.entryIndent
-   Theme.set_font(gui.entryTextSize)
+   local text_alpha -- text uses the theme's text color, nil = not drawn
+   local entry_str
+   gfx.x = CFG.left_border + CFG.entry_indent
+   Theme.set_font(lay.entry_text_size)
    if entry.type == ENTRY.PROJECT then
-      textAlpha = 1
-      local displayIdx = tostring(entry.tabIdx or entry.listIdx)
-      displayIdx = List.pad_number(displayIdx, math.floor(math.log(State.tab_count, 10) + 1)) .. ". "
+      text_alpha = 1
+      local display_idx = tostring(entry.tab_idx or entry.list_idx)
+      display_idx = List.pad_number(display_idx, math.floor(math.log(State.tab_count, 10) + 1)) .. ". "
 
       --draw selected project indicator
 
 
       -- (a tab closed a moment ago has a stale pointer until the list has followed the tabs)
-      local playState = entry.proj and reaper.ValidatePtr(entry.proj, "ReaProject*") and
+      local play_state = entry.proj and reaper.ValidatePtr(entry.proj, "ReaProject*") and
       reaper.GetPlayStateEx(entry.proj) or 0
-      if playState > 0 then
+      if play_state > 0 then
          -- draw pos indicator
-         local projLen = Sync.project_length(entry.proj)
+         local proj_len = Sync.project_length(entry.proj)
 
-         if projLen > 0 then -- no end marker = no length: no position to show
-            local playPos = reaper.GetPlayPositionEx(entry.proj)
-            local r, g, b, a = table.unpack(gui.playPosColor)
+         if proj_len > 0 then -- no end marker = no length: no position to show
+            local play_pos = reaper.GetPlayPositionEx(entry.proj)
+            local r, g, b, a = table.unpack(CFG.play_pos_color)
             gfx.set(r, g, b, a)
 
-            local x = (gfx.w - gui.scrollW - gui.entryIndent) * playPos / projLen + 5
-            gfx.rect(x, y, gui.leftBorder, gui.lineHeight)
+            local x = (gfx.w - CFG.scroll_w - CFG.entry_indent) * play_pos / proj_len + 5
+            gfx.rect(x, y, CFG.left_border, lay.line_height)
 
             a = 0.2
             gfx.set(r, g, b, a)
 
-            gfx.rect(gui.leftBorder, y, x, gui.lineHeight)
+            gfx.rect(CFG.left_border, y, x, lay.line_height)
          end
 
 
          -- draw project playstate indicator
-         local displayIdxWidth = gfx.measurestr(displayIdx)
+         local display_idx_width = gfx.measurestr(display_idx)
 
          local pass, passes, stopped = ProjectInfo.loop_pass(entry.proj)
-         if pass and (playState == 1 or playState == 5) then
+         if pass and (play_state == 1 or play_state == 5) then
             -- looping: "L2" in place of the symbol, yellow when playing (red when recording); "L3→" once the loop was
             -- stopped (the song moves on after this pass). The title starts after it, so a long label pushes it right.
-            local x0 = gui.leftBorder + gui.entryIndent
+            local x0 = CFG.left_border + CFG.entry_indent
             local label = stopped and "L →" or ("L" .. pass)
-            local color = playState == 5 and gui.transportColors[5] or { 1.0, 0.82, 0.05, 1 }
+            local color = play_state == 5 and CFG.transport_colors[5] or { 1.0, 0.82, 0.05, 1 }
             gfx.set(table.unpack(color))
-            local labelW, labelH = gfx.measurestr(label)
-            gfx.x, gfx.y = x0, y + (gui.lineHeight - labelH) / 2
+            local label_w, label_h = gfx.measurestr(label)
+            gfx.x, gfx.y = x0, y + (lay.line_height - label_h) / 2
             gfx.drawstr(label)
-            gfx.x = x0 + math.max(displayIdxWidth, labelW + 8)
-            displayIdx = ""
-         elseif playState == 1 then
-            gfx.x = gfx.x + displayIdxWidth
-            displayIdx = ""
-            gfx.set(table.unpack(gui.transportColors[playState]))
+            gfx.x = x0 + math.max(display_idx_width, label_w + 8)
+            display_idx = ""
+         elseif play_state == 1 then
+            gfx.x = gfx.x + display_idx_width
+            display_idx = ""
+            gfx.set(table.unpack(CFG.transport_colors[play_state]))
 
-            local triangleH = gui.lineHeight * 0.5
-            local triangleW = clamp(triangleH * 0.8, 0, displayIdxWidth * 0.8)
+            local triangle_h = lay.line_height * 0.5
+            local triangle_w = clamp(triangle_h * 0.8, 0, display_idx_width * 0.8)
 
-            local iconLRPadding = (displayIdxWidth - triangleW) / 2 - 5
-            local iconTopPadding = (gui.lineHeight - triangleH) / 2
+            local icon_lrpadding = (display_idx_width - triangle_w) / 2 - 5
+            local icon_top_padding = (lay.line_height - triangle_h) / 2
             gfx.triangle(
-               gui.leftBorder + gui.entryIndent + triangleW, y + gui.lineHeight / 2,
-               gui.leftBorder + gui.entryIndent + iconLRPadding, y + iconTopPadding,
-               gui.leftBorder + gui.entryIndent + iconLRPadding, y + iconTopPadding + triangleH)
-         elseif playState == 5 then
-            gfx.x = gfx.x + displayIdxWidth
-            displayIdx = ""
+               CFG.left_border + CFG.entry_indent + triangle_w, y + lay.line_height / 2,
+               CFG.left_border + CFG.entry_indent + icon_lrpadding, y + icon_top_padding,
+               CFG.left_border + CFG.entry_indent + icon_lrpadding, y + icon_top_padding + triangle_h)
+         elseif play_state == 5 then
+            gfx.x = gfx.x + display_idx_width
+            display_idx = ""
 
-            local iconRadius = clamp(gui.lineHeight * 0.5 / 2 - 2, 0, displayIdxWidth / 2 * 0.8)
+            local icon_radius = clamp(lay.line_height * 0.5 / 2 - 2, 0, display_idx_width / 2 * 0.8)
 
-            gfx.set(table.unpack(gui.transportColors[playState]))
-            gfx.circle(gui.leftBorder + gui.entryIndent + iconRadius, y + gui.lineHeight / 2, iconRadius, true,
+            gfx.set(table.unpack(CFG.transport_colors[play_state]))
+            gfx.circle(CFG.left_border + CFG.entry_indent + icon_radius, y + lay.line_height / 2, icon_radius, true,
                true)
          end
       end
-      entryStr = displayIdx .. (entry.name or "")
+      entry_str = display_idx .. (entry.name or "")
    elseif entry.type == ENTRY.TEXT then
       -- "--" where a project has its number, the text (a bit smaller) where the project names start, one row per line
-      local x0 = gui.leftBorder + gui.entryIndent + indent
-      local lines, numW = List.text_lines(entry)
-      local editing = gui.edit and gui.edit.entry == entry
-      if numW == 0 then
-         Theme.set_font(gui.entryTextSize)
-         numW = gfx.measurestr("00. ")
+      local x0 = CFG.left_border + CFG.entry_indent + indent
+      local lines, num_w = List.text_lines(entry)
+      local editing = input.edit and input.edit.entry == entry
+      if num_w == 0 then
+         Theme.set_font(lay.entry_text_size)
+         num_w = gfx.measurestr("00. ")
       end
-      Theme.set_font(gui.textEntrySize)
-      Theme.set("text", gui.textEntryAlpha)
-      local _, lineH = gfx.measurestr("Ag")
-      local step = gui.textLineStep or gui.lineHeight
-      local top = (gui.lineHeight - step) / 2 -- the lines are a block, centred in the entry
-      gfx.x, gfx.y = x0, y + top + (step - lineH) / 2
+      Theme.set_font(lay.text_entry_size)
+      Theme.set("text", CFG.text_entry_alpha)
+      local _, line_h = gfx.measurestr("Ag")
+      local step = lay.text_line_step or lay.line_height
+      local top = (lay.line_height - step) / 2 -- the lines are a block, centred in the entry
+      gfx.x, gfx.y = x0, y + top + (step - line_h) / 2
       gfx.drawstr("--")
       if editing then
          -- being edited: the text is a text field (ListInput.handle_edit acts on what happened)
-         gui.editEvent = TextField.draw(State.win, gui.edit.field, x0 + numW - TextField.PAD, y + 1,
-            gfx.w - gui.scrollW - (x0 + numW) + TextField.PAD - 4, h - 2,
-            { size = gui.textEntrySize, line_h = step, top_pad = top - 1 })
+         input.edit_event = TextField.draw(State.win, input.edit.field, x0 + num_w - TextField.PAD, y + 1,
+            gfx.w - CFG.scroll_w - (x0 + num_w) + TextField.PAD - 4, h - 2,
+            { size = lay.text_entry_size, line_h = step, top_pad = top - 1 })
       else
          for k, line in ipairs(lines) do
-            gfx.x, gfx.y = x0 + numW, y + top + (k - 1) * step + (step - lineH) / 2
-            if gui.small then -- (no wrapping in a small window: a line that is too long gets "...")
-               line = Widgets.fit_text(line, gfx.w - gui.scrollW - (x0 + numW) - gui.rowMargin, function(s) return (gfx.measurestr(s)) end)
+            gfx.x, gfx.y = x0 + num_w, y + top + (k - 1) * step + (step - line_h) / 2
+            if lay.small then -- (no wrapping in a small window: a line that is too long gets "...")
+               line = Widgets.fit_text(line, gfx.w - CFG.scroll_w - (x0 + num_w) - CFG.row_margin, function(s) return (gfx.measurestr(s)) end)
             end
             gfx.drawstr(line)
          end
       end
-      Theme.set_font(gui.entryTextSize)
-      entryStr = ""
+      Theme.set_font(lay.entry_text_size)
+      entry_str = ""
    elseif entry.type == ENTRY.MISSING then
-      textAlpha = gui.textEntryAlpha
-      entryStr = "?  " .. (entry.name or "")
+      text_alpha = CFG.text_entry_alpha
+      entry_str = "?  " .. (entry.name or "")
    end
 
 
    -- The right part of a project row (length, chips) is drawn first: the name gives way to it. In a narrow window the
    -- chips go first, then the length, so that at least about five characters of the name stay.
    local name_x = gfx.x
-   local name_right = gfx.w - gui.scrollW - gui.rowMargin
+   local name_right = gfx.w - CFG.scroll_w - CFG.row_margin
    if entry.type == ENTRY.PROJECT and not entry.name:find("_.*ROUTING") then
-      local min_name = gui.entryTextSize * (gui.small and 12 or 5) -- (small window: the length goes sooner)
-      local projLen = Sync.project_length(entry.proj)
-      local projLenStr = projLen > 0 and Data.format_time(projLen) or "--:--" -- no end marker: no length
+      local min_name = lay.entry_text_size * (lay.small and 12 or 5) -- (small window: the length goes sooner)
+      local proj_len = Sync.project_length(entry.proj)
+      local proj_len_str = proj_len > 0 and Data.format_time(proj_len) or "--:--" -- no end marker: no length
 
-      Theme.set_font(gui.projLenTextSize)
-      local strW, strH = gfx.measurestr(projLenStr)
-      local lengthX = name_right - strW
-      if lengthX - name_x >= min_name then
-         gfx.x, gfx.y = lengthX, y + (gui.lineHeight - strH) / 2
+      Theme.set_font(lay.proj_len_text_size)
+      local str_w, str_h = gfx.measurestr(proj_len_str)
+      local length_x = name_right - str_w
+      if length_x - name_x >= min_name then
+         gfx.x, gfx.y = length_x, y + (lay.line_height - str_h) / 2
          Theme.set("text") -- (not the colour of what was drawn before, e.g. the transport state)
-         gfx.drawstr(projLenStr)
-         name_right = lengthX - 10
+         gfx.drawstr(proj_len_str)
+         name_right = length_x - 10
 
          local chips = {}
          local end_chip = info and END_CHIPS[info.end_kind]
@@ -653,241 +661,92 @@ local function draw_entry(y, entry)
       end
    end
 
-   if textAlpha and entryStr ~= "" then
-      Theme.set_font(gui.entryTextSize)
-      entryStr = Widgets.fit_text(entryStr, name_right - name_x, function(s) return (gfx.measurestr(s)) end)
-      local _, strH = gfx.measurestr(entryStr)
-      gfx.x, gfx.y = name_x, y + (gui.lineHeight - strH) / 2
-      Theme.set("text", textAlpha)
-      gfx.drawstr(entryStr)
+   if text_alpha and entry_str ~= "" then
+      Theme.set_font(lay.entry_text_size)
+      entry_str = Widgets.fit_text(entry_str, name_right - name_x, function(s) return (gfx.measurestr(s)) end)
+      local _, str_h = gfx.measurestr(entry_str)
+      gfx.x, gfx.y = name_x, y + (lay.line_height - str_h) / 2
+      Theme.set("text", text_alpha)
+      gfx.drawstr(entry_str)
    end
 end
 
 function List.draw()
    gfx.clear = Theme.clear_color()
 
-   -- Draw Entries. While a follow-scroll animates, gui.displayOffset is fractional: the rows are drawn shifted
+   -- Draw Entries. While a follow-scroll animates, view.display_offset is fractional: the rows are drawn shifted
    -- by the fraction and one extra row is drawn. The backgrounds painted below hide what sticks out.
-   local offset = gui.displayOffset or gui.scrollOffset
+   local offset = view.display_offset or view.scroll_offset
    local starts = List.layout(State.list)
 
-   gui.linkRows = Data.linked_rows(State.list)
+   lay.link_rows = Data.linked_rows(State.list)
    for i, entry in ipairs(State.list) do
       -- (the entries that are at least partly in the view, plus one row below)
-      if starts[i] + List.entry_rows(entry) > offset and starts[i] <= offset + gui.numVisibleEntries then
-         draw_entry(gui.titleHeight + (starts[i] - offset) * gui.lineHeight, entry)
+      if starts[i] + List.entry_rows(entry) > offset and starts[i] <= offset + lay.visible_rows then
+         draw_entry(CFG.title_height + (starts[i] - offset) * lay.line_height, entry, State.list[i + 1])
       end
    end
 
-   gui.isNextProj = false
-   gui.currProjDrawn = false
+   mark.next_pending = false
+   mark.current_drawn = false
 
    Theme.set("background")
-   gfx.rect(0, 0, gfx.w, gui.titleHeight)
-   gfx.rect(0, gfx.h - gui.panelH, gfx.w, gui.panelH)
+   gfx.rect(0, 0, gfx.w, CFG.title_height)
+   gfx.rect(0, gfx.h - lay.panel_h, gfx.w, lay.panel_h)
 
-   -- Draw Title: the shared SiSt-Live header (teal, fixed size: gui.titleHeight - 12 = Widgets.HEADER_H)
-   local headerH = gui.titleHeight - 12
+   -- Draw Title: the shared SiSt-Live header (teal, fixed size: CFG.title_height - 12 = Widgets.HEADER_H)
+   local header_h = CFG.title_height - 12
    if State.job then
       -- loading: the header fills while the projects open
-      Widgets.header("", 3, 3, gfx.w - 6, headerH, "accent")
-      Widgets.box(3, 3, math.floor((gfx.w - 6) * State.job.done / math.max(1, State.job.total)), headerH, "accent", 0.6)
-      Widgets.text(string.format("Loading %d / %d", State.job.done, State.job.total), 3, 3, gfx.w - 6, headerH,
-         { size = Widgets.header_text_size(headerH), align = "center", color = "text", face = Theme.TITLE_FACE })
+      Widgets.header("", 3, 3, gfx.w - 6, header_h, "accent")
+      Widgets.box(3, 3, math.floor((gfx.w - 6) * State.job.done / math.max(1, State.job.total)), header_h, "accent", 0.6)
+      Widgets.text(string.format("Loading %d / %d", State.job.done, State.job.total), 3, 3, gfx.w - 6, header_h,
+         { size = Widgets.header_text_size(header_h), align = "center", color = "text", face = Theme.TITLE_FACE })
    else
       local title = State.name and ((State.modified and "*" or "") .. State.name) or TITLE
-      Widgets.header(title, 3, 3, gfx.w - 6, headerH, "accent")
+      Widgets.header(title, 3, 3, gfx.w - 6, header_h, "accent")
    end
 
    -- Status line under the list (what the list holds), a faint divider above it, the strong command bar divider below
-   -- (not in a window that is too small for the panel: gui.panelH is 0 then and the list takes the room)
-   if gui.panelH > 0 then
+   -- (not in a window that is too small for the panel: lay.panel_h is 0 then and the list takes the room)
+   if lay.panel_h > 0 then
    local projects = #Data.project_entries(State.list)
    local time = Data.format_time(State.total_time)
    local noun = projects .. (projects == 1 and " project" or " projects")
    Theme.set("line")
-   gfx.rect(0, gfx.h - gui.ctrlPanelSize, gfx.w, 1)
+   gfx.rect(0, gfx.h - CFG.ctrl_panel_size, gfx.w, 1)
    Theme.set_font(15)
    Theme.set("muted")
    -- the long form, then shorter ones: at most half the window, the left part (chips) gets the rest
    local function measure(s) return (gfx.measurestr(s)) end
    local str = Layout.pick({ noun .. "  |  " .. time .. " total", noun .. "  |  " .. time, projects .. "  |  " .. time, time },
-      math.floor(gfx.w / 2) - gui.rowMargin, measure)
-   gui.statusRightW = measure(str)
-   gfx.x, gfx.y = gfx.w - gui.rowMargin - gui.statusRightW, gfx.h - gui.ctrlPanelSize + 5
+      math.floor(gfx.w / 2) - CFG.row_margin, measure)
+   lay.status_right_w = measure(str)
+   gfx.x, gfx.y = gfx.w - CFG.row_margin - lay.status_right_w, gfx.h - CFG.ctrl_panel_size + 5
    gfx.drawstr(str)
 
    Theme.set("text", 0.6)
-   gfx.rect(0, gfx.h - gui.ctrlPanelSize + gui.statusH, gfx.w, gui.dropIndicatorThickness - 2)
+   gfx.rect(0, gfx.h - CFG.ctrl_panel_size + CFG.status_h, gfx.w, CFG.drop_indicator_thickness - 2)
    end
 
    -- Draw a line indicating where the project would be dropped if dragging
 
-   if gui.draggingEntry and gui.dropIdx and (gui.dropDir or gui.dragDirection) then
+   if drag.active and drag.drop_idx and (drag.drop_dir or drag.direction) then
       -- (a linking drop (Shift) onto the neighbour shows the line too, although the entry stays where it is)
-      local isDragFarEnough = gui.dropIdx ~= gui.dragEntryListIdx or gui.dropLink
+      local is_drag_far_enough = drag.drop_idx ~= drag.list_idx or drag.drop_link
 
-      if isDragFarEnough then
+      if is_drag_far_enough then
          -- at the end of the entry it is dropped after (dragged down), at the start of the one it is dropped before
          local starts = List.layout(State.list)
-         local row = starts[gui.dropIdx] or 0
-         if (gui.dropDir or gui.dragDirection) == 1 and gui.dropIdx > 1 then row = row + List.entry_rows(State.list[gui.dropIdx]) end
-         local dropYstart = gui.titleHeight + (row - gui.scrollOffset) * gui.lineHeight
+         local row = starts[drag.drop_idx] or 0
+         if (drag.drop_dir or drag.direction) == 1 and drag.drop_idx > 1 then row = row + List.entry_rows(State.list[drag.drop_idx]) end
+         local drop_ystart = CFG.title_height + (row - view.scroll_offset) * lay.line_height
 
          -- Draw drop indicator line as a rectangle (in the colour of the link line when the drop will link)
-         if gui.dropLink then Theme.set("accent", 0.95) else Theme.set("text", 0.6) end
-         gfx.rect(5, dropYstart - 2, gfx.w - 10, gui.dropIndicatorThickness)
+         if drag.drop_link then Theme.set("accent", 0.95) else Theme.set("text", 0.6) end
+         gfx.rect(5, drop_ystart - 2, gfx.w - 10, CFG.drop_indicator_thickness)
       end
    end
-end
-
--- Self test ---------------------------------------------------------------------------------------------------
-
-local SelfTest = require("SelfTest")
-local define, run = SelfTest.cases()
-
-define("Clamp / PadNumberStringWithZeroes", function(t)
-   t.eq(List.pad_number("123", 2), "123", "never truncated")
-end)
-
-define("Zoom calculation", function(t)
-   t.eq((List.compute_zoom(1000)), CFG.maxZoomLevel, "clamped to max")
-   t.eq((List.compute_zoom(-1000)), CFG.minZoomLevel, "clamped to min")
-end)
-
-define("GetFollowScrollOffset", function(t)
-   -- 1:T0 2:P1 3:T1 4:T2 5:P2 6:P3 7:T3
-   local list = {
-      { type = ENTRY.TEXT }, { type = ENTRY.PROJECT }, { type = ENTRY.TEXT }, { type = ENTRY.TEXT },
-      { type = ENTRY.PROJECT }, { type = ENTRY.PROJECT }, { type = ENTRY.TEXT },
-   }
-   t.eq(List.follow_scroll_offset(list, 2, 10), 0, "first project: nothing above it, start at the top")
-   t.eq(List.follow_scroll_offset(list, 5, 10), 2,
-      "the free text entries above the project are at the top, the previous project is not shown")
-   t.eq(List.follow_scroll_offset(list, 6, 10), 5, "no text entries above: the project itself is in the top row")
-   t.eq(List.follow_scroll_offset(list, 6, 3), 3, "clamped to maxScroll near the end of the list")
-   t.eq(List.follow_scroll_offset({ { type = ENTRY.PROJECT }, { type = ENTRY.TEXT, link = "above" }, { type = ENTRY.TEXT },
-      { type = ENTRY.TEXT, link = "below" }, { type = ENTRY.PROJECT } }, 5, 10), 2,
-      "text entries linked to the project above stay out, the free one and the one linked below are shown")
-   t.eq(List.follow_scroll_offset(list, 0, 10), nil, "idx 0 (tab not in list)")
-   t.eq(List.follow_scroll_offset(list, 8, 10), nil, "idx past the end")
-   t.eq(List.follow_scroll_offset({ { type = ENTRY.TEXT }, { type = ENTRY.PROJECT } }, 2, 0), 0,
-      "short list: maxScroll 0")
-end)
-
-define("GetMaxScroll", function(t)
-   local function projects(n)
-      local l = {}
-      for i = 1, n do l[i] = { type = ENTRY.PROJECT } end
-      return l
-   end
-   t.eq(List.max_scroll(projects(5), 10), 0, "list that fits never scrolls")
-   t.eq(List.max_scroll(projects(20), 9), 19, "20 projects: the last project (idx 20) can reach the top row")
-   t.eq(List.max_scroll(projects(12), 10), 11, "list only 2 longer than the window still scrolls far enough")
-   local withTexts = projects(3)
-   for i = 4, 9 do withTexts[i] = { type = ENTRY.TEXT } end
-   t.eq(List.max_scroll(withTexts, 4), 5, "trailing text entries: normal range is enough")
-   t.eq(List.max_scroll({}, 5), 0, "empty list")
-end)
-
-define("Manual scrolling range", function(t)
-   t.eq(List.manual_max_scroll({ 1, 2, 3, 4, 5 }, 3), 2, "last entry at the bottom")
-   t.eq(List.manual_max_scroll({ 1, 2 }, 5), 0, "fits: no scrolling")
-   t.eq(List.manual_max_scroll({ 1, { type = ENTRY.TEXT, name = "a\nb\nc" }, 3 }, 3), 2, "a three-line text entry counts as three rows")
-
-   t.eq(List.apply_manual_scroll(3, 1, 8), 4, "normal scroll down")
-   t.eq(List.apply_manual_scroll(3, -5, 8), 0, "clamped at the top")
-   t.eq(List.apply_manual_scroll(7, 4, 8), 8, "clamped at the manual maximum")
-   -- view was left beyond the manual range by the follow-scroll (empty rows showing)
-   t.eq(List.apply_manual_scroll(18, -1, 11), 17, "scrolling up starts from where the view is: smooth, no snap")
-   t.eq(List.apply_manual_scroll(18, 1, 11), 18, "scrolling down does not go further")
-   t.eq(List.apply_manual_scroll(13, -2, 11), 11, "comes back into the manual range step by step")
-   t.eq(List.apply_manual_scroll(11, 1, 11), 11, "manual maximum is a hard stop once reached")
-end)
-
-define("ShouldFollowProjectChange", function(t)
-   t.ok(List.should_follow(MODE.SHOW, false), "show mode, tab changed in REAPER")
-   t.ok(List.should_follow(MODE.SHOW, true), "show mode, clicked in the list")
-   t.ok(List.should_follow(MODE.EDIT, false), "edit mode, tab changed in REAPER")
-   t.ok(not List.should_follow(MODE.EDIT, true), "edit mode, clicked in the list: list stays")
-end)
-
-define("FindProjListIdx / GetOffscreenDirection", function(t)
-   local list = {
-      { type = ENTRY.TEXT,    proj = "a" }, { type = ENTRY.PROJECT, proj = "a" }, { type = ENTRY.TEXT },
-      { type = ENTRY.PROJECT, proj = "b" }, { type = ENTRY.PROJECT, proj = "a" },
-   }
-   t.eq(List.find_project_row(list, "a"), 2, "first project entry, text entries ignored")
-   t.eq(List.find_project_row(list, "zzz"), nil, "not in list")
-   t.eq(List.find_project_row(list, nil), nil, "nil project")
-
-   -- rows 6..10 visible (scrollOffset 5, 5 rows)
-   local rows = {}
-   for i = 1, 12 do rows[i] = { type = ENTRY.PROJECT } end
-   t.eq(List.offscreen_direction(rows, 5, 5, 5), -1, "just above")
-   t.eq(List.offscreen_direction(rows, 6, 5, 5), 0, "first visible row")
-   t.eq(List.offscreen_direction(rows, 10, 5, 5), 0, "last visible row")
-   t.eq(List.offscreen_direction(rows, 11, 5, 5), 1, "just below")
-   t.eq(List.offscreen_direction(rows, nil, 5, 5), 0, "unknown project: no arrow")
-   rows[5] = { type = ENTRY.TEXT, name = "one\ntwo\nthree" } -- rows 4..6 (0-based)
-   t.eq(List.offscreen_direction(rows, 5, 5, 5), 0, "a tall entry that is partly in view counts as visible")
-   t.eq(List.offscreen_direction(rows, 5, 7, 5), -1, "...and is gone once its last row is above")
-end)
-
-define("wrap_text", function(t)
-   local function m(s) return #s * 10 end -- every character 10 wide
-   t.eq(List.wrap_text("one two three", 1000, m), { "one two three" }, "fits: one line")
-   t.eq(List.wrap_text("one two three", 80, m), { "one two", "three" }, "breaks at a space")
-   t.eq(List.wrap_text("a\nb", 1000, m), { "a", "b" }, "line breaks stay")
-   t.eq(List.wrap_text("", 100, m), { "" }, "empty text: one empty line")
-   t.eq(List.wrap_text("abcdefghij", 40, m), { "abcd", "efgh", "ij" }, "a word wider than the line is cut")
-   t.eq(List.wrap_text("ab cdefghij", 40, m), { "ab", "cdef", "ghij" }, "a long word starts on a new line, then is cut")
-   t.eq(List.wrap_text("a  b", 1000, m), { "a  b" }, "double spaces are kept when it fits")
-   t.eq(List.wrap_text("x\n\ny", 1000, m), { "x", "", "y" }, "empty lines stay")
-end)
-
-define("Rows of multi-line entries", function(t)
-   local saved_step = gui.textLineStep
-   gui.textLineStep = nil -- (no window: a line is a whole row)
-   local list = { { type = ENTRY.PROJECT }, { type = ENTRY.TEXT, name = "a\nb" }, { type = ENTRY.TEXT, name = "x" },
-      { type = ENTRY.TEXT, name = "1\n2\n3" }, { type = ENTRY.PROJECT } }
-   t.eq({ List.entry_rows(list[1]), List.entry_rows(list[2]), List.entry_rows(list[4]) }, { 1, 2, 3 }, "rows per entry")
-   t.eq({ List.layout(list) }, { { 0, 1, 3, 4, 7 }, 8 }, "where the entries start and the total")
-   t.eq({ List.entry_at_row(list, 0), List.entry_at_row(list, 2), List.entry_at_row(list, 3), List.entry_at_row(list, 6),
-      List.entry_at_row(list, 7), List.entry_at_row(list, 99) }, { 1, 2, 3, 4, 5, 5 }, "the entry at a row")
-   t.eq(List.follow_scroll_offset({ { type = ENTRY.PROJECT }, { type = ENTRY.TEXT, name = "a\nb" }, { type = ENTRY.PROJECT },
-      { type = ENTRY.PROJECT } }, 4, 100), 4, "follow-scroll counts rows: the last project starts at row 4")
-   gui.textLineStep = saved_step
-end)
-
-define("Closer lines in text entries", function(t)
-   local saved_step, saved_h = gui.textLineStep, gui.lineHeight
-   gui.textLineStep, gui.lineHeight = 30, 50
-   t.eq(List.entry_rows({ type = ENTRY.TEXT, name = "a" }), 1, "one line: one row")
-   t.eq(List.entry_rows({ type = ENTRY.TEXT, name = "a\nb\nc" }), 1 + 2 * 0.6, "more lines: each adds 30/50 of a row")
-   t.eq({ List.layout({ { type = ENTRY.TEXT, name = "a\nb" }, { type = ENTRY.PROJECT } }) }, { { 0, 1.6 }, 2.6 },
-      "the next entry starts after the tall one")
-   gui.textLineStep, gui.lineHeight = saved_step, saved_h
-end)
-
-define("StepSmoothScroll", function(t)
-   t.eq(List.smooth_step(nil, 7, 0.016, 0.08), 7, "first frame jumps")
-   t.eq(List.smooth_step(0, 7, 0.016, 0), 7, "time constant 0 disables the animation")
-   t.eq(List.smooth_step(3, 7, 0, 0.08), 3, "no time passed: no movement")
-   local v = List.smooth_step(0, 10, 0.016, 0.08)
-   t.ok(v > 0 and v < 10, "moves towards the target without reaching it in one frame")
-   local x = 0
-   for _ = 1, 120 do x = List.smooth_step(x, 10, 1 / 60, 0.08) end
-   t.eq(x, 10, "settles exactly on the target within two seconds")
-   t.eq(List.smooth_step(9.995, 10, 0.016, 0.08), 10, "snaps when closer than 0.01 rows")
-end)
-
-function List.self_test()
-   return run(function(go)
-      Log.set_sink(function() end) -- the code under test logs: keep the console quiet
-      go()
-      Log.set_sink(nil)
-   end)
 end
 
 return List

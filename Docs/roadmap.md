@@ -7,17 +7,9 @@ What's still to do. Reasons and rules: Docs/design-decisions.md. Finished work: 
 
 - Done: step -1, step 0, step 1, step 1b, step 2, step 2b, step 3a, step 3 (2026-11-10, last part: simplify the
   live test; see completed tasks), step 4 (the Setlist: 4b, 4c, then the redesign 4a, 2026-11-11), step 4d (review fixes,
-  2026-11-11).
-- Next: step 4e (Setlist cleanup), then step 5.
+  2026-11-11), step 4e (Setlist cleanup, 2026-11-11).
+- Next: step 5.
 - Bug fix 2026-11-10: Start Show "No" now switches recording off (see completed tasks).
-
-## Step 4e: Setlist cleanup (review round 2026-11-11)
-
-No behaviour change; the Setlist code gets easier to read and change.
-- Split the shared `gui` table (86 fields): mouse state only from Window's `w.mouse`, layout numbers from one
-  per-frame layout function, real state (scroll, drag, selection, zoom) in ViewState.
-- One naming style (snake_case) in the Setlist code.
-- Tests out of the production files (e.g. Setlist/Data.lua) into their own files.
 
 ## Step 5: General repo and SiSt-Local
 

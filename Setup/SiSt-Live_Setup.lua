@@ -63,10 +63,17 @@
 --   [nomain] ../Setlist/UI/ViewState.lua
 --   [nomain] ../Setlist/UI/Ask.lua
 --   [nomain] ../Setlist/UI/List.lua
+--   [nomain] ../Setlist/UI/ListLayout.lua
 --   [nomain] ../Setlist/UI/ListInput.lua
 --   [nomain] ../Setlist/UI/CommandArea.lua
 --   [nomain] ../Setlist/UI/LoadDialog.lua
 --   [nomain] ../Setlist/UI/DuplicateWarning.lua
+--   [nomain] ../Setlist/Tests/Data_test.lua
+--   [nomain] ../Setlist/Tests/Sync_test.lua
+--   [nomain] ../Setlist/Tests/ViewState_test.lua
+--   [nomain] ../Setlist/Tests/List_test.lua
+--   [nomain] ../Setlist/Tests/ListLayout_test.lua
+--   [nomain] ../Setlist/Tests/ProjectInfo_test.lua
 --   [main] ../Status Display/SiSt-Live_Status Display.lua
 --   [main] ../Toolbar/SiSt-Live_Toolbar.lua
 --   [main] ../Transport/SiSt-Live_Clear time selection and loop points.lua

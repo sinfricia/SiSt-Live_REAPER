@@ -47,9 +47,9 @@ function Ask.color()
 end
 
 function Ask.parent_dir()
-   local projectPath = reaper.GetProjectPath()
-   if projectPath == "" then return "" end
-   return projectPath:match("^(.*)[\\/].*$") or projectPath -- a project at the root of a drive has no parent
+   local project_path = reaper.GetProjectPath()
+   if project_path == "" then return "" end
+   return project_path:match("^(.*)[\\/].*$") or project_path -- a project at the root of a drive has no parent
 end
 
 -- extensions: the dialog's filter, e.g. "Reaper Project File (.rpp)\0*.rpp;*.RPP\0\0"
@@ -59,8 +59,8 @@ function Ask.open_file(title, extensions)
    return path
 end
 
-function Ask.save_file(title, defaultName)
-   local ok, path = reaper.JS_Dialog_BrowseForSaveFile(title, Ask.parent_dir(), defaultName, "")
+function Ask.save_file(title, default_name)
+   local ok, path = reaper.JS_Dialog_BrowseForSaveFile(title, Ask.parent_dir(), default_name, "")
    if not ok or path == "" then return nil end
    return path
 end

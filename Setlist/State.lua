@@ -18,7 +18,7 @@ What the Setlist's parts share while it runs. One table, required by every part 
   notice        text for the status line, or nil (e.g. "Changed while the Setlist was closed: 2 new."); notice_restorable:
                 a click on it restores the previous list (it was kept as the autosave)
 
-The view's own state (scrolling, zoom, dragging, colors) is in UI/ViewState.lua.
+The view's own state (zoom, scrolling, selection, dragging, the sizes of the frame, colors) is in UI/ViewState.lua.
 ]]
 
 local Sync = require("Setlist.Sync")
