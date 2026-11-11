@@ -158,8 +158,11 @@ function Widgets.header(label, x, y, w, h, accent, text_w)
   local face = Widgets.header_face(Theme.color("background"), Theme.color(accent))
   Widgets.box(x, y, w, h, face)
   local text_color = Theme.luminance(face) > 0.6 and Theme.text_on(face) or "text"
+  local size = math.floor(h * Widgets.HEADER_TEXT_RATIO + 0.5)
+  Theme.set_font(size, nil, Theme.TITLE_FACE)
+  label = Widgets.fit_text(tostring(label), (text_w or w) - 16, function(s) return (gfx.measurestr(s)) end) -- (a long title gives way)
   Widgets.text(label, x, y, text_w or w, h, {
-    size = math.floor(h * Widgets.HEADER_TEXT_RATIO + 0.5),
+    size = size,
     align = "center",
     color = text_color,
     face = Theme.TITLE_FACE
@@ -251,7 +254,37 @@ function Widgets.fit_text(str, max_w, measure)
     local mid = math.ceil((lo + hi) / 2)
     if measure(str:sub(1, mid) .. "...") <= max_w then lo = mid else hi = mid - 1 end
   end
+  while lo > 0 and str:byte(lo + 1) and str:byte(lo + 1) >= 0x80 and str:byte(lo + 1) < 0xC0 do lo = lo - 1 end -- (not inside a UTF-8 character)
   return str:sub(1, lo) .. "..."
+end
+
+--- Pure. text broken into lines that are at most max_w wide: at the line breaks in it, then at spaces; a word wider than a
+--- line is cut where it no longer fits. measure(s) -> width. Always at least one line.
+function Widgets.wrap_text(text, max_w, measure)
+  local lines = {}
+  for hard in (text .. "\n"):gmatch("([^\n]*)\n") do
+    local current = ""
+    for word in (hard .. " "):gmatch("(.-) ") do
+      local candidate = current == "" and word or (current .. " " .. word)
+      if measure(candidate) <= max_w then
+        current = candidate
+      else
+        if current ~= "" then lines[#lines + 1] = current end
+        current = word
+        while measure(current) > max_w and #current > 1 do -- a word wider than the line: cut it
+          local cut = #current - 1
+          while cut > 1 and measure(current:sub(1, cut)) > max_w do cut = cut - 1 end
+          while cut > 1 and current:byte(cut + 1) and current:byte(cut + 1) >= 0x80 and current:byte(cut + 1) < 0xC0 do
+            cut = cut - 1 -- (not inside a UTF-8 character)
+          end
+          lines[#lines + 1] = current:sub(1, cut)
+          current = current:sub(cut + 1)
+        end
+      end
+    end
+    lines[#lines + 1] = current
+  end
+  return lines
 end
 
 -- Tooltips ----------------------------------------------------------------------------------
@@ -295,11 +328,9 @@ function Widgets.tooltip_end(win)
 
   local size, pad_x, pad_y = 15, 7, 4
   Theme.set_font(size)
-  local lines, text_w = {}, 0
-  for line in (text .. "\n"):gmatch("([^\n]*)\n") do
-    lines[#lines + 1] = line
-    text_w = math.max(text_w, (gfx.measurestr(line)))
-  end
+  -- (a tooltip never gets wider than the window: long lines wrap)
+  local lines, text_w = Widgets.wrap_text(text, math.max(40, gfx.w - 2 * pad_x - 8), function(s) return (gfx.measurestr(s)) end), 0
+  for _, line in ipairs(lines) do text_w = math.max(text_w, (gfx.measurestr(line))) end
   local line_h = size + 3
   local box_w, box_h = text_w + 2 * pad_x, #lines * line_h + 2 * pad_y
   local x, y = Widgets.tooltip_pos(box_w, box_h, win.mouse.x, win.mouse.y, gfx.w, gfx.h)
@@ -397,10 +428,11 @@ function Widgets.list_view(win, state, rows, x, y, w, h, opts)
   if not m.left then state.paint = nil end
 
   Widgets.box(x, y, w, h, Theme.mix(Theme.color("background"), Theme.color("text"), 0.04))
-  local note_w = math.floor((w - sw) * 0.4)
+  -- columns give way in a narrow list: the type column goes first (below 420 px), then the notes (below 300 px)
+  local note_w = w < 300 and 0 or math.floor((w - sw) * 0.4)
   local kind_w = 0
   for _, row in ipairs(rows) do
-    if row.kind then kind_w = 90 break end
+    if row.kind and w >= 420 then kind_w = 90 break end
   end
   for i = 1, visible do
     local row = rows[state.scroll + i]
@@ -425,14 +457,16 @@ function Widgets.list_view(win, state, rows, x, y, w, h, opts)
     elseif row.indent then
       text_x = x + 8 + Widgets.CHECK_SIZE + 8
     end
-    local text_w = (row.note and (w - sw - note_w - 8) or (w - sw - 8)) - (text_x - x - 8) - kind_w
-    if row.kind then
+    local text_w = ((row.note and note_w > 0) and (w - sw - note_w - 8) or (w - sw - 8)) - (text_x - x - 8) - kind_w
+    if row.kind and kind_w > 0 then
       Widgets.text(row.kind, x + w - sw - note_w - 4 - kind_w, ry, kind_w, row_h, { size = 15, color = "muted" })
     end
-    local text = row.text
+    -- the text gives way with "..." instead of running under the columns
+    Theme.set_font(row.header and 15 or opts.size or Widgets.TEXT_SIZE)
+    local text = Widgets.fit_text(tostring(row.text), math.max(20, text_w), function(str) return (gfx.measurestr(str)) end)
     Widgets.text(text, text_x, ry, text_w, row_h,
       { size = row.header and 15 or opts.size, color = row.style or (row.header and "muted" or "text") })
-    if row.note then
+    if row.note and note_w > 0 then
       Widgets.text(row.note, x + w - sw - note_w - 4, ry, note_w, row_h,
         { size = 15, align = "right", color = row.note_style or "muted" })
     end

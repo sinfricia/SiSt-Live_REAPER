@@ -465,6 +465,31 @@ end
 
 -- Geometry & lifecycle ----------------------------------------------------------------
 
+--- Keeps a floating window from being smaller than min_w x min_h pixels: the window is made bigger again (needs the
+--- js_ReaScriptAPI extension; a docked window cannot be resized by a script). Call it every frame. Returns true when the
+--- window is at least that big, false when it is not and cannot be changed.
+function Window:enforce_min_size(min_w, min_h)
+  if gfx.w >= min_w and gfx.h >= min_h then return true end
+  if not (reaper.APIExists("JS_Window_Find") and reaper.APIExists("JS_Window_GetRect")
+      and reaper.APIExists("JS_Window_SetPosition")) then return false end
+  local dock = gfx.dock(-1)
+  if is_finite_number(dock) and Window.is_docked_state(dock) then return false end
+
+  local hwnd = self.min_hwnd
+  if not hwnd then
+    hwnd = reaper.JS_Window_Find(self.title, true)
+    self.min_hwnd = hwnd
+  end
+  if not hwnd then return false end
+  local ok, left, top, right, bottom = reaper.JS_Window_GetRect(hwnd)
+  if not ok then self.min_hwnd = nil return false end
+  -- the title bar and borders are part of the rectangle, not of what gfx.w / gfx.h measure
+  local chrome_w, chrome_h = math.abs(right - left) - gfx.w, math.abs(bottom - top) - gfx.h
+  reaper.JS_Window_SetPosition(hwnd, left, math.min(top, bottom), math.max(gfx.w, min_w) + chrome_w,
+    math.max(gfx.h, min_h) + chrome_h)
+  return false
+end
+
 -- Reads position, size and dock state from the open window. Done every frame, because after the
 -- user closed the window these values can no longer be read.
 function Window:capture_geometry()

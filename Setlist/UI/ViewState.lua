@@ -37,7 +37,8 @@ local CFG = {
    headingH = 24,  -- section names (20 px of text row, 4 px to the buttons)
    titleHeight = 56,
    leftBorder = 5,
-   entryIndent = 10,
+   entryIndent = 7,      -- (leftBorder + entryIndent = 12: the margin of the rest of the window)
+   rowMargin = 12,      -- the space right of a row's length (and of every other part of the window)
 
 
    -- Base sizes at zoom level 0. The zoomed values live in gui (see ApplyZoom).

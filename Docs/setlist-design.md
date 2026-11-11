@@ -142,10 +142,25 @@ the `t.eq` / `t.ok` style.
 
 ## Open points
 
-- Responsiveness to the window width and a minimum window size: one pass after all planned changes (Sina). The command area
-  is fixed until then. Collision handling in the Gui library (text that shortens with "...", a row placement helper)
-  belongs to that pass.
-- Wrapping of long text entries: rows of different heights change scrolling, follow-scroll and the scrollbar.
 - Drag and drop, follow-scroll, the selected / next highlight: not discussed, they stay as they are.
 - "Modified": the list differs from the last loaded or saved file (compared by the text of the list; built).
-- Layout of the Setlist's own list rows: they start 15 px from the edge, the rest of the window uses a 12 px margin.
+- Layout of the Setlist's own list rows: done, they start 12 px from the edge like the rest.
+
+## Responsiveness (2026-11-11)
+
+One rule: a part has a natural size and gives way in a fixed order; the pure part is `lib/Gui/Layout.lua` (tested).
+- **Command area** (`Layout.pack`), always one row: natural sizes, then compact (6 px inside the buttons, 4 apart, sections
+  14 apart, every button as wide as its text, narrower zoom buttons), then the last sections are left out (Zoom first, then
+  Insert; List stays). A line at the right edge of the bar says that buttons are hidden; a click on it opens a menu with
+  their commands. `CommandArea.update()` works the layout out every frame.
+- **Status line:** the right text shortens ("N projects | mm:ss total", "... | mm:ss", "N | mm:ss", "mm:ss": at most half
+  the window, `Layout.pick`); the chips on the left use the rest, the notice chip shortens with "...".
+- **Rows:** the project name gives way with "..." (UTF-8 safe `Widgets.fit_text`); in a narrow window the end and loop chips
+  go first, then the length, so about five characters of the name stay. Text entries wrap (already).
+- **Header:** a long title or setlist name gets "...". **Tooltips** wrap to the window width. **Load dialog list:** the type
+  column goes below 420 px, the notes below 300 px, texts get "...". The dialogs themselves already adapt (`Dialog.layout`).
+- **Smallest size** (`gui.minWindowW / H`: the List section compact plus margins and the indicator; header, two rows and the
+  panel, about 240 x 250 px): a floating window is kept from getting smaller (`Window:enforce_min_size`, needs
+  js_ReaScriptAPI: the window is made bigger again). A docked window cannot be resized by a script: there the Setlist shows
+  "Window Too Small" and the size it needs, and does nothing else.
+- Mouse positions come from `win.mouse` (one snapshot per frame), not from `gfx.mouse_*`.

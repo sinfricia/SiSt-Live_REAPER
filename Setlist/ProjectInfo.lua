@@ -96,17 +96,19 @@ function ProjectInfo.loop_pass(proj)
    return ProjectInfo.parse_pass(value)
 end
 
-local cache, cache_size = {}, 0 -- project -> { count, info }
+local cache, cache_size = {}, 0 -- project -> { count, total, info }
 
---- The info of an open project (empty for an invalid pointer). Cached until the project changes.
+--- The info of an open project (empty for an invalid pointer). Read once, then again when the project's state change count
+--- or its number of markers and regions changes (adding a region does not change the state change count, so the number
+--- is watched too; both are cheap to ask).
 function ProjectInfo.read(proj)
    if not proj or not reaper.ValidatePtr(proj, "ReaProject*") then return EMPTY end
    local count = reaper.GetProjectStateChangeCount(proj)
+   local total = reaper.CountProjectMarkers(proj) -- markers and regions together
    local c = cache[proj]
-   if c and c.count == count then return c.info end
+   if c and c.count == count and c.total == total then return c.info end
 
    local markers = {}
-   local total = reaper.CountProjectMarkers(proj) -- markers and regions together
    for i = 0, total - 1 do
       local rv, isrgn, pos, rgnend, name = reaper.EnumProjectMarkers2(proj, i)
       if rv ~= 0 then markers[#markers + 1] = { isrgn = isrgn, pos = pos, rgnend = rgnend, name = name } end
@@ -117,7 +119,7 @@ function ProjectInfo.read(proj)
       cache_size = cache_size + 1
       if cache_size > 200 then cache, cache_size = {}, 1 end -- closed projects leave entries behind: start over
    end
-   cache[proj] = { count = count, info = info }
+   cache[proj] = { count = count, total = total, info = info }
    return info
 end
 

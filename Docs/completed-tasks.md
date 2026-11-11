@@ -3,6 +3,29 @@
 Newest first. Open findings move into the roadmap item that fixes them. Why things are done this way:
 Docs/design-decisions.md.
 
+## 2026-11-11 - Step 4 complete (the Setlist)
+- Step 4 = 4b + 4c (current list, autosave, command area), then the redesign 4a in pieces: (a) the split into parts, (b) silent
+  sync and the load flow, (c) row indicators, (d) linked and multi-line text entries, (e) multi-selection, (f) responsiveness
+  (entries below). Design: Docs/setlist-design.md.
+- The two open items were decided: the project length stays "position of the last marker" (GetProjectLength checked: the same
+  for projects with markers, no use without), and the live test keeps opening its projects itself, because it has to replace
+  the loopback test's unsaved projects without asking ("noprompt"); the Setlist's real load code with real tabs is covered
+  by "DEBUG Run Setlist Scenarios" (49 checks). See Docs/design-decisions.md.
+- Self-test: 668 passed; scenarios: 49.
+
+## 2026-11-11 - Step 4a (f): responsiveness
+- New `lib/Gui/Layout.lua` (pure, tested): `Layout.pack` puts the sections of a bar in one row (natural, compact, the last
+  ones left out with an indicator and a menu at the right edge), `Layout.pick` takes the first text variant that fits. Used by
+  the command area and the status line (the right text shortens, the chips get the rest).
+- Project names give way with "..." in a narrow window (chips first, then the length), the header title and the load dialog list
+  texts too; tooltips wrap to the window; `Widgets.fit_text` no longer cuts a UTF-8 character; `Widgets.wrap_text` is shared.
+- The smallest size comes from the layout (about 240 x 250): `Window:enforce_min_size` makes a floating window bigger again (js_ReaScriptAPI);
+  docked, the Setlist only says "Window Too Small" and what it needs.
+- List rows start 12 px from the edge (was 15); mouse positions come from `win.mouse`. Loop chips: a project's markers are read
+  once and again when its state change count or its number of markers and regions changes (the count alone does not
+  change when a region is added).
+- Self-test: 662 passed; scenarios: 49.
+
 ## 2026-11-11 - Step 4a (e): multi-selection, Shift-drag linking
 - Selection (`gui.selection`): Ctrl+click, Shift+click, accent tint and border, batch right-click menu (Color, Unlink, Close
   Projects, Delete Text Entries; one confirmation each), group drag (`Actions.drop_selection`, tabs follow, Ctrl copies the

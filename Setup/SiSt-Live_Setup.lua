@@ -98,6 +98,7 @@
 --   [nomain] ../lib/Gui/Widgets.lua
 --   [nomain] ../lib/Gui/Dialog.lua
 --   [nomain] ../lib/Gui/TextField.lua
+--   [nomain] ../lib/Gui/Layout.lua
 --   [nomain] ../lib/Gui/Zoom.lua
 -- @about
 --   # SiSt-Live

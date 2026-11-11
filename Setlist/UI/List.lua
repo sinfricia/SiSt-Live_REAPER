@@ -21,6 +21,7 @@ local Log = require("SiSt-Live_Log")
 local log = Log.get("Setlist")
 local Theme, Widgets = require("Gui.Theme"), require("Gui.Widgets")
 local TextField = require("Gui.TextField")
+local Layout = require("Gui.Layout")
 local Data = require("Setlist.Data")
 local Sync = require("Setlist.Sync")
 local State = require("Setlist.State")
@@ -53,6 +54,16 @@ local END_CHIPS = {
       tip = "M: Manual. Nothing happens at the end of this song, the next one has to be started by hand."
    },
 }
+
+-- The width of a chip (the font of the length next to it).
+local LOOP_CHIP = { letter = "L", color = { 1.0, 0.82, 0.05 }, tip = "This project has one or more loop regions." }
+
+local function chip_width(chip)
+   Theme.set_font(gui.projLenTextSize)
+   local lw, lh = gfx.measurestr(chip.letter)
+   local as = chip.arrow and math.max(3, math.floor(lh / 4)) or 0
+   return 6 + (chip.arrow and (as * 2 + 4) or 0) + lw + 6
+end
 
 -- Draws the chip of a row (a down arrow and the letter); returns its left edge. right: where the chip ends.
 local function draw_chip(chip, right, y)
@@ -90,7 +101,7 @@ function List.pad_number(numberStr, numDigits)
 end
 
 function List.mouse_in_rect(x, y, w, h)
-   return gfx.mouse_x >= x and gfx.mouse_x <= x + w and gfx.mouse_y >= y and gfx.mouse_y <= y + h
+   return State.win.mouse.x >= x and State.win.mouse.x <= x + w and State.win.mouse.y >= y and State.win.mouse.y <= y + h
 end
 
 function List.point_in_rect(x, y, w, h, px, py)
@@ -130,31 +141,8 @@ end
 -- The list is measured in rows (one row = gui.lineHeight): an entry is one row high, except a text entry with several
 -- lines, which is as many rows high as it has lines. Scrolling, the scrollbar and the visible count are in rows.
 
---- Pure. Breaks the text into lines that are at most max_w wide: at the line breaks in it, then at spaces; a word that
---- is wider than a line is cut where it no longer fits. measure(s) -> width. Always at least one line.
-function List.wrap_text(text, max_w, measure)
-   local lines = {}
-   for hard in (text .. "\n"):gmatch("([^\n]*)\n") do
-      local current = ""
-      for word in (hard .. " "):gmatch("(.-) ") do
-         local candidate = current == "" and word or (current .. " " .. word)
-         if measure(candidate) <= max_w then
-            current = candidate
-         else
-            if current ~= "" then lines[#lines + 1] = current end
-            current = word
-            while measure(current) > max_w and #current > 1 do -- a word wider than the line: cut it
-               local cut = #current - 1
-               while cut > 1 and measure(current:sub(1, cut)) > max_w do cut = cut - 1 end
-               lines[#lines + 1] = current:sub(1, cut)
-               current = current:sub(cut + 1)
-            end
-         end
-      end
-      lines[#lines + 1] = current
-   end
-   return lines
-end
+--- Pure. Breaks the text into lines that are at most max_w wide (see Widgets.wrap_text).
+List.wrap_text = Widgets.wrap_text
 
 local number_cache = {}
 
@@ -248,8 +236,8 @@ function List.entry_at_mouse(findAtLastClickPos)
       findAtLastClickPos = false
    end
 
-   local mouseIsOverList = gfx.mouse_y < gui.listH + gui.titleHeight - gui.dragThreshold and
-       gfx.mouse_y > gui.titleHeight and gfx.mouse_x < gfx.w - gui.scrollW and gfx.mouse_x > gui.leftBorder
+   local mouseIsOverList = State.win.mouse.y < gui.listH + gui.titleHeight - gui.dragThreshold and
+       State.win.mouse.y > gui.titleHeight and State.win.mouse.x < gfx.w - gui.scrollW and State.win.mouse.x > gui.leftBorder
 
    if not mouseIsOverList then
       return nil, nil
@@ -502,7 +490,7 @@ local function draw_entry(y, entry)
       local radius = gui.leftBorder / 2
       -- centred on the left edge of the entry (after its indent), where the dot of the active project always was
       local cx = gui.leftBorder + indent
-      local cy = y + (gui.lineHeight - radius * 2) / 2 + 1
+      local cy = y + h / 2 -- the vertical middle of the entry: where the link hook touches it
       local active = entry.proj ~= nil and entry.proj == State.current_proj
       if gui.selection[entry] then
          if active then Theme.set("text") else Theme.set("accent") end
@@ -631,39 +619,61 @@ local function draw_entry(y, entry)
    end
 
 
-   local _, strH = gfx.measurestr(entryStr)
-   gfx.y = y + (gui.lineHeight - strH) / 2
-
-   if textAlpha and entryStr then
-      Theme.set("text", textAlpha)
-      gfx.drawstr(entryStr)
-   end
-
-   ----------------------
-   --Project Length Stuff
-   if entry.type == ENTRY.PROJECT then
-      if entry.name:find("_.*ROUTING") then return end
-
-      -- proj length
+   -- The right part of a project row (length, chips) is drawn first: the name gives way to it. In a narrow window the
+   -- chips go first, then the length, so that at least about five characters of the name stay.
+   local name_x = gfx.x
+   local name_right = gfx.w - gui.scrollW - gui.rowMargin
+   if entry.type == ENTRY.PROJECT and not entry.name:find("_.*ROUTING") then
+      local min_name = gui.entryTextSize * 5
       local projLen = Sync.project_length(entry.proj)
-
       local projLenStr = projLen > 0 and Data.format_time(projLen) or "--:--" -- no end marker: no length
 
       Theme.set_font(gui.projLenTextSize)
       local strW, strH = gfx.measurestr(projLenStr)
-      local lengthX = gfx.w - gui.scrollW - strW - gui.entryIndent
-      gfx.x = lengthX
-      gfx.y = y + (gui.lineHeight - strH) / 2
+      local lengthX = name_right - strW
+      if lengthX - name_x >= min_name then
+         gfx.x, gfx.y = lengthX, y + (gui.lineHeight - strH) / 2
+         Theme.set("text") -- (not the colour of what was drawn before, e.g. the transport state)
+         gfx.drawstr(projLenStr)
+         name_right = lengthX - 10
 
-      gfx.drawstr(projLenStr)
-
-      local right = lengthX - 10
-      local chip = info and END_CHIPS[info.end_kind]
-      if chip then right = draw_chip(chip, right, y) - 6 end
-      if info and #info.loops > 0 then
-         draw_chip({ letter = "L", color = { 1.0, 0.82, 0.05 }, tip = "This project has one or more loop regions." },
-            right, y)
+         local chips = {}
+         local end_chip = info and END_CHIPS[info.end_kind]
+         if end_chip then chips[#chips + 1] = end_chip end
+         if info and #info.loops > 0 then chips[#chips + 1] = LOOP_CHIP end
+         local chips_w = 0
+         for _, chip in ipairs(chips) do chips_w = chips_w + chip_width(chip) + 6 end
+         if #chips > 0 and name_right - chips_w - name_x >= min_name then
+            local right = name_right
+            for _, chip in ipairs(chips) do right = draw_chip(chip, right, y) - 6 end
+            name_right = right + 6 - 10
+         end
       end
+   end
+
+   if textAlpha and entryStr ~= "" then
+      Theme.set_font(gui.entryTextSize)
+      entryStr = Widgets.fit_text(entryStr, name_right - name_x, function(s) return (gfx.measurestr(s)) end)
+      local _, strH = gfx.measurestr(entryStr)
+      gfx.x, gfx.y = name_x, y + (gui.lineHeight - strH) / 2
+      Theme.set("text", textAlpha)
+      gfx.drawstr(entryStr)
+   end
+end
+
+--- What the window shows when it is smaller than the Setlist can be used in (gui.minWindowW / H): only how big it has to be.
+function List.draw_too_small()
+   gfx.clear = Theme.clear_color()
+   Theme.set("background")
+   gfx.rect(0, 0, gfx.w, gfx.h)
+   local text = "Window Too Small\n\nMake it at least " .. math.ceil(gui.minWindowW) .. " x " .. math.ceil(gui.minWindowH) ..
+       " pixels."
+   Theme.set_font(16)
+   local lines = Widgets.wrap_text(text, math.max(40, gfx.w - 24), function(s) return (gfx.measurestr(s)) end)
+   local line_h = 22
+   local top = math.floor((gfx.h - #lines * line_h) / 2)
+   for i, line in ipairs(lines) do
+      Widgets.text(line, 12, top + (i - 1) * line_h, gfx.w - 24, line_h, { size = 16, align = "center", color = i == 1 and "text" or "muted" })
    end
 end
 
@@ -705,13 +715,18 @@ function List.draw()
 
    -- Status line under the list (what the list holds), a faint divider above it, the strong command bar divider below
    local projects = #Data.project_entries(State.list)
-   local str = projects .. (projects == 1 and " project" or " projects") .. "  |  " ..
-       Data.format_time(State.total_time) .. " total"
+   local time = Data.format_time(State.total_time)
+   local noun = projects .. (projects == 1 and " project" or " projects")
    Theme.set("line")
    gfx.rect(0, gfx.h - gui.ctrlPanelSize, gfx.w, 1)
    Theme.set_font(15)
    Theme.set("muted")
-   gfx.x, gfx.y = gfx.w - 12 - gfx.measurestr(str), gfx.h - gui.ctrlPanelSize + 5
+   -- the long form, then shorter ones: at most half the window, the left part (chips) gets the rest
+   local function measure(s) return (gfx.measurestr(s)) end
+   local str = Layout.pick({ noun .. "  |  " .. time .. " total", noun .. "  |  " .. time, projects .. "  |  " .. time, time },
+      math.floor(gfx.w / 2) - gui.rowMargin, measure)
+   gui.statusRightW = measure(str)
+   gfx.x, gfx.y = gfx.w - gui.rowMargin - gui.statusRightW, gfx.h - gui.ctrlPanelSize + 5
    gfx.drawstr(str)
 
    Theme.set("text", 0.6)

@@ -241,11 +241,20 @@ only ever run on demand; lookups only where unavoidable.
   list (Reset, Restore, Load Setlist, first start in a new REAPER run) always keeps the old one as the autosave, unless it
   is empty or would overwrite an autosave that has text entries with a list that has none.
 - Nothing is locked in show mode, and the Setlist makes no difference between edit and show mode for confirmations:
-  destructive actions (removing or deleting entries, closing a project from the list, Reset, Restore, loading) always
-  ask (a locked button on stage gets in the way, a slip is what the question is for; Sina, 2026-11-11).
+  closing a project from the list, Reset, Restore and loading always ask (a locked button on stage gets in the way, a
+  slip is what the question is for). Deleting list entries (text and missing entries, also several at once) asks nothing:
+  Sina found it unnecessary (2026-11-11).
 - A shared module needs two users (Sina, 2026-11-11): code with one user stays next to it, even if it is written in a
   general way, and moves to lib/Gui when the second window needs it.
-- The Setlist's command area is a fixed layout for now; responsiveness waits for the redesign.
+- The Setlist adapts to the window width in one fixed order (natural, compact, then the last parts left out, with a sign
+  that something is hidden), never by wrapping the command bar into rows (Sina, 2026-11-11). The logic is the pure
+  `lib/Gui/Layout.lua`. A floating window is kept from getting smaller than that (`Window:enforce_min_size`, js_ReaScriptAPI).
+- A song's length is the position of the last marker, no fallback to `GetProjectLength` (checked 2026-11-11: it is the same
+  for projects that have markers; for one without an end marker it only counts media items). "--:--" and the M chip are
+  the sign that a project has no end marker.
+- Loop chips come from the Setlist reading the project's markers (cached, read again when the project's state change count
+  or its number of markers and regions changes), not from the Region Looper: the Looper would have to scan every open
+  project the same way, and the chips would depend on it running. The Looper only publishes the loop pass while looping.
 
 ## Naming (2026-10-19)
 

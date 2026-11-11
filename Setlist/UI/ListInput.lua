@@ -80,7 +80,7 @@ function ListInput.handle_drag()
    if #State.list < 2 then return end
 
    if gui.leftClick then
-      gui.dragThreshReached = math.abs(gfx.mouse_y - gui.lastClickDownPos.y) > gui.dragThreshold
+      gui.dragThreshReached = math.abs(State.win.mouse.y - gui.lastClickDownPos.y) > gui.dragThreshold
    end
 
    if not gui.draggingEntry and gui.leftClick and not gui.draggingScroll and not gui.pressOnIndicator
@@ -90,7 +90,7 @@ function ListInput.handle_drag()
       if not entryUnderMouse then return end
 
       gui.dragEntryListIdx = idxUnderMouse
-      gui.dragStartY = gfx.mouse_y
+      gui.dragStartY = State.win.mouse.y
       gui.draggingEntry = true
       local selected = ListInput.selected_entries()
       gui.dragGroup = gui.selection[entryUnderMouse] and #selected > 1 -- the whole selection moves
@@ -101,12 +101,12 @@ function ListInput.handle_drag()
       log:debug("Dragging started for: %s", State.list[gui.dragEntryListIdx].name)
    elseif gui.draggingEntry and gui.dragThreshReached then
       gui.dragDirection = 1
-      if gfx.mouse_y < gui.dragStartY then
+      if State.win.mouse.y < gui.dragStartY then
          gui.dragDirection = -1
       end
 
       -- Auto-scroll if mouse is near top or bottom
-      if gfx.mouse_y < gui.titleHeight - gui.dragScrollMargin or gfx.mouse_y > gui.listH + gui.titleHeight + gui.dragScrollMargin then
+      if State.win.mouse.y < gui.titleHeight - gui.dragScrollMargin or State.win.mouse.y > gui.listH + gui.titleHeight + gui.dragScrollMargin then
          gui.fractionalScrollOffset = gui.fractionalScrollOffset + gui.dragScrollSpeed
 
          if math.abs(gui.fractionalScrollOffset) >= 1 then
@@ -126,7 +126,7 @@ function ListInput.handle_drag()
          -- below the last entry (empty space in the list): the drop goes to the end of the list
          local _, totalRows = List.layout(State.list)
          local endY = gui.titleHeight + (totalRows - gui.scrollOffset) * gui.lineHeight
-         if gfx.mouse_y > endY and gfx.mouse_y < gui.titleHeight + gui.listH and gfx.mouse_x < gfx.w - gui.scrollW then
+         if State.win.mouse.y > endY and State.win.mouse.y < gui.titleHeight + gui.listH and State.win.mouse.x < gfx.w - gui.scrollW then
             gui.dropIdx = #State.list
             gui.dropDir, gui.dropHover = 1, #State.list
             gui.dropLink = State.win.mouse.shift and gui.dragTextsOnly
@@ -141,11 +141,11 @@ function ListInput.handle_drag()
          return
       end
 
-      if math.abs(gfx.mouse_y - gui.dragStartY) > gui.dragThreshold then
+      if math.abs(State.win.mouse.y - gui.dragStartY) > gui.dragThreshold then
          -- Calculate drop index based on mouse position
          -- the row under the mouse (leave a dropzone of 1/3 of the line height: dragging feels quite nice), then the entry
          -- the drop is relative to: the one above that row when dragged down, below it when dragged up
-         local row = (gfx.mouse_y + (gui.lineHeight / 3 * gui.dragDirection) - gui.titleHeight) / gui.lineHeight +
+         local row = (State.win.mouse.y + (gui.lineHeight / 3 * gui.dragDirection) - gui.titleHeight) / gui.lineHeight +
              gui.scrollOffset
          local _, totalRows = List.layout(State.list)
          -- (above the first entry: 0, below the last one: past the end, so a drop at either end is possible)
@@ -167,7 +167,7 @@ end
 
 -- items: see Window.build_menu. Opens the menu at the mouse and runs the chosen entry's action.
 local function show_menu(items)
-   gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
+   gfx.x, gfx.y = State.win.mouse.x, State.win.mouse.y
    local menuStr, actions = Window.build_menu(items)
    local choice = gfx.showmenu(menuStr)
    if choice > 0 and actions[choice] then actions[choice]() end
@@ -483,18 +483,18 @@ function ListInput.handle_scrollbar()
 
    if gui.leftClick and mouseOnScrollbar and not gui.draggingEntry and not gui.draggingScroll then
       gui.draggingScroll = true
-      gui.scrollBarGrabStart = gfx.mouse_y
-      gui.scrollBarGrabOffset = gfx.mouse_y - gui.scrollY
+      gui.scrollBarGrabStart = State.win.mouse.y
+      gui.scrollBarGrabOffset = State.win.mouse.y - gui.scrollY
    elseif not gui.leftClick then
       gui.draggingScroll = false
       gui.scrollBarGrabStart = 0
       gui.scrollBarGrabOffset = 0
    end
 
-   if gui.draggingScroll and gui.scrollBarGrabStart ~= gfx.mouse_y then
+   if gui.draggingScroll and gui.scrollBarGrabStart ~= State.win.mouse.y then
       local scrollTrackHeight = gui.listH + gui.titleHeight
       local emptyScrollH = scrollTrackHeight - gui.scrollH
-      local newScrollY = clamp(gfx.mouse_y - gui.scrollBarGrabOffset, 0, emptyScrollH)
+      local newScrollY = clamp(State.win.mouse.y - gui.scrollBarGrabOffset, 0, emptyScrollH)
 
       gui.scrollOffset = math.floor((newScrollY / emptyScrollH) * gui.maxScroll)
       gui.scrollOffset = clamp(gui.scrollOffset, 0, gui.maxScroll)

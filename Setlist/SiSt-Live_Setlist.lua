@@ -153,6 +153,14 @@ local function frame(w)
       if not m.left and not m.right then gui.draggingScroll = false end
 
 
+      -- The layout for this window width. A floating window is kept from getting smaller than the Setlist is usable in; a
+      -- docked one cannot be (and a missing js_ReaScriptAPI): it says so and nothing else happens.
+      CommandArea.update()
+      if not w:enforce_min_size(gui.minWindowW, gui.minWindowH) then
+         List.draw_too_small()
+         return
+      end
+
       gui.listH = gfx.h - gui.ctrlPanelSize - gui.titleHeight
       gui.numVisibleEntries = math.floor(gui.listH / gui.lineHeight)
       gui.maxScroll = List.manual_max_scroll(State.list, gui.numVisibleEntries)

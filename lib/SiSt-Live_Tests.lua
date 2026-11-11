@@ -36,6 +36,7 @@ local Window         = require("Gui.Window")
 local Widgets        = require("Gui.Widgets")
 local Dialog         = require("Gui.Dialog")
 local TextField      = require("Gui.TextField")
+local Layout         = require("Gui.Layout")
 local Zoom           = require("Gui.Zoom")
 
 -- The config reference check reads several files: run it once, use the report twice (live check + diagnostics)
@@ -80,6 +81,7 @@ local components = {
   { name = "Gui Widgets", file = "lib/Gui/Widgets.lua", self_test = Widgets.self_test },
   { name = "Gui Dialog", file = "lib/Gui/Dialog.lua", self_test = Dialog.self_test },
   { name = "Gui TextField", file = "lib/Gui/TextField.lua", self_test = TextField.self_test },
+  { name = "Gui Layout", file = "lib/Gui/Layout.lua", self_test = Layout.self_test },
   { name = "Gui Zoom", file = "lib/Gui/Zoom.lua", self_test = Zoom.self_test },
   { name = "SelfTest", file = "lib/SelfTest.lua", self_test = SelfTest.self_test },
   -- Every named action ID used by custom actions, shortcuts, toolbars/menus, mouse modifiers and SWS cycle/startup
